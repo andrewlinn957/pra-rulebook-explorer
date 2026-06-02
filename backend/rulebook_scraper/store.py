@@ -5,7 +5,9 @@ import json
 import sqlite3
 from pathlib import Path
 from typing import Iterable
+from urllib.parse import urljoin
 
+from .fetch import BASE_URL
 from .models import Edge, Node
 
 SCHEMA = """
@@ -118,14 +120,26 @@ def backfill_placeholder_targets(conn: sqlite3.Connection) -> None:
         else:
             node_type = "external_reference"
         title = evidence_text or stable_key.rsplit(":", 1)[-1]
+        url = _placeholder_url(metadata)
         conn.execute(
             """
             INSERT INTO node (id, node_type, stable_key, title, text, url, metadata_json)
             VALUES (?, ?, ?, ?, '', ?, ?)
             ON CONFLICT(stable_key) DO NOTHING
             """,
-            (to_node_id, node_type, stable_key, title, metadata.get("href", ""), json.dumps({"placeholder": True, **metadata}, ensure_ascii=False)),
+            (to_node_id, node_type, stable_key, title, url, json.dumps({"placeholder": True, **metadata}, ensure_ascii=False)),
         )
+
+
+def _placeholder_url(metadata: dict) -> str:
+    href = metadata.get("href", "") or ""
+    if href.startswith("#glossary-term-"):
+        return urljoin(BASE_URL, "/glossary") + href
+    if href.startswith("#"):
+        return urljoin(BASE_URL, "/glossary") + href
+    if href.startswith("/"):
+        return urljoin(BASE_URL, href)
+    return href
 
 
 def export_json(conn: sqlite3.Connection, out_path: Path) -> None:
