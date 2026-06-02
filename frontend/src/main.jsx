@@ -249,7 +249,11 @@ function layout(graph, centreId){
 }
 function r(n){return Math.min(25,(n.node_type==='part'?14:n.node_type==='topic'?13:n.node_type==='defined_term'?11:9)+Math.sqrt(n.degree||1));}
 function label(v){
-  if(v==='chapter') return 'articles/chapter';
+  if(['chapter','rule','guidance_section','guidance_paragraph'].includes(v)) return 'provision';
+  if(v==='defined_term') return 'defined term';
+  if(v==='external_reference') return 'external reference';
+  if(v==='legal_instrument') return 'legal instrument';
+  if(v==='obligation_pattern') return 'obligation pattern';
   return String(v||'').replaceAll('_',' ');
 }
 function truncate(s='',n=120){return s&&s.length>n?s.slice(0,n-1)+'…':s}
