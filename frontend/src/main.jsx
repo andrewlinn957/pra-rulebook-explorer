@@ -15,6 +15,7 @@ function App(){
   const [selected,setSelected]=useState(null);
   const [detail,setDetail]=useState(null);
   const [graph,setGraph]=useState({nodes:[],edges:[],available_edge_types:{}});
+  const [contents,setContents]=useState({root:null,children:[]});
   const [depth,setDepth]=useState(1);
   const [limit,setLimit]=useState(140);
   const [explicitOnly,setExplicitOnly]=useState(false);
@@ -63,7 +64,17 @@ function App(){
   async function choose(n){
     const full=await api(`/node/${n.id}`);
     setSelected(full); setDetail(full); setPanelOpen(true);
-    await loadNeighbourhood(full.id);
+    const [tree]=await Promise.all([loadContents(full.id), loadNeighbourhood(full.id)]);
+  }
+  async function loadContents(id){
+    try{
+      const data=await api(`/node/${id}/contents`);
+      setContents(data);
+      return data;
+    }catch{
+      setContents({root:null,children:[]});
+      return null;
+    }
   }
   async function loadNeighbourhood(id){
     const p=new URLSearchParams({depth:String(depth),limit:String(limit),explicit_only:String(explicitOnly)});
@@ -106,7 +117,8 @@ function App(){
     </main>
 
     <aside className={panelOpen?'inspector open':'inspector'}>
-      <div className="tabs"><button className={sideTab==='evidence'?'on':''} onClick={()=>setSideTab('evidence')}>Evidence</button><button className={sideTab==='discover'?'on':''} onClick={()=>setSideTab('discover')}>Discover</button><button className={sideTab==='analysis'?'on':''} onClick={()=>setSideTab('analysis')}>Analysis</button></div>
+      <div className="tabs"><button className={sideTab==='contents'?'on':''} onClick={()=>setSideTab('contents')}>Contents</button><button className={sideTab==='evidence'?'on':''} onClick={()=>setSideTab('evidence')}>Evidence</button><button className={sideTab==='discover'?'on':''} onClick={()=>setSideTab('discover')}>Discover</button><button className={sideTab==='analysis'?'on':''} onClick={()=>setSideTab('analysis')}>Analysis</button></div>
+      {sideTab==='contents'&&<Contents tree={contents} onChoose={choose}/>}
       {sideTab==='evidence'&&<Evidence node={detail} edges={selectedEdges} graph={graph} onChoose={choose}/>} 
       {sideTab==='discover'&&<Discover interesting={analysis.interesting} onChoose={choose}/>} 
       {sideTab==='analysis'&&<Analysis analysis={analysis} onChoose={choose}/>} 
@@ -150,6 +162,20 @@ function Legend({active,onToggle}){
   const items=['rule','chapter','part','defined_term','guidance_document','guidance_section','guidance_paragraph','topic','obligation_pattern','legal_instrument','external_reference'];
   return <div className="legend">{items.map(t=><button key={t} className={active?.has(t)?'on':'off'} onClick={()=>onToggle(t)} title={`Toggle ${label(t)}`}><i style={{background:COLOUR[t]||'#64748b'}} /> <span>{label(t)}</span></button>)}<div><i className="line"/> <span>explicit</span></div><div><i className="line dash"/> <span>inferred</span></div></div>
 }
+
+function Contents({tree,onChoose}){
+  const children=tree?.children||[];
+  if(!children.length) return <div className="pane"><p className="muted">No contained chapters or articles for this node.</p></div>;
+  return <div className="pane contents"><h2>Contents</h2><p className="muted">Chapters and rules/articles directly under {tree.root?.title||'the selected node'}.</p><div className="contents-list">{children.map(n=><ContentNode key={n.id} node={n} onChoose={onChoose}/>)}</div></div>;
+}
+function ContentNode({node,onChoose}){
+  const kids=node.children||[];
+  return <div className={`content-node ${node.node_type}`}>
+    <button onClick={()=>onChoose(node)}><span>{label(node.node_type)}{node.metadata?.rule_number?` ${node.metadata.rule_number}`:''}{node.metadata?.chapter_number?` ${node.metadata.chapter_number}`:''}</span><strong>{node.title}</strong>{node.text&&<small>{truncate(node.text,180)}</small>}</button>
+    {kids.length>0&&<div className="content-children">{kids.map(k=><ContentNode key={k.id} node={k} onChoose={onChoose}/>)}</div>}
+  </div>;
+}
+
 function Evidence({node,edges,graph,onChoose}){
   const byId=new Map(graph.nodes.map(n=>[n.id,n]));
   if(!node)return <p className="muted">Select a node.</p>;

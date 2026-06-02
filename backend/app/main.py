@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from .db import DEFAULT_DB, connect, ensure_indexes, get_node
-from .graph import betweenness, centrality, common_neighbours, communities, components, interesting, list_nodes, neighbourhood, search, shortest_path, stats
+from .graph import betweenness, centrality, common_neighbours, communities, components, contents_tree, interesting, list_nodes, neighbourhood, search, shortest_path, stats
 
 app = FastAPI(title="PRA Rulebook Explorer API", version="0.2.0")
 app.add_middleware(
@@ -58,6 +58,15 @@ def api_node(node_id: str) -> dict:
     if not node:
         raise HTTPException(status_code=404, detail="Node not found")
     return node
+
+
+@app.get("/node/{node_id}/contents")
+def api_contents(node_id: str) -> dict:
+    conn = connect(DB_PATH)
+    try:
+        return contents_tree(conn, node_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Node not found")
 
 
 @app.get("/node/{node_id}/neighbourhood")

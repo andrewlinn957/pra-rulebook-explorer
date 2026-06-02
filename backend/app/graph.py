@@ -167,6 +167,48 @@ def interesting(conn: sqlite3.Connection, *, limit: int = 50) -> list[dict[str, 
     return out
 
 
+def contents_tree(conn: sqlite3.Connection, node_id: str, *, max_depth: int = 4, max_children: int = 1000) -> dict[str, Any]:
+    root_row = conn.execute("SELECT id,node_type,stable_key,title,text,url,metadata_json FROM node WHERE id=?", (node_id,)).fetchone()
+    if not root_row:
+        raise ValueError("Node not found")
+
+    def children(parent_id: str, depth: int) -> list[dict[str, Any]]:
+        if depth >= max_depth:
+            return []
+        rows = conn.execute(
+            """
+            SELECT n.id,n.node_type,n.stable_key,n.title,n.text,n.url,n.metadata_json
+            FROM edge e JOIN node n ON n.id=e.to_node_id
+            WHERE e.from_node_id=? AND e.edge_type='contains'
+            ORDER BY
+              CASE n.node_type WHEN 'chapter' THEN 0 WHEN 'rule' THEN 1 WHEN 'guidance_section' THEN 2 WHEN 'guidance_paragraph' THEN 3 ELSE 9 END,
+              n.title
+            LIMIT ?
+            """,
+            (parent_id, max_children),
+        ).fetchall()
+        out = []
+        for row in rows:
+            node = row_to_node(row)
+            node["children"] = children(node["id"], depth + 1)
+            out.append(node)
+        return _natural_sort_content(out)
+
+    root = row_to_node(root_row)
+    return {"root": root, "children": children(node_id, 0)}
+
+
+def _natural_sort_content(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    import re
+    def key(item: dict[str, Any]) -> tuple:
+        meta = item.get("metadata") or {}
+        raw = str(meta.get("chapter_number") or meta.get("rule_number") or item.get("title") or "")
+        nums = tuple(int(x) for x in re.findall(r"\d+", raw)[:4])
+        type_rank = {"chapter": 0, "rule": 1, "guidance_section": 2, "guidance_paragraph": 3}.get(item.get("node_type"), 9)
+        return (type_rank, nums, raw.lower())
+    return sorted(items, key=key)
+
+
 def _snippet(text: str, q: str, size: int = 240) -> str:
     lower = text.lower(); idx = lower.find(q.lower().split()[0]) if q else -1
     if idx < 0:
