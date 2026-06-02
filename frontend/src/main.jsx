@@ -22,7 +22,7 @@ function App(){
   const [types,setTypes]=useState(DEFAULT_TYPES);
   const [nodeTypes,setNodeTypes]=useState(new Set(NODE_TYPES));
   const [showInsurance,setShowInsurance]=useState(false);
-  const [sideTab,setSideTab]=useState('evidence');
+  const [sideTab,setSideTab]=useState('explore');
   const [analysis,setAnalysis]=useState({centrality:[],bridges:[],interesting:[],stats:null});
   const [panelOpen,setPanelOpen]=useState(true);
   const [busy,setBusy]=useState(false);
@@ -117,9 +117,8 @@ function App(){
     </main>
 
     <aside className={panelOpen?'inspector open':'inspector'}>
-      <div className="tabs"><button className={sideTab==='contents'?'on':''} onClick={()=>setSideTab('contents')}>Contents</button><button className={sideTab==='evidence'?'on':''} onClick={()=>setSideTab('evidence')}>Evidence</button><button className={sideTab==='discover'?'on':''} onClick={()=>setSideTab('discover')}>Discover</button><button className={sideTab==='analysis'?'on':''} onClick={()=>setSideTab('analysis')}>Analysis</button></div>
-      {sideTab==='contents'&&<Contents tree={contents} onChoose={choose}/>}
-      {sideTab==='evidence'&&<Evidence node={detail} edges={selectedEdges} graph={graph} onChoose={choose}/>} 
+      <div className="tabs"><button className={sideTab==='explore'?'on':''} onClick={()=>setSideTab('explore')}>Explore</button><button className={sideTab==='discover'?'on':''} onClick={()=>setSideTab('discover')}>Discover</button><button className={sideTab==='analysis'?'on':''} onClick={()=>setSideTab('analysis')}>Analysis</button></div>
+      {sideTab==='explore'&&<Explore node={detail} tree={contents} edges={selectedEdges} graph={graph} onChoose={choose}/>} 
       {sideTab==='discover'&&<Discover interesting={analysis.interesting} onChoose={choose}/>} 
       {sideTab==='analysis'&&<Analysis analysis={analysis} onChoose={choose}/>} 
     </aside>
@@ -163,10 +162,17 @@ function Legend({active,onToggle}){
   return <div className="legend">{items.map(t=><button key={t} className={active?.has(t)?'on':'off'} onClick={()=>onToggle(t)} title={`Toggle ${label(t)}`}><i style={{background:COLOUR[t]||'#64748b'}} /> <span>{label(t)}</span></button>)}<div><i className="line"/> <span>explicit</span></div><div><i className="line dash"/> <span>inferred</span></div></div>
 }
 
-function Contents({tree,onChoose}){
+function Explore({node,tree,edges,graph,onChoose}){
   const children=tree?.children||[];
-  if(!children.length) return <div className="pane"><p className="muted">No contained articles/chapters for this node.</p></div>;
-  return <div className="pane contents"><h2>Contents</h2><div className="contents-list">{children.map(n=><ContentNode key={n.id} node={n} onChoose={onChoose}/>)}</div></div>;
+  return <div className="pane explore-pane">
+    <Evidence node={node} edges={edges} graph={graph} onChoose={onChoose}/>
+    <section className="explore-layer contents-layer" aria-label="Legal structure">
+      <div className="layer-head"><span>Legal structure</span><h3>Contents</h3></div>
+      {children.length
+        ? <div className="contents-list">{children.map(n=><ContentNode key={n.id} node={n} onChoose={onChoose}/>)}</div>
+        : <p className="muted">No contained articles/chapters for this node.</p>}
+    </section>
+  </div>;
 }
 function ContentNode({node,onChoose}){
   const kids=node.children||[];
@@ -183,8 +189,8 @@ function ContentNode({node,onChoose}){
 
 function Evidence({node,edges,graph,onChoose}){
   const byId=new Map(graph.nodes.map(n=>[n.id,n]));
-  if(!node)return <p className="muted">Select a node.</p>;
-  return <div className="pane"><span className="kind">{label(node.node_type)}</span><h2>{node.title}</h2>{node.url&&<a className="source" href={node.url} target="_blank">Open source ↗</a>}<p className="text">{node.text?truncate(node.text,1300):'No body text for this node.'}</p><h3>Visible links</h3><div className="edge-list">{edges.slice(0,40).map(e=>{const other=byId.get(e.from_node_id===node.id?e.to_node_id:e.from_node_id);return <button key={e.id} onClick={()=>other&&onChoose(other)}><span>{label(e.edge_type)} · {e.source_method} · {Math.round((e.confidence||0)*100)}%</span><strong>{other?.title||'Unloaded node'}</strong>{e.evidence_text&&<small>{truncate(e.evidence_text,160)}</small>}</button>})}</div></div>;
+  if(!node)return <section className="explore-layer evidence-layer"><p className="muted">Select a node.</p></section>;
+  return <section className="explore-layer evidence-layer" aria-label="Graph evidence"><div className="layer-head"><span>Graph evidence</span><h3>Selected node</h3></div><span className="kind">{label(node.node_type)}</span><h2>{node.title}</h2>{node.url&&<a className="source" href={node.url} target="_blank">Open source ↗</a>}<p className="text">{node.text?truncate(node.text,1300):'No body text for this node.'}</p><h3>Visible links</h3><div className="edge-list">{edges.slice(0,40).map(e=>{const other=byId.get(e.from_node_id===node.id?e.to_node_id:e.from_node_id);return <button key={e.id} onClick={()=>other&&onChoose(other)}><span>{label(e.edge_type)} · {e.source_method} · {Math.round((e.confidence||0)*100)}%</span><strong>{other?.title||'Unloaded node'}</strong>{e.evidence_text&&<small>{truncate(e.evidence_text,160)}</small>}</button>})}</div></section>;
 }
 function Discover({interesting,onChoose}){return <div className="pane list">{interesting.map(e=><button key={e.id} onClick={()=>onChoose({id:e.from_node_id,title:e.from_title,node_type:e.from_type})}><span>{label(e.edge_type)} · {Math.round((e.confidence||0)*100)}%</span><strong>{e.from_title}</strong><small>→ {e.to_title}</small><em>{e.why}</em></button>)}</div>}
 function Analysis({analysis,onChoose}){return <div className="pane list"><div className="mini-metrics"><div><b>{analysis.stats?.nodes?.toLocaleString()||'…'}</b><span>nodes</span></div><div><b>{analysis.stats?.edges?.toLocaleString()||'…'}</b><span>edges</span></div><div><b>{analysis.stats?.edge_methods?.regex_named_reference||'…'}</b><span>named refs</span></div></div><h3>Central</h3>{analysis.centrality.map((x,i)=><button key={x.node?.id||i} onClick={()=>x.node&&onChoose(x.node)}><span>{x.degree} links</span><strong>{x.node?.title}</strong></button>)}<h3>Bridges</h3>{analysis.bridges.map((x,i)=><button key={x.node?.id||i} onClick={()=>x.node&&onChoose(x.node)}><span>{Number(x.betweenness||0).toFixed(4)}</span><strong>{x.node?.title}</strong></button>)}</div>}
