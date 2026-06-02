@@ -5,7 +5,7 @@ import './styles.css';
 const API_BASE = import.meta.env.VITE_API_BASE || '/pra-rulebook-api';
 const TYPES = ['contains','references','uses_defined_term','defines','similar_to','has_topic','has_obligation_pattern','shares_obligation_pattern','amends','resolves_to_part'];
 const PROVISION_TYPES = ['rule','chapter','guidance_section','guidance_paragraph'];
-const NODE_TYPES = [...PROVISION_TYPES,'part','defined_term','guidance_document','topic','obligation_pattern','legal_instrument','external_reference'];
+const NODE_TYPES = [...PROVISION_TYPES,'part','rulebook','defined_term','glossary','crr_terms_list','guidance_document','topic','topic_cluster','obligation_pattern','obligation_statement','legal_instrument','external_reference','rule_reference'];
 const DEFAULT_TYPES = new Set(['contains','references','uses_defined_term','defines','similar_to','has_topic','shares_obligation_pattern','amends','resolves_to_part']);
 const REPRESENTATIONS = {
   combined: { label:'Combined', hint:'Legal structure plus references, terms, semantic links and obligations.', types:[...DEFAULT_TYPES], depth:1, explicitOnly:false },
@@ -18,8 +18,9 @@ const REPRESENTATIONS = {
   article_map: { label:'Article semantic map', hint:'Article/chapter-level semantic map for zooming into the Rulebook structure.', mapLevel:'article' },
 };
 const EXPLICIT = new Set(['site_structure','html_link','html_glossary_link','glossary_source','crr_terms_source','legal_instrument_listing','regex_reference','regex_named_reference']);
-const RELATION_LABELS = { contains:'child', references:'cross-reference', uses_defined_term:'uses term', defines:'defines', similar_to:'semantic similarity', has_topic:'topic', has_topic_cluster:'topic cluster', has_obligation_pattern:'obligation pattern', shares_obligation_pattern:'shared obligation', has_structured_obligation:'structured obligation', amends:'amends', resolves_to_part:'resolves to Part' };
-const COLOUR = { legal_node:'#4f7cff', part:'#9b6bff', defined_term:'#d28b24', guidance_document:'#2d9b63', legal_instrument:'#cc5c5c', topic:'#d35cff', obligation_pattern:'#e06f2d', external_reference:'#7b8190', rulebook:'#111827' };
+const RELATION_LABELS = { contains:'contains / child', references:'cross-reference', uses_defined_term:'uses defined term', defines:'defines', similar_to:'semantic similarity', has_topic:'has topic', has_topic_cluster:'topic cluster', has_obligation_pattern:'obligation signal', shares_obligation_pattern:'similar obligation', has_structured_obligation:'structured obligation', amends:'amends', resolves_to_part:'resolved Part reference' };
+const EDGE_COLOURS = { contains:'#94a3b8', references:'#60a5fa', uses_defined_term:'#f59e0b', defines:'#fbbf24', similar_to:'#d7ff64', has_topic:'#d35cff', has_topic_cluster:'#a78bfa', has_obligation_pattern:'#fb7185', shares_obligation_pattern:'#f97316', has_structured_obligation:'#f43f5e', amends:'#ef4444', resolves_to_part:'#38bdf8' };
+const MATERIAL_COLOURS = { rule:'#4f7cff', supervisory_statement:'#22c55e', statement_of_policy:'#14b8a6', definition:'#d28b24', external_reference:'#7b8190', legal_instrument:'#cc5c5c', analysis:'#d35cff', rulebook:'#9b6bff' };
 const CLUSTER_COLOURS = ['#4f7cff','#d28b24','#58a978','#d35cff','#cc5c5c','#35b6b4','#d7ff64','#a78bfa','#fb7185','#60a5fa','#f59e0b','#34d399'];
 
 function App(){
@@ -146,7 +147,16 @@ function App(){
   const selectedEdges=useMemo(()=>visibleGraph.edges.filter(e=>detail&&(e.from_node_id===detail.id||e.to_node_id===detail.id)),[visibleGraph,detail]);
   function toggleNodeType(t){
     const next=new Set(nodeTypes);
-    const group=t==='legal_node'?PROVISION_TYPES:[t];
+    const groups={
+      rule:['rule','chapter','part','rulebook'],
+      definition:['defined_term','glossary','crr_terms_list'],
+      supervisory_statement:['guidance_document','guidance_section','guidance_paragraph'],
+      statement_of_policy:['guidance_document','guidance_section','guidance_paragraph'],
+      analysis:['topic','topic_cluster','obligation_pattern','obligation_statement'],
+      legal_instrument:['legal_instrument'],
+      external_reference:['external_reference','rule_reference'],
+    };
+    const group=groups[t]||[t];
     const allOn=group.every(x=>next.has(x));
     group.forEach(x=>allOn?next.delete(x):next.add(x));
     setNodeTypes(next);
@@ -207,27 +217,34 @@ function Graph({graph,selected,detail,nodeTypes,onToggleNodeType,onSelect,onOpen
       onPointerDown={startPan} onPointerMove={movePan} onPointerUp={endPan} onPointerLeave={()=>{endPan();setHover(null)}}
       onWheel={e=>{e.preventDefault(); const dz=e.deltaY>0?.92:1.08; setView(v=>({...v,z:Math.max(.55,Math.min(1.8,v.z*dz))}));}}>
       <g transform={`translate(${view.x} ${view.y}) scale(${view.z})`}>
-        {edges.map(e=>{const a=byId.get(e.from_node_id),b=byId.get(e.to_node_id); if(!a||!b)return null; const inf=!EXPLICIT.has(e.source_method); const showLabel=graph.level!=='part' || (e.confidence||0)>0.82; return <g key={e.id} className={inf?'edge-group inferred':'edge-group'}><line x1={a.x} y1={a.y} x2={b.x} y2={b.y} className={inf?'edge inferred':'edge'} strokeWidth={Math.max(1.2,(e.confidence||.45)*2.8)} />{showLabel&&<text className="edge-label" x={(a.x+b.x)/2} y={(a.y+b.y)/2}>{relationLabel(e.edge_type)}</text>}</g>})}
+        {edges.map(e=>{const a=byId.get(e.from_node_id),b=byId.get(e.to_node_id); if(!a||!b)return null; const inf=!EXPLICIT.has(e.source_method); const showLabel=graph.level!=='part' || (e.confidence||0)>0.82; return <g key={e.id} className={inf?'edge-group inferred':'edge-group'}><line x1={a.x} y1={a.y} x2={b.x} y2={b.y} className={`edge edge-${e.edge_type}`} style={{stroke:edgeColour(e.edge_type)}} strokeWidth={Math.max(1.2,(e.confidence||.45)*2.8)} />{showLabel&&<text className="edge-label" x={(a.x+b.x)/2} y={(a.y+b.y)/2} style={{fill:edgeColour(e.edge_type)}}>{relationLabel(e.edge_type)}</text>}</g>})}
         {nodes.map(n=><g key={n.id} className={`node ${selected?.id===n.id?'selected':''} ${detail?.id===n.id?'focus':''}`}
           onClick={()=>onSelect(n)} onDoubleClick={()=>onOpen(n)}
           onPointerEnter={e=>setHover({node:n,x:e.clientX,y:e.clientY})}
           onPointerMove={e=>setHover({node:n,x:e.clientX,y:e.clientY})}
           onPointerLeave={()=>setHover(null)}>
           <circle cx={n.x} cy={n.y} r={r(n,graph)} fill={nodeFill(n,graph)} />
-          <text x={n.x} y={n.y+r(n)+15} textAnchor="middle">{truncate(n.title||n.id,n.id===selected?.id?38:24)}</text>
+          <text x={n.x} y={n.y+r(n,graph)+15} textAnchor="middle">{truncate(n.title||n.id,n.id===selected?.id?38:24)}</text>
         </g>)}
       </g>
     </svg>
-    {hover&&<div className="node-tip" style={{left:hover.x+14,top:hover.y+14}}><span>{label(hover.node.node_type)}</span><strong>{hover.node.title}</strong><small>{truncate(hover.node.text||hover.node.url||'',180)}</small></div>}
+    {hover&&<div className="node-tip" style={{left:hover.x+14,top:hover.y+14}}><span>{materialLabel(materialType(hover.node))}</span><strong>{hover.node.title}</strong><small>{truncate(hover.node.text||hover.node.url||'',180)}</small></div>}
     <Legend active={nodeTypes} onToggle={onToggleNodeType} />
     <div className="zoom"><button onClick={()=>setView(v=>({...v,z:Math.min(1.8,v.z*1.15)}))}>＋</button><button onClick={()=>setView(v=>({...v,z:Math.max(.55,v.z*.85)}))}>−</button><button onClick={()=>setView({x:0,y:0,z:1})}>⌂</button></div>
   </div>;
 }
 
 function Legend({active,onToggle}){
-  const items=['legal_node','part','defined_term','guidance_document','topic','obligation_pattern','legal_instrument','external_reference'];
-  const isOn=t=>t==='legal_node'?PROVISION_TYPES.some(x=>active?.has(x)):active?.has(t);
-  return <div className="legend">{items.map(t=><button key={t} className={isOn(t)?'on':'off'} onClick={()=>onToggle(t)} title={`Toggle ${label(t)}`}><i style={{background:displayColour(t)}} /> <span>{label(t)}</span></button>)}<div><i className="line"/> <span>explicit edge</span></div><div><i className="line dash"/> <span>inferred edge</span></div></div>
+  const materialItems=['rule','supervisory_statement','statement_of_policy','definition','legal_instrument','external_reference','analysis'];
+  const relationItems=['contains','references','uses_defined_term','similar_to','has_topic','has_obligation_pattern','shares_obligation_pattern','amends','resolves_to_part'];
+  const isOn=t=>{
+    if(t==='rule') return ['rule','chapter','part','rulebook'].some(x=>active?.has(x));
+    if(t==='definition') return ['defined_term','glossary','crr_terms_list'].some(x=>active?.has(x));
+    if(['supervisory_statement','statement_of_policy'].includes(t)) return ['guidance_document','guidance_section','guidance_paragraph'].some(x=>active?.has(x));
+    if(t==='analysis') return ['topic','topic_cluster','obligation_pattern','obligation_statement'].some(x=>active?.has(x));
+    return active?.has(t);
+  };
+  return <div className="legend split"><div className="legend-title">Material</div>{materialItems.map(t=><button key={t} className={isOn(t)?'on':'off'} onClick={()=>onToggle(t)} title={`Toggle ${materialLabel(t)}`}><i style={{background:MATERIAL_COLOURS[t]||'#64748b'}} /> <span>{materialLabel(t)}</span></button>)}<div className="legend-title">Relationship</div>{relationItems.map(t=><div key={t}><i className="line" style={{borderTopColor:edgeColour(t)}}/> <span>{relationLabel(t)}</span></div>)}<div><i className="line dash"/> <span>inferred/analytic</span></div></div>
 }
 
 function Explore({node,edges,graph,onChoose}){
@@ -305,25 +322,35 @@ function r(n,graph){
   return Math.min(25,(n.node_type==='part'?14:n.node_type==='topic'?13:n.node_type==='defined_term'?11:9)+Math.sqrt(n.degree||1));
 }
 function nodeFill(n,graph){
-  if(graph?.level==='part') return CLUSTER_COLOURS[(n.metadata?.semantic_cluster??0)%CLUSTER_COLOURS.length];
-  return displayColour(n.node_type);
+  if(graph?.level==='part' || graph?.level==='article') return CLUSTER_COLOURS[(n.metadata?.semantic_cluster??0)%CLUSTER_COLOURS.length];
+  return MATERIAL_COLOURS[materialType(n)]||'#64748b';
 }
 function emptyNodeMessage(node){
   if(['part','chapter','guidance_document','guidance_section','rulebook'].includes(node?.node_type)) return 'This is a heading or container node. The substantive legal text is held in the child provision nodes shown in the left-hand contents panel.';
   if(node?.metadata?.placeholder) return 'This is a placeholder reference node. Open the source link for the external definition or referenced material.';
   return 'No body text for this node.';
 }
+function edgeColour(v){return EDGE_COLOURS[v]||'#94a3b8'}
 function relationLabel(v){return RELATION_LABELS[v]||String(v||'').replaceAll('_',' ')}
-function displayColour(v){return COLOUR[PROVISION_TYPES.includes(v)?'legal_node':v]||'#64748b'}
-function label(v){
-  if(v==='legal_node') return 'legal node';
-  if(PROVISION_TYPES.includes(v)) return 'legal node';
-  if(v==='defined_term') return 'defined term';
-  if(v==='external_reference') return 'external reference';
-  if(v==='legal_instrument') return 'legal instrument';
-  if(v==='obligation_pattern') return 'obligation pattern';
-  return String(v||'').replaceAll('_',' ');
+function materialType(n){
+  const type=typeof n==='string'?n:n?.node_type;
+  const meta=(typeof n==='string'?{}:n?.metadata)||{};
+  const url=(typeof n==='string'?'':n?.url||'').toLowerCase();
+  const doc=(meta.document_type||'').toLowerCase();
+  if(['rule','chapter','part','rulebook'].includes(type)) return 'rule';
+  if(['defined_term','glossary','crr_terms_list'].includes(type)) return 'definition';
+  if(type==='legal_instrument') return 'legal_instrument';
+  if(type==='external_reference' || type==='rule_reference') return 'external_reference';
+  if(['topic','topic_cluster','obligation_pattern','obligation_statement'].includes(type)) return 'analysis';
+  if(['guidance_document','guidance_section','guidance_paragraph'].includes(type)){
+    if(doc.includes('statement_of_policy') || url.includes('/statements-of-policy/')) return 'statement_of_policy';
+    return 'supervisory_statement';
+  }
+  return type||'external_reference';
 }
+function materialLabel(v){return ({rule:'Rulebook rule/Part',supervisory_statement:'Supervisory statement',statement_of_policy:'Statement of policy',definition:'Definition',external_reference:'External reference',legal_instrument:'Legal instrument',analysis:'Analytical node'}[v]||String(v||'').replaceAll('_',' '))}
+function displayColour(v){return MATERIAL_COLOURS[materialType(v)]||'#64748b'}
+function label(v){return materialLabel(materialType(v))}
 function truncate(s='',n=120){return s&&s.length>n?s.slice(0,n-1)+'…':s}
 
 createRoot(document.getElementById('root')).render(<App/>);
