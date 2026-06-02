@@ -12,6 +12,10 @@ from sklearn.cluster import KMeans
 from .db import row_to_edge, row_to_node
 
 EXPLICIT_METHODS = {"site_structure", "html_link", "html_glossary_link", "glossary_source", "crr_terms_source", "legal_instrument_listing"}
+EDGE_LABELS = {"contains":"contains / child", "references":"cross-reference", "uses_defined_term":"uses defined term", "defines":"defines", "similar_to":"semantic similarity", "has_topic":"has topic", "has_topic_cluster":"topic cluster", "has_obligation_pattern":"obligation signal", "shares_obligation_pattern":"similar obligation", "has_structured_obligation":"structured obligation", "amends":"amends", "resolves_to_part":"resolved Part reference"}
+EDGE_COLOURS = {"contains":"#94a3b8", "references":"#60a5fa", "uses_defined_term":"#f59e0b", "defines":"#fbbf24", "similar_to":"#d7ff64", "has_topic":"#d35cff", "has_topic_cluster":"#a78bfa", "has_obligation_pattern":"#fb7185", "shares_obligation_pattern":"#f97316", "has_structured_obligation":"#f43f5e", "amends":"#ef4444", "resolves_to_part":"#38bdf8"}
+MATERIAL_COLOURS = {"rule":"#4f7cff", "supervisory_statement":"#22c55e", "statement_of_policy":"#14b8a6", "definition":"#d28b24", "external_reference":"#7b8190", "legal_instrument":"#cc5c5c", "analysis":"#d35cff", "rulebook":"#9b6bff"}
+CLUSTER_COLOURS = ["#4f7cff", "#d28b24", "#58a978", "#d35cff", "#cc5c5c", "#35b6b4", "#d7ff64", "#a78bfa", "#fb7185", "#60a5fa", "#f59e0b", "#34d399"]
 
 
 def stats(conn: sqlite3.Connection) -> dict[str, Any]:
@@ -398,7 +402,7 @@ def semantic_map(conn: sqlite3.Connection, *, level: str = "part", clusters: int
         node["y"] = float(coords[i, 1])
         node["degree"] = float(weighted_degree[node["id"]])
         node["metadata"] = {**(node.get("metadata") or {}), "semantic_cluster": int(labels[i]), "weighted_degree": float(weighted_degree[node["id"]])}
-    return {"level": level, "nodes": nodes, "edges": edges, "clusters": len(set(labels)), "available_edge_types": dict(Counter(e["edge_type"] for e in edges))}
+    return _decorate_graph_view({"level": level, "nodes": nodes, "edges": edges, "clusters": len(set(labels)), "available_edge_types": dict(Counter(e["edge_type"] for e in edges))})
 
 
 def _article_semantic_map(conn: sqlite3.Connection, *, clusters: int = 18, edge_limit: int = 1800) -> dict[str, Any]:
@@ -445,7 +449,7 @@ def _article_semantic_map(conn: sqlite3.Connection, *, clusters: int = 18, edge_
         node["y"] = float(coords[i, 1])
         node["degree"] = float(weighted_degree[node["id"]])
         node["metadata"] = {**(node.get("metadata") or {}), "semantic_cluster": int(labels[i]), "weighted_degree": float(weighted_degree[node["id"]])}
-    return {"level": "article", "nodes": nodes, "edges": edges, "clusters": len(set(labels)), "available_edge_types": dict(Counter(e["edge_type"] for e in edges))}
+    return _decorate_graph_view({"level": "article", "nodes": nodes, "edges": edges, "clusters": len(set(labels)), "available_edge_types": dict(Counter(e["edge_type"] for e in edges))})
 
 
 def _aggregate_container_edges(conn: sqlite3.Connection, node_to_container: dict[str, str], *, edge_limit: int) -> tuple[list[dict[str, Any]], Counter[str]]:
@@ -482,6 +486,48 @@ def _aggregate_container_edges(conn: sqlite3.Connection, node_to_container: dict
             "source_url": "", "metadata": {"weight": weight, "counts": dict(methods)},
         })
     return edges, weighted_degree
+
+
+def _decorate_graph_view(view: dict[str, Any]) -> dict[str, Any]:
+    level = view.get("level")
+    for node in view.get("nodes", []):
+        material = _material_type(node)
+        cluster = (node.get("metadata") or {}).get("semantic_cluster")
+        degree = float(node.get("degree") or (node.get("metadata") or {}).get("weighted_degree") or 0)
+        if level in {"part", "article"} and cluster is not None:
+            colour = CLUSTER_COLOURS[int(cluster) % len(CLUSTER_COLOURS)]
+        else:
+            colour = MATERIAL_COLOURS.get(material, "#64748b")
+        radius = min(36, (9 if level == "article" else 10) + (degree or 1) ** 0.5 * (0.85 if level == "article" else 1.15))
+        node["visual"] = {"material": material, "colour": colour, "radius": radius, "label_priority": degree, "cluster": cluster}
+    for edge in view.get("edges", []):
+        edge_type = edge.get("edge_type") or ""
+        inferred = edge.get("source_method") not in EXPLICIT_METHODS
+        edge["visual"] = {"relationship": EDGE_LABELS.get(edge_type, edge_type.replace("_", " ")), "colour": EDGE_COLOURS.get(edge_type, "#94a3b8"), "line_style": "dashed" if inferred else "solid", "width": max(1.2, float(edge.get("confidence") or 0.45) * 2.8)}
+    view["visual_schema"] = {"node_colour": "material type, or semantic cluster on map views", "node_size": "weighted connectedness", "edge_colour": "relationship type", "edge_line_style": "solid explicit, dashed inferred/analytic"}
+    return view
+
+
+def _material_type(node: dict[str, Any]) -> str:
+    node_type = node.get("node_type") or ""
+    meta = node.get("metadata") or {}
+    url = (node.get("url") or "").lower()
+    doc_type = (meta.get("document_type") or "").lower()
+    if node_type in {"rule", "chapter", "part", "rulebook"}:
+        return "rule"
+    if node_type in {"defined_term", "glossary", "crr_terms_list"}:
+        return "definition"
+    if node_type == "legal_instrument":
+        return "legal_instrument"
+    if node_type in {"external_reference", "rule_reference"}:
+        return "external_reference"
+    if node_type in {"topic", "topic_cluster", "obligation_pattern", "obligation_statement"}:
+        return "analysis"
+    if node_type in {"guidance_document", "guidance_section", "guidance_paragraph"}:
+        if "statement_of_policy" in doc_type or "/statements-of-policy/" in url:
+            return "statement_of_policy"
+        return "supervisory_statement"
+    return "external_reference"
 
 
 def _part_key_from_stable(stable_key: str) -> str | None:

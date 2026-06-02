@@ -213,7 +213,7 @@ function Graph({graph,selected,detail,nodeTypes,onToggleNodeType,onSelect,onOpen
       onPointerDown={startPan} onPointerMove={movePan} onPointerUp={endPan} onPointerLeave={()=>{endPan();setHover(null)}}
       onWheel={e=>{e.preventDefault(); const dz=e.deltaY>0?.92:1.08; setView(v=>({...v,z:Math.max(.55,Math.min(1.8,v.z*dz))}));}}>
       <g transform={`translate(${view.x} ${view.y}) scale(${view.z})`}>
-        {edges.map(e=>{const a=byId.get(e.from_node_id),b=byId.get(e.to_node_id); if(!a||!b)return null; const inf=!EXPLICIT.has(e.source_method); return <g key={e.id} className={inf?'edge-group inferred':'edge-group'}><line x1={a.x} y1={a.y} x2={b.x} y2={b.y} className={`edge edge-${e.edge_type}`} style={{stroke:edgeColour(e.edge_type)}} strokeWidth={Math.max(1.2,(e.confidence||.45)*2.8)} /></g>})}
+        {edges.map(e=>{const a=byId.get(e.from_node_id),b=byId.get(e.to_node_id); if(!a||!b)return null; const inf=!EXPLICIT.has(e.source_method); return <g key={e.id} className={inf?'edge-group inferred':'edge-group'}><line x1={a.x} y1={a.y} x2={b.x} y2={b.y} className={`edge edge-${e.edge_type}`} style={{stroke:e.visual?.colour||edgeColour(e.edge_type),strokeDasharray:e.visual?.line_style==='dashed'?'5 7':undefined}} strokeWidth={e.visual?.width||Math.max(1.2,(e.confidence||.45)*2.8)} /></g>})}
         {nodes.map(n=><g key={n.id} className={`node ${selected?.id===n.id?'selected':''} ${detail?.id===n.id?'focus':''}`}
           onClick={()=>onSelect(n)} onDoubleClick={()=>onOpen(n)}
           onPointerEnter={e=>setHover({node:n,x:e.clientX,y:e.clientY})}
@@ -325,6 +325,7 @@ function spreadNodes(input,graph){
   return nodes;
 }
 function r(n,graph){
+  if(n.visual?.radius) return n.visual.radius;
   if(graph?.level==='part') return Math.min(34,8+Math.sqrt(Math.max(1,n.degree||n.metadata?.weighted_degree||1))*1.15);
   return Math.min(25,(n.node_type==='part'?14:n.node_type==='topic'?13:n.node_type==='defined_term'?11:9)+Math.sqrt(n.degree||1));
 }
@@ -343,6 +344,7 @@ function labelChars(n,view,graph,selected){
   return view.z>1.2?42:26;
 }
 function nodeFill(n,graph){
+  if(n.visual?.colour) return n.visual.colour;
   if(graph?.level==='part' || graph?.level==='article') return CLUSTER_COLOURS[(n.metadata?.semantic_cluster??0)%CLUSTER_COLOURS.length];
   return MATERIAL_COLOURS[materialType(n)]||'#64748b';
 }
