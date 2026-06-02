@@ -10,13 +10,14 @@ const DEFAULT_TYPES = new Set(['contains','references','uses_defined_term','defi
 const REPRESENTATIONS = {
   combined: { label:'Combined', hint:'Legal structure plus references, terms, semantic links and obligations.', types:[...DEFAULT_TYPES], depth:1, explicitOnly:false },
   hierarchy: { label:'Legal hierarchy', hint:'Parts, articles, chapters, rules and paragraphs only.', types:['contains'], depth:2, explicitOnly:true },
-  references: { label:'Cross-references', hint:'Explicit legal and named references between provisions.', types:['references','amends','resolves_to_part'], depth:2, explicitOnly:true },
+  references: { label:'Cross-references', hint:'Cross-reference links, with child context so Article-level headings expose paragraph-level references.', types:['contains','references','amends','resolves_to_part'], depth:2, explicitOnly:false },
   definitions: { label:'Definitions', hint:'Glossary and CRR term usage.', types:['uses_defined_term','defines'], depth:2, explicitOnly:true },
   semantic: { label:'Semantic similarity', hint:'Embedding-derived similarity and topic links.', types:['similar_to','has_topic'], depth:1, explicitOnly:false },
   obligations: { label:'Obligations', hint:'Provisions with similar obligation patterns.', types:['has_obligation_pattern','shares_obligation_pattern'], depth:1, explicitOnly:false },
 };
 const EXPLICIT = new Set(['site_structure','html_link','html_glossary_link','glossary_source','crr_terms_source','legal_instrument_listing','regex_reference','regex_named_reference']);
-const COLOUR = { provision:'#4f7cff', part:'#9b6bff', defined_term:'#d28b24', guidance_document:'#2d9b63', legal_instrument:'#cc5c5c', topic:'#d35cff', obligation_pattern:'#e06f2d', external_reference:'#7b8190', rulebook:'#111827' };
+const RELATION_LABELS = { contains:'child', references:'cross-reference', uses_defined_term:'uses term', defines:'defines', similar_to:'semantic similarity', has_topic:'topic', has_topic_cluster:'topic cluster', has_obligation_pattern:'obligation pattern', shares_obligation_pattern:'shared obligation', has_structured_obligation:'structured obligation', amends:'amends', resolves_to_part:'resolves to Part' };
+const COLOUR = { legal_node:'#4f7cff', part:'#9b6bff', defined_term:'#d28b24', guidance_document:'#2d9b63', legal_instrument:'#cc5c5c', topic:'#d35cff', obligation_pattern:'#e06f2d', external_reference:'#7b8190', rulebook:'#111827' };
 
 function App(){
   const [q,setQ]=useState('');
@@ -131,7 +132,7 @@ function App(){
   const selectedEdges=useMemo(()=>visibleGraph.edges.filter(e=>detail&&(e.from_node_id===detail.id||e.to_node_id===detail.id)),[visibleGraph,detail]);
   function toggleNodeType(t){
     const next=new Set(nodeTypes);
-    const group=t==='provision'?PROVISION_TYPES:[t];
+    const group=t==='legal_node'?PROVISION_TYPES:[t];
     const allOn=group.every(x=>next.has(x));
     group.forEach(x=>allOn?next.delete(x):next.add(x));
     setNodeTypes(next);
@@ -192,7 +193,7 @@ function Graph({graph,selected,detail,nodeTypes,onToggleNodeType,onSelect,onOpen
       onPointerDown={startPan} onPointerMove={movePan} onPointerUp={endPan} onPointerLeave={()=>{endPan();setHover(null)}}
       onWheel={e=>{e.preventDefault(); const dz=e.deltaY>0?.92:1.08; setView(v=>({...v,z:Math.max(.55,Math.min(1.8,v.z*dz))}));}}>
       <g transform={`translate(${view.x} ${view.y}) scale(${view.z})`}>
-        {edges.map(e=>{const a=byId.get(e.from_node_id),b=byId.get(e.to_node_id); if(!a||!b)return null; const inf=!EXPLICIT.has(e.source_method); return <line key={e.id} x1={a.x} y1={a.y} x2={b.x} y2={b.y} className={inf?'edge inferred':'edge'} strokeWidth={Math.max(1,(e.confidence||.45)*2.4)} />})}
+        {edges.map(e=>{const a=byId.get(e.from_node_id),b=byId.get(e.to_node_id); if(!a||!b)return null; const inf=!EXPLICIT.has(e.source_method); return <g key={e.id} className={inf?'edge-group inferred':'edge-group'}><line x1={a.x} y1={a.y} x2={b.x} y2={b.y} className={inf?'edge inferred':'edge'} strokeWidth={Math.max(1.4,(e.confidence||.45)*2.8)} /><text className="edge-label" x={(a.x+b.x)/2} y={(a.y+b.y)/2}>{relationLabel(e.edge_type)}</text></g>})}
         {nodes.map(n=><g key={n.id} className={`node ${selected?.id===n.id?'selected':''} ${detail?.id===n.id?'focus':''}`}
           onClick={()=>onSelect(n)} onDoubleClick={()=>onOpen(n)}
           onPointerEnter={e=>setHover({node:n,x:e.clientX,y:e.clientY})}
@@ -210,9 +211,9 @@ function Graph({graph,selected,detail,nodeTypes,onToggleNodeType,onSelect,onOpen
 }
 
 function Legend({active,onToggle}){
-  const items=['provision','part','defined_term','guidance_document','topic','obligation_pattern','legal_instrument','external_reference'];
-  const isOn=t=>t==='provision'?PROVISION_TYPES.some(x=>active?.has(x)):active?.has(t);
-  return <div className="legend">{items.map(t=><button key={t} className={isOn(t)?'on':'off'} onClick={()=>onToggle(t)} title={`Toggle ${label(t)}`}><i style={{background:displayColour(t)}} /> <span>{label(t)}</span></button>)}<div><i className="line"/> <span>explicit</span></div><div><i className="line dash"/> <span>inferred</span></div></div>
+  const items=['legal_node','part','defined_term','guidance_document','topic','obligation_pattern','legal_instrument','external_reference'];
+  const isOn=t=>t==='legal_node'?PROVISION_TYPES.some(x=>active?.has(x)):active?.has(t);
+  return <div className="legend">{items.map(t=><button key={t} className={isOn(t)?'on':'off'} onClick={()=>onToggle(t)} title={`Toggle ${label(t)}`}><i style={{background:displayColour(t)}} /> <span>{label(t)}</span></button>)}<div><i className="line"/> <span>explicit edge</span></div><div><i className="line dash"/> <span>inferred edge</span></div></div>
 }
 
 function Explore({node,edges,graph,onChoose}){
@@ -224,7 +225,7 @@ function ContentNode({node,onChoose}){
   return <div className={`content-node ${node.node_type}`}>
     <button type="button" onClick={()=>onChoose(node)} aria-label={`Open ${node.title}`}>
       <span className="content-rail"><i>{kids.length?'▾':'›'}</i></span>
-      <span className="content-body"><span className="content-meta"><b>{label(node.node_type)}</b>{number&&<em>{number}</em>}{kids.length>0&&<em>{kids.length} item{kids.length===1?'':'s'}</em>}</span><strong>{node.title}</strong>{node.text&&<small>{truncate(node.text,190)}</small>}</span>
+      <span className="content-body"><span className="content-meta"><b>child</b><em>{label(node.node_type)}</em>{number&&<em>{number}</em>}{kids.length>0&&<em>{kids.length} item{kids.length===1?'':'s'}</em>}</span><strong>{node.title}</strong>{node.text&&<small>{truncate(node.text,190)}</small>}</span>
       <span className="content-open">Open</span>
     </button>
     {kids.length>0&&<div className="content-children">{kids.map(k=><ContentNode key={k.id} node={k} onChoose={onChoose}/>)}</div>}
@@ -243,8 +244,8 @@ function Evidence({node,edges,graph,onChoose}){
       <p className="text">{node.text?truncate(node.text,1300):emptyNodeMessage(node)}</p>
     </Collapsible>
     {groups.length
-      ? groups.map(([edgeType,items],i)=><Collapsible key={edgeType} title={label(edgeType)} count={`${items.length} link${items.length===1?'':'s'}`} open={i<2}>
-          <div className="edge-list">{items.slice(0,40).map(e=>{const other=byId.get(e.from_node_id===node.id?e.to_node_id:e.from_node_id);return <button key={e.id} onClick={()=>other&&onChoose(other)}><span>{e.source_method} · {Math.round((e.confidence||0)*100)}%</span><strong>{other?.title||'Unloaded node'}</strong>{e.evidence_text&&<small>{truncate(e.evidence_text,160)}</small>}</button>})}</div>
+      ? groups.map(([edgeType,items],i)=><Collapsible key={edgeType} title={relationLabel(edgeType)} count={`${items.length} link${items.length===1?'':'s'}`} open={i<2}>
+          <div className="edge-list">{items.slice(0,40).map(e=>{const other=byId.get(e.from_node_id===node.id?e.to_node_id:e.from_node_id);return <button key={e.id} onClick={()=>other&&onChoose(other)}><span>{relationLabel(e.edge_type)} · {e.source_method} · {Math.round((e.confidence||0)*100)}%</span><strong>{other?.title||'Unloaded node'}</strong>{e.evidence_text&&<small>{truncate(e.evidence_text,160)}</small>}</button>})}</div>
           {items.length>40&&<p className="muted">Showing first 40 of {items.length} visible links. Increase the graph cap to load more.</p>}
         </Collapsible>)
       : <Collapsible title="Visible analytical links" count="0 links" open><p className="muted">No semantic, reference, definition or obligation links are visible for this node under the current representation/settings.</p></Collapsible>}
@@ -290,9 +291,11 @@ function emptyNodeMessage(node){
   if(node?.metadata?.placeholder) return 'This is a placeholder reference node. Open the source link for the external definition or referenced material.';
   return 'No body text for this node.';
 }
-function displayColour(v){return COLOUR[PROVISION_TYPES.includes(v)?'provision':v]||'#64748b'}
+function relationLabel(v){return RELATION_LABELS[v]||String(v||'').replaceAll('_',' ')}
+function displayColour(v){return COLOUR[PROVISION_TYPES.includes(v)?'legal_node':v]||'#64748b'}
 function label(v){
-  if(PROVISION_TYPES.includes(v)) return 'provision';
+  if(v==='legal_node') return 'legal node';
+  if(PROVISION_TYPES.includes(v)) return 'legal node';
   if(v==='defined_term') return 'defined term';
   if(v==='external_reference') return 'external reference';
   if(v==='legal_instrument') return 'legal instrument';
