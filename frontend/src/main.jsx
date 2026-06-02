@@ -21,6 +21,7 @@ function App(){
   const [q,setQ]=useState('');
   const [results,setResults]=useState([]);
   const [railContext,setRailContext]=useState(null);
+  const [railStack,setRailStack]=useState([]);
   const [selected,setSelected]=useState(null);
   const [detail,setDetail]=useState(null);
   const [graph,setGraph]=useState({nodes:[],edges:[],available_edge_types:{}});
@@ -55,6 +56,7 @@ function App(){
       setAnalysis({stats,interesting:interesting.results||[],centrality:centrality.degree||[],bridges:bridges.results||[]});
       setResults(parts.results||[]);
       setRailContext(null);
+      setRailStack([]);
       if(roots.results?.[0]) await choose(roots.results[0], {drill:false});
     }catch(e){setError(e.message||String(e));}
   }
@@ -62,6 +64,7 @@ function App(){
     const data=await api('/nodes?types=part&limit=300');
     setResults(data.results||[]);
     setRailContext(null);
+    setRailStack([]);
   }
   async function search(e,first=false){
     e?.preventDefault(); setBusy(true); setError('');
@@ -72,6 +75,7 @@ function App(){
         const data=await api(`/search?q=${encodeURIComponent(q)}&limit=30`);
         setResults(data.results||[]);
         setRailContext({kind:'Search results',title:q.trim()});
+        setRailStack([]);
         if((first || !selected) && data.results?.[0]) await choose(data.results[0], {drill:false});
       }
     }catch(err){setError(err.message||String(err));}
@@ -82,9 +86,19 @@ function App(){
     setSelected(full); setDetail(full); setPanelOpen(true);
     const [tree]=await Promise.all([loadContents(full.id), loadNeighbourhood(full.id)]);
     if(opts.drill!==false && tree?.children?.length && ['rulebook','part','chapter'].includes(full.node_type)){
+      setRailStack(stack=>[...stack,{results,railContext}]);
       setResults(tree.children);
       setRailContext({kind:'Contents',title:full.title});
     }
+  }
+  function goUp(){
+    setRailStack(stack=>{
+      if(!stack.length) return stack;
+      const previous=stack[stack.length-1];
+      setResults(previous.results||[]);
+      setRailContext(previous.railContext||null);
+      return stack.slice(0,-1);
+    });
   }
   async function loadContents(id){
     try{
@@ -137,7 +151,7 @@ function App(){
     </header>
 
     <aside className="rail">
-      <div className="product"><strong>PRA Rulebook</strong><span>{railContext?`${railContext.kind} · ${railContext.title}`:(q.trim()?'Search results':'All Rulebook Parts')} · {analysis.stats?`${analysis.stats.nodes.toLocaleString()} nodes`:''}</span>{railContext&&<button className="back-link" onClick={loadAllParts}>‹ All Parts</button>}</div>
+      <div className="product"><strong>PRA Rulebook</strong><span>{railContext?`${railContext.kind} · ${railContext.title}`:(q.trim()?'Search results':'All Rulebook Parts')} · {analysis.stats?`${analysis.stats.nodes.toLocaleString()} nodes`:''}</span><div className="rail-actions">{railStack.length>0&&<button className="back-link" onClick={goUp}>‹ Up one level</button>}{railContext&&<button className="back-link secondary" onClick={loadAllParts}>All Parts</button>}</div></div>
       {error&&<div className="error">{error}</div>}
       <div className="result-stack">{results.map(r=><button key={r.id} className={selected?.id===r.id?'hit active':'hit'} onClick={()=>choose(r)}><span>{label(r.node_type)}</span><strong>{r.title}</strong><small>{truncate(r.snippet||r.text,128)}</small></button>)}</div>
     </aside>
