@@ -8,12 +8,12 @@ const PROVISION_TYPES = ['rule','chapter','guidance_section','guidance_paragraph
 const NODE_TYPES = [...PROVISION_TYPES,'part','rulebook','defined_term','glossary','crr_terms_list','guidance_document','topic','topic_cluster','obligation_pattern','obligation_statement','legal_instrument','external_reference','rule_reference'];
 const DEFAULT_TYPES = new Set(['contains','references','uses_defined_term','defines','similar_to','has_topic','shares_obligation_pattern','amends','resolves_to_part']);
 const REPRESENTATIONS = {
-  combined: { label:'Combined', hint:'Legal structure plus references, terms, semantic links and obligations.', types:[...DEFAULT_TYPES], depth:1, explicitOnly:false },
-  hierarchy: { label:'Legal hierarchy', hint:'Parts, articles, chapters, rules and paragraphs only.', types:['contains'], depth:2, explicitOnly:true },
-  references: { label:'Cross-references', hint:'Cross-reference links, with child context so Article-level headings expose paragraph-level references.', types:['contains','references','amends','resolves_to_part'], depth:2, explicitOnly:false },
-  definitions: { label:'Definitions', hint:'Glossary and CRR term usage.', types:['uses_defined_term','defines'], depth:2, explicitOnly:true },
-  semantic: { label:'Semantic similarity', hint:'Embedding-derived similarity and topic links.', types:['similar_to','has_topic'], depth:1, explicitOnly:false },
-  obligations: { label:'Obligations', hint:'Provisions with similar obligation patterns.', types:['has_obligation_pattern','shares_obligation_pattern'], depth:1, explicitOnly:false },
+  combined: { label:'Combined', hint:'Legal structure plus rolled-up references, terms, semantic links and obligations.', types:[...DEFAULT_TYPES], depth:1, explicitOnly:false },
+  hierarchy: { label:'Legal hierarchy', hint:'Parts, articles, chapters, rules and paragraphs only.', types:['contains'], depth:2, explicitOnly:false },
+  references: { label:'Cross-references', hint:'Rolled-up cross-reference links, with child context so Article-level headings expose paragraph-level references.', types:['contains','references','amends','resolves_to_part'], depth:2, explicitOnly:false },
+  definitions: { label:'Definitions', hint:'Rolled-up glossary and CRR term usage.', types:['uses_defined_term','defines'], depth:2, explicitOnly:false },
+  semantic: { label:'Semantic similarity', hint:'Rolled-up embedding-derived similarity and topic links.', types:['similar_to','has_topic'], depth:1, explicitOnly:false },
+  obligations: { label:'Obligations', hint:'Rolled-up provisions with similar obligation patterns.', types:['has_obligation_pattern','shares_obligation_pattern'], depth:1, explicitOnly:false },
   whole_map: { label:'Whole Rulebook map', hint:'Part-level semantic map: distance reflects averaged provision embeddings, colour shows topic clusters, size reflects weighted connections.', mapLevel:'part' },
   article_map: { label:'Article semantic map', hint:'Article/chapter-level semantic map for zooming into the Rulebook structure.', mapLevel:'article' },
 };
