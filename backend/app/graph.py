@@ -6,6 +6,8 @@ from collections import Counter, deque
 from typing import Any
 
 import networkx as nx
+import numpy as np
+from sklearn.cluster import KMeans
 
 from .db import row_to_edge, row_to_node
 
@@ -304,6 +306,128 @@ def common_neighbours(conn: sqlite3.Connection, source: str, target: str, *, lim
     # Rank common neighbours by graph degree so the most explanatory bridges appear first.
     common = sorted(common, key=lambda nid: graph.degree(nid), reverse=True)[:limit]
     return {"source": source, "target": target, "count": len(common), "nodes": _nodes_for_ids(conn, common)}
+
+
+def semantic_map(conn: sqlite3.Connection, *, level: str = "part", clusters: int = 12, edge_limit: int = 700) -> dict[str, Any]:
+    """Whole-Rulebook semantic map.
+
+    Part-level for now: each Part vector is the average embedding of its rule
+    provisions. Edges aggregate lower-level semantic, reference, term and
+    obligation links between Parts.
+    """
+    if level != "part":
+        raise ValueError("Only level='part' is currently supported")
+
+    part_rows = conn.execute(
+        "SELECT id,node_type,stable_key,title,text,url,metadata_json FROM node WHERE node_type='part' ORDER BY title"
+    ).fetchall()
+    parts_by_key = {r["stable_key"]: row_to_node(r) for r in part_rows}
+    node_to_part: dict[str, str] = {}
+    vectors_by_part: dict[str, list[np.ndarray]] = {p["id"]: [] for p in parts_by_key.values()}
+
+    for row in conn.execute(
+        """
+        SELECT n.id,n.stable_key,emb.vector_json
+        FROM node n JOIN embedding emb ON emb.node_id=n.id
+        WHERE n.node_type='rule'
+        """
+    ):
+        part_key = _part_key_from_stable(row["stable_key"])
+        part = parts_by_key.get(part_key or "")
+        if not part:
+            continue
+        node_to_part[row["id"]] = part["id"]
+        vectors_by_part[part["id"]].append(np.array(json.loads(row["vector_json"]), dtype="float32"))
+
+    nodes: list[dict[str, Any]] = []
+    part_vectors: list[np.ndarray] = []
+    for part in parts_by_key.values():
+        vectors = vectors_by_part.get(part["id"]) or []
+        vector = np.mean(np.vstack(vectors), axis=0) if vectors else np.zeros(256, dtype="float32")
+        part_vectors.append(vector)
+        part["metadata"] = {**(part.get("metadata") or {}), "provision_count": len(vectors)}
+        nodes.append(part)
+
+    matrix = np.vstack(part_vectors) if part_vectors else np.zeros((0, 2), dtype="float32")
+    coords = _project_2d(matrix)
+    labels = _cluster_labels(matrix, min(clusters, max(2, len(nodes) // 4))) if len(nodes) >= 3 else [0] * len(nodes)
+
+    pair_weights: Counter[tuple[str, str]] = Counter()
+    pair_methods: dict[tuple[str, str], Counter[str]] = {}
+    for row in conn.execute(
+        """
+        SELECT from_node_id,to_node_id,edge_type,source_method,confidence
+        FROM edge
+        WHERE edge_type IN ('similar_to','references','uses_defined_term','has_topic','has_topic_cluster','has_obligation_pattern','shares_obligation_pattern')
+          AND source_method <> 'site_structure'
+        """
+    ):
+        a = node_to_part.get(row["from_node_id"])
+        b = node_to_part.get(row["to_node_id"])
+        if not a or not b or a == b:
+            continue
+        key = tuple(sorted((a, b)))
+        kind_weight = {"similar_to": 1.4, "references": 1.2, "uses_defined_term": 0.45, "has_topic": 0.25, "has_topic_cluster": 0.35, "has_obligation_pattern": 0.35, "shares_obligation_pattern": 0.8}.get(row["edge_type"], 0.4)
+        pair_weights[key] += float(row["confidence"] or 0.5) * kind_weight
+        pair_methods.setdefault(key, Counter())[row["edge_type"]] += 1
+
+    weighted_degree: Counter[str] = Counter()
+    edges: list[dict[str, Any]] = []
+    for i, ((a, b), weight) in enumerate(pair_weights.most_common(edge_limit)):
+        weighted_degree[a] += weight
+        weighted_degree[b] += weight
+        methods = pair_methods.get((a, b), Counter())
+        dominant = methods.most_common(1)[0][0] if methods else "similar_to"
+        edges.append({
+            "id": f"semantic-map:{i}:{a}:{b}",
+            "from_node_id": a,
+            "to_node_id": b,
+            "edge_type": dominant,
+            "source_method": "part_level_aggregate",
+            "confidence": min(1.0, weight / 12),
+            "evidence_text": ", ".join(f"{k}: {v}" for k, v in methods.most_common(4)),
+            "source_url": "",
+            "metadata": {"weight": weight, "counts": dict(methods)},
+        })
+
+    for i, node in enumerate(nodes):
+        node["x"] = float(coords[i, 0])
+        node["y"] = float(coords[i, 1])
+        node["degree"] = float(weighted_degree[node["id"]])
+        node["metadata"] = {**(node.get("metadata") or {}), "semantic_cluster": int(labels[i]), "weighted_degree": float(weighted_degree[node["id"]])}
+    return {"level": level, "nodes": nodes, "edges": edges, "clusters": len(set(labels)), "available_edge_types": dict(Counter(e["edge_type"] for e in edges))}
+
+
+def _part_key_from_stable(stable_key: str) -> str | None:
+    parts = (stable_key or "").split(":")
+    if len(parts) >= 3 and parts[1] == "part":
+        return f"part:{parts[2]}"
+    return None
+
+
+def _project_2d(matrix: np.ndarray) -> np.ndarray:
+    if matrix.size == 0:
+        return np.zeros((0, 2), dtype="float32")
+    centred = matrix - matrix.mean(axis=0, keepdims=True)
+    try:
+        _, _, vt = np.linalg.svd(centred, full_matrices=False)
+        coords = centred @ vt[:2].T
+    except np.linalg.LinAlgError:
+        coords = centred[:, :2]
+    if coords.shape[1] < 2:
+        coords = np.pad(coords, ((0, 0), (0, 2 - coords.shape[1])))
+    mins = coords.min(axis=0); maxs = coords.max(axis=0); span = np.where(maxs - mins == 0, 1, maxs - mins)
+    norm = (coords - mins) / span
+    return np.column_stack((120 + norm[:, 0] * 960, 100 + norm[:, 1] * 620)).astype("float32")
+
+
+def _cluster_labels(matrix: np.ndarray, clusters: int) -> list[int]:
+    if matrix.size == 0 or len(matrix) < clusters:
+        return [0] * len(matrix)
+    try:
+        return [int(x) for x in KMeans(n_clusters=clusters, random_state=42, n_init="auto").fit_predict(matrix)]
+    except Exception:
+        return [0] * len(matrix)
 
 
 def _load_nx_graph(conn: sqlite3.Connection, *, max_edges: int = 250000, analysis: bool = False) -> nx.Graph:

@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from .db import DEFAULT_DB, connect, ensure_indexes, get_node
-from .graph import betweenness, centrality, common_neighbours, communities, components, contents_tree, interesting, list_nodes, neighbourhood, search, shortest_path, stats
+from .graph import betweenness, centrality, common_neighbours, communities, components, contents_tree, interesting, list_nodes, neighbourhood, search, semantic_map, shortest_path, stats
 
 app = FastAPI(title="PRA Rulebook Explorer API", version="0.2.0")
 app.add_middleware(
@@ -124,6 +124,12 @@ def api_components(limit: int = 20) -> dict:
 def api_communities(limit: int = 20, max_nodes: int = 2500) -> dict:
     conn = connect(DB_PATH)
     return communities(conn, limit=min(limit, 100), max_nodes=min(max_nodes, 5000))
+
+
+@app.get("/analysis/semantic-map")
+def api_semantic_map(level: str = "part", clusters: int = 12, edge_limit: int = 700) -> dict:
+    conn = connect(DB_PATH)
+    return semantic_map(conn, level=level, clusters=min(max(clusters, 2), 24), edge_limit=min(max(edge_limit, 50), 2000))
 
 
 @app.get("/analysis/common-neighbours")

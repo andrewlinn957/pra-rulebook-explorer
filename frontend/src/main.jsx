@@ -14,10 +14,12 @@ const REPRESENTATIONS = {
   definitions: { label:'Definitions', hint:'Glossary and CRR term usage.', types:['uses_defined_term','defines'], depth:2, explicitOnly:true },
   semantic: { label:'Semantic similarity', hint:'Embedding-derived similarity and topic links.', types:['similar_to','has_topic'], depth:1, explicitOnly:false },
   obligations: { label:'Obligations', hint:'Provisions with similar obligation patterns.', types:['has_obligation_pattern','shares_obligation_pattern'], depth:1, explicitOnly:false },
+  whole_map: { label:'Whole Rulebook map', hint:'Part-level semantic map: distance reflects averaged provision embeddings, colour shows topic clusters, size reflects weighted connections.' },
 };
 const EXPLICIT = new Set(['site_structure','html_link','html_glossary_link','glossary_source','crr_terms_source','legal_instrument_listing','regex_reference','regex_named_reference']);
 const RELATION_LABELS = { contains:'child', references:'cross-reference', uses_defined_term:'uses term', defines:'defines', similar_to:'semantic similarity', has_topic:'topic', has_topic_cluster:'topic cluster', has_obligation_pattern:'obligation pattern', shares_obligation_pattern:'shared obligation', has_structured_obligation:'structured obligation', amends:'amends', resolves_to_part:'resolves to Part' };
 const COLOUR = { legal_node:'#4f7cff', part:'#9b6bff', defined_term:'#d28b24', guidance_document:'#2d9b63', legal_instrument:'#cc5c5c', topic:'#d35cff', obligation_pattern:'#e06f2d', external_reference:'#7b8190', rulebook:'#111827' };
+const CLUSTER_COLOURS = ['#4f7cff','#d28b24','#58a978','#d35cff','#cc5c5c','#35b6b4','#d7ff64','#a78bfa','#fb7185','#60a5fa','#f59e0b','#34d399'];
 
 function App(){
   const [q,setQ]=useState('');
@@ -42,7 +44,7 @@ function App(){
   const [error,setError]=useState('');
 
   useEffect(()=>{ bootstrap(); },[]);
-  useEffect(()=>{ if(selected) loadNeighbourhood(selected.id); },[depth,limit,explicitOnly,[...types].sort().join('|')]);
+  useEffect(()=>{ if(selected && representation!=='whole_map') loadNeighbourhood(selected.id); },[depth,limit,explicitOnly,[...types].sort().join('|')]);
 
   async function api(path){
     const r=await fetch(API_BASE+path);
@@ -86,7 +88,7 @@ function App(){
   async function choose(n, opts={drill:true}){
     const full=await api(`/node/${n.id}`);
     setSelected(full); setDetail(full); setPanelOpen(true);
-    const [tree]=await Promise.all([loadContents(full.id), loadNeighbourhood(full.id)]);
+    const [tree]=await Promise.all([loadContents(full.id), representation==='whole_map'?Promise.resolve(null):loadNeighbourhood(full.id)]);
     if(opts.drill!==false && tree?.children?.length && ['rulebook','part','chapter'].includes(full.node_type)){
       setRailStack(stack=>[...stack,{results,railContext}]);
       setResults(tree.children);
@@ -118,13 +120,24 @@ function App(){
     const data=await api(`/node/${id}/neighbourhood?${p}`);
     setGraph(data);
   }
+  async function loadWholeMap(){
+    setBusy(true); setError('');
+    try{
+      const data=await api('/analysis/semantic-map?level=part&clusters=12&edge_limit=700');
+      setGraph(data);
+      setRailContext({kind:'Map',title:'Whole Rulebook'});
+    }catch(err){setError(err.message||String(err));}
+    finally{setBusy(false);}
+  }
   function applyRepresentation(key){
     if(key==='custom'){ setRepresentation('custom'); return; }
     const preset=REPRESENTATIONS[key]||REPRESENTATIONS.combined;
     setRepresentation(key);
+    if(key==='whole_map'){ loadWholeMap(); return; }
     setTypes(new Set(preset.types));
     setDepth(preset.depth);
     setExplicitOnly(preset.explicitOnly);
+    if(selected) loadNeighbourhood(selected.id);
   }
   function toggleType(t){ const next=new Set(types); next.has(t)?next.delete(t):next.add(t); setTypes(next); setRepresentation('custom'); }
   const activeRep=REPRESENTATIONS[representation]||{label:'Custom',hint:'Manual edge-type selection.'};
@@ -144,7 +157,7 @@ function App(){
       <form className="command" onSubmit={search}>
         <span>⌕</span><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search, or leave blank for all Parts" autoFocus/><button>{busy?'…':'Search'}</button>
       </form>
-      <label className="representation"><span>Representation</span><select value={representation} onChange={e=>applyRepresentation(e.target.value)}><option value="combined">Combined</option><option value="hierarchy">Legal hierarchy</option><option value="references">Cross-references</option><option value="definitions">Definitions</option><option value="semantic">Semantic similarity</option><option value="obligations">Obligations</option><option value="custom">Custom</option></select></label>
+      <label className="representation"><span>Representation</span><select value={representation} onChange={e=>applyRepresentation(e.target.value)}><option value="combined">Combined</option><option value="whole_map">Whole Rulebook map</option><option value="hierarchy">Legal hierarchy</option><option value="references">Cross-references</option><option value="definitions">Definitions</option><option value="semantic">Semantic similarity</option><option value="obligations">Obligations</option><option value="custom">Custom</option></select></label>
       <div className="top-actions">
         <button onClick={()=>setPanelOpen(!panelOpen)} title="Toggle side panel">◧</button>
         <details className="settings"><summary title="Display settings">⚙</summary><div className="settings-pop">
@@ -166,7 +179,7 @@ function App(){
 
     <main className="canvas">
       <div className="canvas-meta"><strong>{selected?.title||'Select a node'}</strong><span>{activeRep.label} · {visibleGraph.nodes.length} shown · {visibleGraph.edges.length} visible links · {Object.values(graph.available_edge_types||{}).reduce((a,b)=>a+b,0)} direct links available</span></div>
-      <Graph graph={visibleGraph} selected={selected} detail={detail} nodeTypes={nodeTypes} onToggleNodeType={toggleNodeType} onSelect={n=>{setDetail(n);setPanelOpen(true);}} onOpen={choose}/>
+      <Graph graph={visibleGraph} selected={selected} detail={detail} nodeTypes={nodeTypes} onToggleNodeType={toggleNodeType} onSelect={n=>{setDetail(n);setPanelOpen(true);}} onOpen={n=>choose(n,{drill:representation!=='whole_map'})}/>
     </main>
 
     <aside className={panelOpen?'inspector open':'inspector'}>
@@ -189,17 +202,17 @@ function Graph({graph,selected,detail,nodeTypes,onToggleNodeType,onSelect,onOpen
   function movePan(e){ if(!drag) return; setView(v=>({...v,x:drag.x+(e.clientX-drag.sx),y:drag.y+(e.clientY-drag.sy)})); }
   function endPan(){ setDrag(null); }
   return <div className="graph-wrap">
-    <svg ref={svgRef} className={drag?'graph panning':'graph'} viewBox="0 0 1200 820"
+    <svg ref={svgRef} className={`${drag?'graph panning':'graph'} ${graph.level==='part'?'semantic-map':''}`} viewBox="0 0 1200 820"
       onPointerDown={startPan} onPointerMove={movePan} onPointerUp={endPan} onPointerLeave={()=>{endPan();setHover(null)}}
       onWheel={e=>{e.preventDefault(); const dz=e.deltaY>0?.92:1.08; setView(v=>({...v,z:Math.max(.55,Math.min(1.8,v.z*dz))}));}}>
       <g transform={`translate(${view.x} ${view.y}) scale(${view.z})`}>
-        {edges.map(e=>{const a=byId.get(e.from_node_id),b=byId.get(e.to_node_id); if(!a||!b)return null; const inf=!EXPLICIT.has(e.source_method); return <g key={e.id} className={inf?'edge-group inferred':'edge-group'}><line x1={a.x} y1={a.y} x2={b.x} y2={b.y} className={inf?'edge inferred':'edge'} strokeWidth={Math.max(1.4,(e.confidence||.45)*2.8)} /><text className="edge-label" x={(a.x+b.x)/2} y={(a.y+b.y)/2}>{relationLabel(e.edge_type)}</text></g>})}
+        {edges.map(e=>{const a=byId.get(e.from_node_id),b=byId.get(e.to_node_id); if(!a||!b)return null; const inf=!EXPLICIT.has(e.source_method); const showLabel=graph.level!=='part' || (e.confidence||0)>0.82; return <g key={e.id} className={inf?'edge-group inferred':'edge-group'}><line x1={a.x} y1={a.y} x2={b.x} y2={b.y} className={inf?'edge inferred':'edge'} strokeWidth={Math.max(1.2,(e.confidence||.45)*2.8)} />{showLabel&&<text className="edge-label" x={(a.x+b.x)/2} y={(a.y+b.y)/2}>{relationLabel(e.edge_type)}</text>}</g>})}
         {nodes.map(n=><g key={n.id} className={`node ${selected?.id===n.id?'selected':''} ${detail?.id===n.id?'focus':''}`}
           onClick={()=>onSelect(n)} onDoubleClick={()=>onOpen(n)}
           onPointerEnter={e=>setHover({node:n,x:e.clientX,y:e.clientY})}
           onPointerMove={e=>setHover({node:n,x:e.clientX,y:e.clientY})}
           onPointerLeave={()=>setHover(null)}>
-          <circle cx={n.x} cy={n.y} r={r(n)} fill={displayColour(n.node_type)} />
+          <circle cx={n.x} cy={n.y} r={r(n,graph)} fill={nodeFill(n,graph)} />
           <text x={n.x} y={n.y+r(n)+15} textAnchor="middle">{truncate(n.title||n.id,n.id===selected?.id?38:24)}</text>
         </g>)}
       </g>
@@ -279,13 +292,21 @@ function isInsuranceNode(n){
 
 function layout(graph, centreId){
   const nodes=[...(graph.nodes||[])], edges=graph.edges||[]; if(!nodes.length)return{nodes,edges};
+  if(graph.level==='part' && nodes.every(n=>Number.isFinite(n.x)&&Number.isFinite(n.y))) return {nodes,edges};
   const degree=new Map(nodes.map(n=>[n.id,0])); edges.forEach(e=>{degree.set(e.from_node_id,(degree.get(e.from_node_id)||0)+1); degree.set(e.to_node_id,(degree.get(e.to_node_id)||0)+1)});
   const centre=nodes.find(n=>n.id===centreId)||nodes[0], others=nodes.filter(n=>n.id!==centre.id).sort((a,b)=>(degree.get(b.id)||0)-(degree.get(a.id)||0));
   centre.x=600; centre.y=410; centre.degree=degree.get(centre.id)||1;
   others.forEach((n,i)=>{const ring=i<20?1:i<64?2:3; const idx=ring===1?i:ring===2?i-20:i-64; const count=ring===1?Math.min(20,others.length):ring===2?Math.min(44,Math.max(1,others.length-20)):Math.max(1,others.length-64); const a=(Math.PI*2*idx/count)+(ring*.21); const rad=ring===1?205:ring===2?335:455; n.x=600+Math.cos(a)*rad; n.y=410+Math.sin(a)*rad*.76; n.degree=degree.get(n.id)||1;});
   return{nodes:[centre,...others],edges};
 }
-function r(n){return Math.min(25,(n.node_type==='part'?14:n.node_type==='topic'?13:n.node_type==='defined_term'?11:9)+Math.sqrt(n.degree||1));}
+function r(n,graph){
+  if(graph?.level==='part') return Math.min(34,8+Math.sqrt(Math.max(1,n.degree||n.metadata?.weighted_degree||1))*1.15);
+  return Math.min(25,(n.node_type==='part'?14:n.node_type==='topic'?13:n.node_type==='defined_term'?11:9)+Math.sqrt(n.degree||1));
+}
+function nodeFill(n,graph){
+  if(graph?.level==='part') return CLUSTER_COLOURS[(n.metadata?.semantic_cluster??0)%CLUSTER_COLOURS.length];
+  return displayColour(n.node_type);
+}
 function emptyNodeMessage(node){
   if(['part','chapter','guidance_document','guidance_section','rulebook'].includes(node?.node_type)) return 'This is a heading or container node. The substantive legal text is held in the child provision nodes shown in the left-hand contents panel.';
   if(node?.metadata?.placeholder) return 'This is a placeholder reference node. Open the source link for the external definition or referenced material.';
