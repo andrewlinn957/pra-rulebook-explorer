@@ -4,7 +4,8 @@ import './styles.css';
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/pra-rulebook-api';
 const TYPES = ['contains','references','uses_defined_term','defines','similar_to','has_topic','has_obligation_pattern','shares_obligation_pattern','amends','resolves_to_part'];
-const NODE_TYPES = ['rule','chapter','part','defined_term','guidance_document','guidance_section','guidance_paragraph','topic','obligation_pattern','legal_instrument','external_reference'];
+const PROVISION_TYPES = ['rule','chapter','guidance_section','guidance_paragraph'];
+const NODE_TYPES = [...PROVISION_TYPES,'part','defined_term','guidance_document','topic','obligation_pattern','legal_instrument','external_reference'];
 const DEFAULT_TYPES = new Set(['contains','references','uses_defined_term','defines','similar_to','has_topic','shares_obligation_pattern','amends','resolves_to_part']);
 const REPRESENTATIONS = {
   combined: { label:'Combined', hint:'Legal structure plus references, terms, semantic links and obligations.', types:[...DEFAULT_TYPES], depth:1, explicitOnly:false },
@@ -15,7 +16,7 @@ const REPRESENTATIONS = {
   obligations: { label:'Obligations', hint:'Provisions with similar obligation patterns.', types:['has_obligation_pattern','shares_obligation_pattern'], depth:1, explicitOnly:false },
 };
 const EXPLICIT = new Set(['site_structure','html_link','html_glossary_link','glossary_source','crr_terms_source','legal_instrument_listing','regex_reference','regex_named_reference']);
-const COLOUR = { rule:'#4f7cff', part:'#9b6bff', chapter:'#738195', defined_term:'#d28b24', guidance_document:'#2d9b63', guidance_section:'#58a978', guidance_paragraph:'#80b98e', legal_instrument:'#cc5c5c', topic:'#d35cff', obligation_pattern:'#e06f2d', external_reference:'#7b8190', rulebook:'#111827' };
+const COLOUR = { provision:'#4f7cff', part:'#9b6bff', defined_term:'#d28b24', guidance_document:'#2d9b63', legal_instrument:'#cc5c5c', topic:'#d35cff', obligation_pattern:'#e06f2d', external_reference:'#7b8190', rulebook:'#111827' };
 
 function App(){
   const [q,setQ]=useState('');
@@ -128,7 +129,13 @@ function App(){
   const activeRep=REPRESENTATIONS[representation]||{label:'Custom',hint:'Manual edge-type selection.'};
   const visibleGraph=useMemo(()=>filterGraph(graph,nodeTypes,selected?.id,showInsurance),[graph,nodeTypes,selected?.id,showInsurance]);
   const selectedEdges=useMemo(()=>visibleGraph.edges.filter(e=>detail&&(e.from_node_id===detail.id||e.to_node_id===detail.id)),[visibleGraph,detail]);
-  function toggleNodeType(t){ const next=new Set(nodeTypes); next.has(t)?next.delete(t):next.add(t); setNodeTypes(next); }
+  function toggleNodeType(t){
+    const next=new Set(nodeTypes);
+    const group=t==='provision'?PROVISION_TYPES:[t];
+    const allOn=group.every(x=>next.has(x));
+    group.forEach(x=>allOn?next.delete(x):next.add(x));
+    setNodeTypes(next);
+  }
 
   return <div className="shell">
     <header className="topbar">
@@ -191,7 +198,7 @@ function Graph({graph,selected,detail,nodeTypes,onToggleNodeType,onSelect,onOpen
           onPointerEnter={e=>setHover({node:n,x:e.clientX,y:e.clientY})}
           onPointerMove={e=>setHover({node:n,x:e.clientX,y:e.clientY})}
           onPointerLeave={()=>setHover(null)}>
-          <circle cx={n.x} cy={n.y} r={r(n)} fill={COLOUR[n.node_type]||'#64748b'} />
+          <circle cx={n.x} cy={n.y} r={r(n)} fill={displayColour(n.node_type)} />
           <text x={n.x} y={n.y+r(n)+15} textAnchor="middle">{truncate(n.title||n.id,n.id===selected?.id?38:24)}</text>
         </g>)}
       </g>
@@ -203,8 +210,9 @@ function Graph({graph,selected,detail,nodeTypes,onToggleNodeType,onSelect,onOpen
 }
 
 function Legend({active,onToggle}){
-  const items=['rule','chapter','part','defined_term','guidance_document','guidance_section','guidance_paragraph','topic','obligation_pattern','legal_instrument','external_reference'];
-  return <div className="legend">{items.map(t=><button key={t} className={active?.has(t)?'on':'off'} onClick={()=>onToggle(t)} title={`Toggle ${label(t)}`}><i style={{background:COLOUR[t]||'#64748b'}} /> <span>{label(t)}</span></button>)}<div><i className="line"/> <span>explicit</span></div><div><i className="line dash"/> <span>inferred</span></div></div>
+  const items=['provision','part','defined_term','guidance_document','topic','obligation_pattern','legal_instrument','external_reference'];
+  const isOn=t=>t==='provision'?PROVISION_TYPES.some(x=>active?.has(x)):active?.has(t);
+  return <div className="legend">{items.map(t=><button key={t} className={isOn(t)?'on':'off'} onClick={()=>onToggle(t)} title={`Toggle ${label(t)}`}><i style={{background:displayColour(t)}} /> <span>{label(t)}</span></button>)}<div><i className="line"/> <span>explicit</span></div><div><i className="line dash"/> <span>inferred</span></div></div>
 }
 
 function Explore({node,edges,graph,onChoose}){
@@ -277,8 +285,9 @@ function layout(graph, centreId){
   return{nodes:[centre,...others],edges};
 }
 function r(n){return Math.min(25,(n.node_type==='part'?14:n.node_type==='topic'?13:n.node_type==='defined_term'?11:9)+Math.sqrt(n.degree||1));}
+function displayColour(v){return COLOUR[PROVISION_TYPES.includes(v)?'provision':v]||'#64748b'}
 function label(v){
-  if(['chapter','rule','guidance_section','guidance_paragraph'].includes(v)) return 'provision';
+  if(PROVISION_TYPES.includes(v)) return 'provision';
   if(v==='defined_term') return 'defined term';
   if(v==='external_reference') return 'external reference';
   if(v==='legal_instrument') return 'legal instrument';
