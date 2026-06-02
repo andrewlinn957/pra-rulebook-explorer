@@ -85,8 +85,9 @@ def extract_part(html: str, url: str) -> tuple[list[Node], list[Edge]]:
             heading_el = el.select_one(".chapter-heading")
             chapter_num = clean_text(chapter_num_el.get_text(" ")) if chapter_num_el else ""
             chapter_title = clean_text(heading_el.get_text(" ")) if heading_el else f"Chapter {chapter_num}"
-            stable = f"chapter:{part_stable}:{chapter_num}"
-            current_chapter = Node(node_id(stable), "chapter", stable, chapter_title, url=f"{url}#{el.get('id','')}", metadata={"chapter_number": chapter_num, "part_title": title})
+            chapter_key = chapter_num or clean_text(chapter_title).lower() or el.get('id', '')
+            stable = f"chapter:{part_stable}:{chapter_key}"
+            current_chapter = Node(node_id(stable), "chapter", stable, chapter_title, url=f"{url}#{el.get('id','')}", metadata={"chapter_number": chapter_num, "part_title": title, "html_id": el.get("id", "")})
             nodes.append(current_chapter)
             edges.append(Edge(edge_id(part.id, current_chapter.id, "contains"), part.id, current_chapter.id, "contains", "site_structure", source_url=url))
             continue
@@ -95,12 +96,15 @@ def extract_part(html: str, url: str) -> tuple[list[Node], list[Edge]]:
             number_el = el.select_one(".rule-number:not(.chapter-number)")
             if not number_el:
                 continue
-            rule_number = clean_text(number_el.get_text(" "))
+            rule_number = clean_text(number_el.get_text(" ")).rstrip(".")
             if not RULE_NUMBER_RE.match(rule_number):
                 continue
             body_el = el.select_one(".div-row__col-2")
             body_text = clean_text(body_el.get_text(" ")) if body_el else clean_text(el.get_text(" "))
-            stable = f"rule:{part_stable}:{rule_number}"
+            section_key = ""
+            if current_chapter and not (current_chapter.metadata or {}).get("chapter_number"):
+                section_key = f":{current_chapter.stable_key.rsplit(':', 1)[-1]}"
+            stable = f"rule:{part_stable}{section_key}:{rule_number}"
             rule = Node(
                 node_id(stable), "rule", stable, f"{title} {rule_number}", text=body_text,
                 url=f"{url}#{el.get('id','')}",

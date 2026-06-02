@@ -202,10 +202,20 @@ def _natural_sort_content(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     import re
     def key(item: dict[str, Any]) -> tuple:
         meta = item.get("metadata") or {}
-        raw = str(meta.get("chapter_number") or meta.get("rule_number") or item.get("title") or "")
+        title = str(item.get("title") or "")
+        raw = str(meta.get("chapter_number") or meta.get("rule_number") or title)
         nums = tuple(int(x) for x in re.findall(r"\d+", raw)[:4])
+        lower = title.lower()
+        if lower.startswith("annex"):
+            structure_rank = 3
+        elif lower.startswith("rules on standards"):
+            structure_rank = 1
+        elif lower.startswith("article"):
+            structure_rank = 2
+        else:
+            structure_rank = 0
         type_rank = {"chapter": 0, "rule": 1, "guidance_section": 2, "guidance_paragraph": 3}.get(item.get("node_type"), 9)
-        return (type_rank, nums, raw.lower())
+        return (type_rank, structure_rank, nums or (9999,), raw.lower())
     return sorted(items, key=key)
 
 
