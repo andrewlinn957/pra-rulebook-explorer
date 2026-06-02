@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections import Counter, deque
+from collections import Counter, defaultdict, deque
 from typing import Any
 
 import networkx as nx
@@ -311,12 +311,15 @@ def common_neighbours(conn: sqlite3.Connection, source: str, target: str, *, lim
 def semantic_map(conn: sqlite3.Connection, *, level: str = "part", clusters: int = 12, edge_limit: int = 700) -> dict[str, Any]:
     """Whole-Rulebook semantic map.
 
-    Part-level for now: each Part vector is the average embedding of its rule
-    provisions. Edges aggregate lower-level semantic, reference, term and
-    obligation links between Parts.
+    Part level maps each Part using the average embedding of its rule
+    provisions. Article level maps Article/chapter containers using the average
+    embedding of their child provisions. Edges aggregate lower-level semantic,
+    reference, term and obligation links between the chosen containers.
     """
+    if level == "article":
+        return _article_semantic_map(conn, clusters=clusters, edge_limit=edge_limit)
     if level != "part":
-        raise ValueError("Only level='part' is currently supported")
+        raise ValueError("Supported levels: part, article")
 
     part_rows = conn.execute(
         "SELECT id,node_type,stable_key,title,text,url,metadata_json FROM node WHERE node_type='part' ORDER BY title"
@@ -396,6 +399,89 @@ def semantic_map(conn: sqlite3.Connection, *, level: str = "part", clusters: int
         node["degree"] = float(weighted_degree[node["id"]])
         node["metadata"] = {**(node.get("metadata") or {}), "semantic_cluster": int(labels[i]), "weighted_degree": float(weighted_degree[node["id"]])}
     return {"level": level, "nodes": nodes, "edges": edges, "clusters": len(set(labels)), "available_edge_types": dict(Counter(e["edge_type"] for e in edges))}
+
+
+def _article_semantic_map(conn: sqlite3.Connection, *, clusters: int = 18, edge_limit: int = 1800) -> dict[str, Any]:
+    containers: dict[str, dict[str, Any]] = {}
+    node_to_container: dict[str, str] = {}
+    vectors_by_container: dict[str, list[np.ndarray]] = defaultdict(list)
+
+    rows = conn.execute(
+        """
+        SELECT parent.id AS id,parent.node_type,parent.stable_key,parent.title,parent.text,parent.url,parent.metadata_json,
+               child.id AS child_id,emb.vector_json
+        FROM edge e
+        JOIN node parent ON parent.id=e.from_node_id
+        JOIN node child ON child.id=e.to_node_id
+        JOIN embedding emb ON emb.node_id=child.id
+        WHERE e.edge_type='contains'
+          AND parent.node_type IN ('chapter','guidance_section')
+          AND child.node_type IN ('rule','guidance_paragraph')
+        """
+    ).fetchall()
+    for row in rows:
+        if row["id"] not in containers:
+            node = row_to_node(row)
+            node.pop("child_id", None); node.pop("vector_json", None)
+            containers[row["id"]] = node
+        node_to_container[row["child_id"]] = row["id"]
+        vectors_by_container[row["id"]].append(np.array(json.loads(row["vector_json"]), dtype="float32"))
+
+    nodes: list[dict[str, Any]] = []
+    vectors: list[np.ndarray] = []
+    for node in containers.values():
+        child_vectors = vectors_by_container[node["id"]]
+        vector = np.mean(np.vstack(child_vectors), axis=0)
+        vectors.append(vector)
+        node["metadata"] = {**(node.get("metadata") or {}), "provision_count": len(child_vectors)}
+        nodes.append(node)
+
+    matrix = np.vstack(vectors) if vectors else np.zeros((0, 2), dtype="float32")
+    coords = _project_2d(matrix)
+    labels = _cluster_labels(matrix, min(clusters, max(2, len(nodes) // 12))) if len(nodes) >= 3 else [0] * len(nodes)
+    edges, weighted_degree = _aggregate_container_edges(conn, node_to_container, edge_limit=edge_limit)
+    for i, node in enumerate(nodes):
+        node["x"] = float(coords[i, 0])
+        node["y"] = float(coords[i, 1])
+        node["degree"] = float(weighted_degree[node["id"]])
+        node["metadata"] = {**(node.get("metadata") or {}), "semantic_cluster": int(labels[i]), "weighted_degree": float(weighted_degree[node["id"]])}
+    return {"level": "article", "nodes": nodes, "edges": edges, "clusters": len(set(labels)), "available_edge_types": dict(Counter(e["edge_type"] for e in edges))}
+
+
+def _aggregate_container_edges(conn: sqlite3.Connection, node_to_container: dict[str, str], *, edge_limit: int) -> tuple[list[dict[str, Any]], Counter[str]]:
+    pair_weights: Counter[tuple[str, str]] = Counter()
+    pair_methods: dict[tuple[str, str], Counter[str]] = {}
+    for row in conn.execute(
+        """
+        SELECT from_node_id,to_node_id,edge_type,source_method,confidence
+        FROM edge
+        WHERE edge_type IN ('similar_to','references','uses_defined_term','has_topic','has_topic_cluster','has_obligation_pattern','shares_obligation_pattern')
+          AND source_method <> 'site_structure'
+        """
+    ):
+        a = node_to_container.get(row["from_node_id"])
+        b = node_to_container.get(row["to_node_id"])
+        if not a or not b or a == b:
+            continue
+        key = tuple(sorted((a, b)))
+        kind_weight = {"similar_to": 1.4, "references": 1.2, "uses_defined_term": 0.45, "has_topic": 0.25, "has_topic_cluster": 0.35, "has_obligation_pattern": 0.35, "shares_obligation_pattern": 0.8}.get(row["edge_type"], 0.4)
+        pair_weights[key] += float(row["confidence"] or 0.5) * kind_weight
+        pair_methods.setdefault(key, Counter())[row["edge_type"]] += 1
+    weighted_degree: Counter[str] = Counter()
+    edges: list[dict[str, Any]] = []
+    for i, ((a, b), weight) in enumerate(pair_weights.most_common(edge_limit)):
+        weighted_degree[a] += weight
+        weighted_degree[b] += weight
+        methods = pair_methods.get((a, b), Counter())
+        dominant = methods.most_common(1)[0][0] if methods else "similar_to"
+        edges.append({
+            "id": f"semantic-map:{i}:{a}:{b}", "from_node_id": a, "to_node_id": b,
+            "edge_type": dominant, "source_method": "container_level_aggregate",
+            "confidence": min(1.0, weight / 12),
+            "evidence_text": ", ".join(f"{k}: {v}" for k, v in methods.most_common(4)),
+            "source_url": "", "metadata": {"weight": weight, "counts": dict(methods)},
+        })
+    return edges, weighted_degree
 
 
 def _part_key_from_stable(stable_key: str) -> str | None:

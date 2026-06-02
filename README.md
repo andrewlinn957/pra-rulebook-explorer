@@ -61,6 +61,18 @@ Build search, embedding and similarity indexes:
 .venv/bin/python -m backend.app.cli build-indexes --embeddings --similar --top-k 5 --threshold 0.72
 ```
 
+For higher-quality semantic maps, rebuild embeddings with a Hugging Face Sentence Transformers model. Recommended first choice: `BAAI/bge-m3`, because it is strong, open, long-context, and still more practical than 1.5B/7B embedding models on a CPU VPS.
+
+```bash
+.venv/bin/pip install sentence-transformers
+.venv/bin/python -m backend.app.cli build-indexes \
+  --embeddings \
+  --model sentence-transformers:BAAI/bge-m3 \
+  --similar --top-k 8 --threshold 0.66
+.venv/bin/python -m backend.rulebook_scraper.cli enrich
+systemctl restart pra-rulebook-api
+```
+
 Run the API locally:
 
 ```bash
@@ -79,6 +91,8 @@ Useful endpoints:
 - `GET /path?from={id}&to={id}` (also accepts `from_id`/`to_id`)
 - `GET /interesting?limit=50`
 - `GET /centrality?limit=25`
+- `GET /analysis/semantic-map?level=part&clusters=12&edge_limit=700`
+- `GET /analysis/semantic-map?level=article&clusters=18&edge_limit=1800`
 
 Verify the backend against the scraped corpus:
 

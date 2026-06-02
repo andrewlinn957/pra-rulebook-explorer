@@ -124,15 +124,11 @@ def _node_text(row: sqlite3.Row) -> str:
 
 def _embed_texts(texts: list[str], *, model_name: str) -> tuple[list[list[float]], str]:
     if model_name.startswith("sentence-transformers:"):
-        try:
-            from sentence_transformers import SentenceTransformer
-            model_id = model_name.split(":", 1)[1]
-            model = SentenceTransformer(model_id)
-            arr = model.encode(texts, batch_size=64, normalize_embeddings=True, show_progress_bar=True)
-            return arr.astype("float32").tolist(), model_name
-        except Exception:
-            # Fall back to deterministic local vectorisation below.
-            pass
+        from sentence_transformers import SentenceTransformer
+        model_id = model_name.split(":", 1)[1]
+        model = SentenceTransformer(model_id)
+        arr = model.encode(texts, batch_size=16, normalize_embeddings=True, show_progress_bar=True)
+        return arr.astype("float32").tolist(), model_name
 
     from sklearn.decomposition import TruncatedSVD
     from sklearn.feature_extraction.text import TfidfVectorizer

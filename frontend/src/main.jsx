@@ -14,7 +14,8 @@ const REPRESENTATIONS = {
   definitions: { label:'Definitions', hint:'Glossary and CRR term usage.', types:['uses_defined_term','defines'], depth:2, explicitOnly:true },
   semantic: { label:'Semantic similarity', hint:'Embedding-derived similarity and topic links.', types:['similar_to','has_topic'], depth:1, explicitOnly:false },
   obligations: { label:'Obligations', hint:'Provisions with similar obligation patterns.', types:['has_obligation_pattern','shares_obligation_pattern'], depth:1, explicitOnly:false },
-  whole_map: { label:'Whole Rulebook map', hint:'Part-level semantic map: distance reflects averaged provision embeddings, colour shows topic clusters, size reflects weighted connections.' },
+  whole_map: { label:'Whole Rulebook map', hint:'Part-level semantic map: distance reflects averaged provision embeddings, colour shows topic clusters, size reflects weighted connections.', mapLevel:'part' },
+  article_map: { label:'Article semantic map', hint:'Article/chapter-level semantic map for zooming into the Rulebook structure.', mapLevel:'article' },
 };
 const EXPLICIT = new Set(['site_structure','html_link','html_glossary_link','glossary_source','crr_terms_source','legal_instrument_listing','regex_reference','regex_named_reference']);
 const RELATION_LABELS = { contains:'child', references:'cross-reference', uses_defined_term:'uses term', defines:'defines', similar_to:'semantic similarity', has_topic:'topic', has_topic_cluster:'topic cluster', has_obligation_pattern:'obligation pattern', shares_obligation_pattern:'shared obligation', has_structured_obligation:'structured obligation', amends:'amends', resolves_to_part:'resolves to Part' };
@@ -44,7 +45,7 @@ function App(){
   const [error,setError]=useState('');
 
   useEffect(()=>{ bootstrap(); },[]);
-  useEffect(()=>{ if(selected && representation!=='whole_map') loadNeighbourhood(selected.id); },[depth,limit,explicitOnly,[...types].sort().join('|')]);
+  useEffect(()=>{ if(selected && !['whole_map','article_map'].includes(representation)) loadNeighbourhood(selected.id); },[depth,limit,explicitOnly,[...types].sort().join('|')]);
 
   async function api(path){
     const r=await fetch(API_BASE+path);
@@ -88,7 +89,7 @@ function App(){
   async function choose(n, opts={drill:true}){
     const full=await api(`/node/${n.id}`);
     setSelected(full); setDetail(full); setPanelOpen(true);
-    const [tree]=await Promise.all([loadContents(full.id), representation==='whole_map'?Promise.resolve(null):loadNeighbourhood(full.id)]);
+    const [tree]=await Promise.all([loadContents(full.id), ['whole_map','article_map'].includes(representation)?Promise.resolve(null):loadNeighbourhood(full.id)]);
     if(opts.drill!==false && tree?.children?.length && ['rulebook','part','chapter'].includes(full.node_type)){
       setRailStack(stack=>[...stack,{results,railContext}]);
       setResults(tree.children);
@@ -120,12 +121,12 @@ function App(){
     const data=await api(`/node/${id}/neighbourhood?${p}`);
     setGraph(data);
   }
-  async function loadWholeMap(){
+  async function loadWholeMap(level='part'){
     setBusy(true); setError('');
     try{
-      const data=await api('/analysis/semantic-map?level=part&clusters=12&edge_limit=700');
+      const data=await api(`/analysis/semantic-map?level=${level}&clusters=${level==='article'?18:12}&edge_limit=${level==='article'?1800:700}`);
       setGraph(data);
-      setRailContext({kind:'Map',title:'Whole Rulebook'});
+      setRailContext({kind:'Map',title:level==='article'?'Article semantic map':'Whole Rulebook'});
     }catch(err){setError(err.message||String(err));}
     finally{setBusy(false);}
   }
@@ -133,7 +134,7 @@ function App(){
     if(key==='custom'){ setRepresentation('custom'); return; }
     const preset=REPRESENTATIONS[key]||REPRESENTATIONS.combined;
     setRepresentation(key);
-    if(key==='whole_map'){ loadWholeMap(); return; }
+    if(key==='whole_map' || key==='article_map'){ loadWholeMap(preset.mapLevel||'part'); return; }
     setTypes(new Set(preset.types));
     setDepth(preset.depth);
     setExplicitOnly(preset.explicitOnly);
@@ -157,7 +158,7 @@ function App(){
       <form className="command" onSubmit={search}>
         <span>⌕</span><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search, or leave blank for all Parts" autoFocus/><button>{busy?'…':'Search'}</button>
       </form>
-      <label className="representation"><span>Representation</span><select value={representation} onChange={e=>applyRepresentation(e.target.value)}><option value="combined">Combined</option><option value="whole_map">Whole Rulebook map</option><option value="hierarchy">Legal hierarchy</option><option value="references">Cross-references</option><option value="definitions">Definitions</option><option value="semantic">Semantic similarity</option><option value="obligations">Obligations</option><option value="custom">Custom</option></select></label>
+      <label className="representation"><span>Representation</span><select value={representation} onChange={e=>applyRepresentation(e.target.value)}><option value="combined">Combined</option><option value="whole_map">Whole Rulebook map</option><option value="article_map">Article semantic map</option><option value="hierarchy">Legal hierarchy</option><option value="references">Cross-references</option><option value="definitions">Definitions</option><option value="semantic">Semantic similarity</option><option value="obligations">Obligations</option><option value="custom">Custom</option></select></label>
       <div className="top-actions">
         <button onClick={()=>setPanelOpen(!panelOpen)} title="Toggle side panel">◧</button>
         <details className="settings"><summary title="Display settings">⚙</summary><div className="settings-pop">
@@ -179,7 +180,7 @@ function App(){
 
     <main className="canvas">
       <div className="canvas-meta"><strong>{selected?.title||'Select a node'}</strong><span>{activeRep.label} · {visibleGraph.nodes.length} shown · {visibleGraph.edges.length} visible links · {Object.values(graph.available_edge_types||{}).reduce((a,b)=>a+b,0)} direct links available</span></div>
-      <Graph graph={visibleGraph} selected={selected} detail={detail} nodeTypes={nodeTypes} onToggleNodeType={toggleNodeType} onSelect={n=>{setDetail(n);setPanelOpen(true);}} onOpen={n=>choose(n,{drill:representation!=='whole_map'})}/>
+      <Graph graph={visibleGraph} selected={selected} detail={detail} nodeTypes={nodeTypes} onToggleNodeType={toggleNodeType} onSelect={n=>{setDetail(n);setPanelOpen(true);}} onOpen={n=>choose(n,{drill:!['whole_map','article_map'].includes(representation)})}/>
     </main>
 
     <aside className={panelOpen?'inspector open':'inspector'}>
