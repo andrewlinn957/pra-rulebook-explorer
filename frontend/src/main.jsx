@@ -163,7 +163,7 @@ function App(){
 
     <aside className={panelOpen?'inspector open':'inspector'}>
       <div className="tabs"><button className={sideTab==='explore'?'on':''} onClick={()=>setSideTab('explore')}>Explore</button><button className={sideTab==='discover'?'on':''} onClick={()=>setSideTab('discover')}>Discover</button><button className={sideTab==='analysis'?'on':''} onClick={()=>setSideTab('analysis')}>Analysis</button></div>
-      {sideTab==='explore'&&<Explore node={detail} tree={contents} edges={selectedEdges} graph={graph} onChoose={choose}/>} 
+      {sideTab==='explore'&&<Explore node={detail} edges={selectedEdges} graph={graph} onChoose={choose}/>} 
       {sideTab==='discover'&&<Discover interesting={analysis.interesting} onChoose={choose}/>} 
       {sideTab==='analysis'&&<Analysis analysis={analysis} onChoose={choose}/>} 
     </aside>
@@ -207,19 +207,8 @@ function Legend({active,onToggle}){
   return <div className="legend">{items.map(t=><button key={t} className={active?.has(t)?'on':'off'} onClick={()=>onToggle(t)} title={`Toggle ${label(t)}`}><i style={{background:COLOUR[t]||'#64748b'}} /> <span>{label(t)}</span></button>)}<div><i className="line"/> <span>explicit</span></div><div><i className="line dash"/> <span>inferred</span></div></div>
 }
 
-function Explore({node,tree,edges,graph,onChoose}){
-  const children=tree?.children||[];
-  const contents=<ContentsLayer children={children} onChoose={onChoose}/>;
-  const evidence=<Evidence node={node} edges={edges} graph={graph} onChoose={onChoose}/>;
-  return <div className="pane explore-pane">{children.length?contents:evidence}{children.length?evidence:contents}</div>;
-}
-function ContentsLayer({children,onChoose}){
-  return <section className="explore-layer contents-layer" aria-label="Legal structure">
-    <div className="layer-head"><span>Legal structure</span><h3>Contents</h3></div>
-    {children.length
-      ? <div className="contents-list">{children.map(n=><ContentNode key={n.id} node={n} onChoose={onChoose}/>)}</div>
-      : <p className="muted">No contained articles/chapters for this node.</p>}
-  </section>;
+function Explore({node,edges,graph,onChoose}){
+  return <div className="pane explore-pane"><Evidence node={node} edges={edges} graph={graph} onChoose={onChoose}/></div>;
 }
 function ContentNode({node,onChoose}){
   const kids=node.children||[];
@@ -237,7 +226,33 @@ function ContentNode({node,onChoose}){
 function Evidence({node,edges,graph,onChoose}){
   const byId=new Map(graph.nodes.map(n=>[n.id,n]));
   if(!node)return <section className="explore-layer evidence-layer"><p className="muted">Select a node.</p></section>;
-  return <section className="explore-layer evidence-layer" aria-label="Graph evidence"><div className="layer-head"><span>Graph evidence</span><h3>Selected node</h3></div><span className="kind">{label(node.node_type)}</span><h2>{node.title}</h2>{node.url&&<a className="source" href={node.url} target="_blank">Open source ↗</a>}<p className="text">{node.text?truncate(node.text,1300):'No body text for this node.'}</p><h3>Visible links</h3><div className="edge-list">{edges.slice(0,40).map(e=>{const other=byId.get(e.from_node_id===node.id?e.to_node_id:e.from_node_id);return <button key={e.id} onClick={()=>other&&onChoose(other)}><span>{label(e.edge_type)} · {e.source_method} · {Math.round((e.confidence||0)*100)}%</span><strong>{other?.title||'Unloaded node'}</strong>{e.evidence_text&&<small>{truncate(e.evidence_text,160)}</small>}</button>})}</div></section>;
+  const analytical=edges.filter(e=>e.edge_type!=='contains');
+  const groups=groupEdges(analytical);
+  return <section className="explore-layer evidence-layer" aria-label="Analytical evidence">
+    <div className="layer-head"><span>Analytical evidence</span><h3>Selected node</h3></div>
+    <Collapsible title="Selected provision" count={label(node.node_type)} open>
+      <span className="kind">{label(node.node_type)}</span><h2>{node.title}</h2>{node.url&&<a className="source" href={node.url} target="_blank">Open source ↗</a>}
+      <p className="text">{node.text?truncate(node.text,1300):'No body text for this node.'}</p>
+    </Collapsible>
+    {groups.length
+      ? groups.map(([edgeType,items],i)=><Collapsible key={edgeType} title={label(edgeType)} count={`${items.length} link${items.length===1?'':'s'}`} open={i<2}>
+          <div className="edge-list">{items.slice(0,40).map(e=>{const other=byId.get(e.from_node_id===node.id?e.to_node_id:e.from_node_id);return <button key={e.id} onClick={()=>other&&onChoose(other)}><span>{e.source_method} · {Math.round((e.confidence||0)*100)}%</span><strong>{other?.title||'Unloaded node'}</strong>{e.evidence_text&&<small>{truncate(e.evidence_text,160)}</small>}</button>})}</div>
+          {items.length>40&&<p className="muted">Showing first 40 of {items.length} visible links. Increase the graph cap to load more.</p>}
+        </Collapsible>)
+      : <Collapsible title="Visible analytical links" count="0 links" open><p className="muted">No semantic, reference, definition or obligation links are visible for this node under the current representation/settings.</p></Collapsible>}
+  </section>;
+}
+function Collapsible({title,count,open=false,children}){
+  return <details className="collapse-card" open={open}><summary><span>{title}</span>{count&&<em>{count}</em>}</summary><div className="collapse-body">{children}</div></details>;
+}
+function groupEdges(edges){
+  const priority=['references','uses_defined_term','defines','similar_to','has_topic','has_topic_cluster','has_obligation_pattern','shares_obligation_pattern','has_structured_obligation','amends','resolves_to_part'];
+  const buckets=new Map();
+  for(const e of edges) buckets.set(e.edge_type,[...(buckets.get(e.edge_type)||[]),e]);
+  return [...buckets.entries()].sort((a,b)=>{
+    const ai=priority.indexOf(a[0]), bi=priority.indexOf(b[0]);
+    return (ai<0?99:ai)-(bi<0?99:bi) || b[1].length-a[1].length || a[0].localeCompare(b[0]);
+  });
 }
 function Discover({interesting,onChoose}){return <div className="pane list">{interesting.map(e=><button key={e.id} onClick={()=>onChoose({id:e.from_node_id,title:e.from_title,node_type:e.from_type})}><span>{label(e.edge_type)} · {Math.round((e.confidence||0)*100)}%</span><strong>{e.from_title}</strong><small>→ {e.to_title}</small><em>{e.why}</em></button>)}</div>}
 function Analysis({analysis,onChoose}){return <div className="pane list"><div className="mini-metrics"><div><b>{analysis.stats?.nodes?.toLocaleString()||'…'}</b><span>nodes</span></div><div><b>{analysis.stats?.edges?.toLocaleString()||'…'}</b><span>edges</span></div><div><b>{analysis.stats?.edge_methods?.regex_named_reference||'…'}</b><span>named refs</span></div></div><h3>Central</h3>{analysis.centrality.map((x,i)=><button key={x.node?.id||i} onClick={()=>x.node&&onChoose(x.node)}><span>{x.degree} links</span><strong>{x.node?.title}</strong></button>)}<h3>Bridges</h3>{analysis.bridges.map((x,i)=><button key={x.node?.id||i} onClick={()=>x.node&&onChoose(x.node)}><span>{Number(x.betweenness||0).toFixed(4)}</span><strong>{x.node?.title}</strong></button>)}</div>}
