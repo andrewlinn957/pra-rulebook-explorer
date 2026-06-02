@@ -165,13 +165,18 @@ function Legend({active,onToggle}){
 
 function Contents({tree,onChoose}){
   const children=tree?.children||[];
-  if(!children.length) return <div className="pane"><p className="muted">No contained chapters or articles for this node.</p></div>;
-  return <div className="pane contents"><h2>Contents</h2><p className="muted">Chapters and rules/articles directly under {tree.root?.title||'the selected node'}.</p><div className="contents-list">{children.map(n=><ContentNode key={n.id} node={n} onChoose={onChoose}/>)}</div></div>;
+  if(!children.length) return <div className="pane"><p className="muted">No contained articles/chapters for this node.</p></div>;
+  return <div className="pane contents"><h2>Contents</h2><div className="contents-list">{children.map(n=><ContentNode key={n.id} node={n} onChoose={onChoose}/>)}</div></div>;
 }
 function ContentNode({node,onChoose}){
   const kids=node.children||[];
+  const number=node.metadata?.rule_number||node.metadata?.chapter_number||'';
   return <div className={`content-node ${node.node_type}`}>
-    <button onClick={()=>onChoose(node)}><span>{label(node.node_type)}{node.metadata?.rule_number?` ${node.metadata.rule_number}`:''}{node.metadata?.chapter_number?` ${node.metadata.chapter_number}`:''}</span><strong>{node.title}</strong>{node.text&&<small>{truncate(node.text,180)}</small>}</button>
+    <button type="button" onClick={()=>onChoose(node)} aria-label={`Open ${node.title}`}>
+      <span className="content-rail"><i>{kids.length?'▾':'›'}</i></span>
+      <span className="content-body"><span className="content-meta"><b>{label(node.node_type)}</b>{number&&<em>{number}</em>}{kids.length>0&&<em>{kids.length} item{kids.length===1?'':'s'}</em>}</span><strong>{node.title}</strong>{node.text&&<small>{truncate(node.text,190)}</small>}</span>
+      <span className="content-open">Open</span>
+    </button>
     {kids.length>0&&<div className="content-children">{kids.map(k=><ContentNode key={k.id} node={k} onChoose={onChoose}/>)}</div>}
   </div>;
 }
@@ -204,7 +209,10 @@ function layout(graph, centreId){
   return{nodes:[centre,...others],edges};
 }
 function r(n){return Math.min(25,(n.node_type==='part'?14:n.node_type==='topic'?13:n.node_type==='defined_term'?11:9)+Math.sqrt(n.degree||1));}
-function label(v){return String(v||'').replaceAll('_',' ')}
+function label(v){
+  if(v==='chapter') return 'articles/chapter';
+  return String(v||'').replaceAll('_',' ');
+}
 function truncate(s='',n=120){return s&&s.length>n?s.slice(0,n-1)+'…':s}
 
 createRoot(document.getElementById('root')).render(<App/>);
