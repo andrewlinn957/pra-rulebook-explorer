@@ -6,6 +6,14 @@ const API_BASE = import.meta.env.VITE_API_BASE || '/pra-rulebook-api';
 const TYPES = ['contains','references','uses_defined_term','defines','similar_to','has_topic','has_obligation_pattern','shares_obligation_pattern','amends','resolves_to_part'];
 const NODE_TYPES = ['rule','chapter','part','defined_term','guidance_document','guidance_section','guidance_paragraph','topic','obligation_pattern','legal_instrument','external_reference'];
 const DEFAULT_TYPES = new Set(['contains','references','uses_defined_term','defines','similar_to','has_topic','shares_obligation_pattern','amends','resolves_to_part']);
+const REPRESENTATIONS = {
+  combined: { label:'Combined', hint:'Legal structure plus references, terms, semantic links and obligations.', types:[...DEFAULT_TYPES], depth:1, explicitOnly:false },
+  hierarchy: { label:'Legal hierarchy', hint:'Parts, articles, chapters, rules and paragraphs only.', types:['contains'], depth:2, explicitOnly:true },
+  references: { label:'Cross-references', hint:'Explicit legal and named references between provisions.', types:['references','amends','resolves_to_part'], depth:2, explicitOnly:true },
+  definitions: { label:'Definitions', hint:'Glossary and CRR term usage.', types:['uses_defined_term','defines'], depth:2, explicitOnly:true },
+  semantic: { label:'Semantic similarity', hint:'Embedding-derived similarity and topic links.', types:['similar_to','has_topic'], depth:1, explicitOnly:false },
+  obligations: { label:'Obligations', hint:'Provisions with similar obligation patterns.', types:['has_obligation_pattern','shares_obligation_pattern'], depth:1, explicitOnly:false },
+};
 const EXPLICIT = new Set(['site_structure','html_link','html_glossary_link','glossary_source','crr_terms_source','legal_instrument_listing','regex_reference','regex_named_reference']);
 const COLOUR = { rule:'#4f7cff', part:'#9b6bff', chapter:'#738195', defined_term:'#d28b24', guidance_document:'#2d9b63', guidance_section:'#58a978', guidance_paragraph:'#80b98e', legal_instrument:'#cc5c5c', topic:'#d35cff', obligation_pattern:'#e06f2d', external_reference:'#7b8190', rulebook:'#111827' };
 
@@ -17,6 +25,7 @@ function App(){
   const [detail,setDetail]=useState(null);
   const [graph,setGraph]=useState({nodes:[],edges:[],available_edge_types:{}});
   const [contents,setContents]=useState({root:null,children:[]});
+  const [representation,setRepresentation]=useState('combined');
   const [depth,setDepth]=useState(1);
   const [limit,setLimit]=useState(140);
   const [explicitOnly,setExplicitOnly]=useState(false);
@@ -93,7 +102,16 @@ function App(){
     const data=await api(`/node/${id}/neighbourhood?${p}`);
     setGraph(data);
   }
-  function toggleType(t){ const next=new Set(types); next.has(t)?next.delete(t):next.add(t); setTypes(next); }
+  function applyRepresentation(key){
+    if(key==='custom'){ setRepresentation('custom'); return; }
+    const preset=REPRESENTATIONS[key]||REPRESENTATIONS.combined;
+    setRepresentation(key);
+    setTypes(new Set(preset.types));
+    setDepth(preset.depth);
+    setExplicitOnly(preset.explicitOnly);
+  }
+  function toggleType(t){ const next=new Set(types); next.has(t)?next.delete(t):next.add(t); setTypes(next); setRepresentation('custom'); }
+  const activeRep=REPRESENTATIONS[representation]||{label:'Custom',hint:'Manual edge-type selection.'};
   const visibleGraph=useMemo(()=>filterGraph(graph,nodeTypes,selected?.id,showInsurance),[graph,nodeTypes,selected?.id,showInsurance]);
   const selectedEdges=useMemo(()=>visibleGraph.edges.filter(e=>detail&&(e.from_node_id===detail.id||e.to_node_id===detail.id)),[visibleGraph,detail]);
   function toggleNodeType(t){ const next=new Set(nodeTypes); next.has(t)?next.delete(t):next.add(t); setNodeTypes(next); }
@@ -104,12 +122,14 @@ function App(){
       <form className="command" onSubmit={search}>
         <span>⌕</span><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search, or leave blank for all Parts" autoFocus/><button>{busy?'…':'Search'}</button>
       </form>
+      <label className="representation"><span>Representation</span><select value={representation} onChange={e=>applyRepresentation(e.target.value)}><option value="combined">Combined</option><option value="hierarchy">Legal hierarchy</option><option value="references">Cross-references</option><option value="definitions">Definitions</option><option value="semantic">Semantic similarity</option><option value="obligations">Obligations</option><option value="custom">Custom</option></select></label>
       <div className="top-actions">
         <button onClick={()=>setPanelOpen(!panelOpen)} title="Toggle side panel">◧</button>
         <details className="settings"><summary title="Display settings">⚙</summary><div className="settings-pop">
-          <label>Depth <input type="range" min="1" max="3" value={depth} onChange={e=>setDepth(Number(e.target.value))}/><b>{depth}</b></label>
+          <p className="rep-hint"><b>{activeRep.label}</b>{activeRep.hint}</p>
+          <label>Depth <input type="range" min="1" max="3" value={depth} onChange={e=>{setDepth(Number(e.target.value));setRepresentation('custom')}}/><b>{depth}</b></label>
           <label>Node cap <input type="number" min="30" max="800" value={limit} onChange={e=>setLimit(Number(e.target.value))}/></label>
-          <label className="check"><input type="checkbox" checked={explicitOnly} onChange={e=>setExplicitOnly(e.target.checked)}/> Explicit only</label>
+          <label className="check"><input type="checkbox" checked={explicitOnly} onChange={e=>{setExplicitOnly(e.target.checked);setRepresentation('custom')}}/> Explicit only</label>
           <label className="check"><input type="checkbox" checked={showInsurance} onChange={e=>setShowInsurance(e.target.checked)}/> Insurance parts</label>
           <div className="type-grid">{TYPES.map(t=><button type="button" key={t} className={types.has(t)?'on':''} onClick={()=>toggleType(t)}><span>{t.replaceAll('_',' ')}</span><em>{graph.available_edge_types?.[t]||0}</em></button>)}</div>
         </div></details>
@@ -123,7 +143,7 @@ function App(){
     </aside>
 
     <main className="canvas">
-      <div className="canvas-meta"><strong>{selected?.title||'Select a node'}</strong><span>{visibleGraph.nodes.length} shown · {visibleGraph.edges.length} visible links · {Object.values(graph.available_edge_types||{}).reduce((a,b)=>a+b,0)} direct links available</span></div>
+      <div className="canvas-meta"><strong>{selected?.title||'Select a node'}</strong><span>{activeRep.label} · {visibleGraph.nodes.length} shown · {visibleGraph.edges.length} visible links · {Object.values(graph.available_edge_types||{}).reduce((a,b)=>a+b,0)} direct links available</span></div>
       <Graph graph={visibleGraph} selected={selected} detail={detail} nodeTypes={nodeTypes} onToggleNodeType={toggleNodeType} onSelect={n=>{setDetail(n);setPanelOpen(true);}} onOpen={choose}/>
     </main>
 
