@@ -203,20 +203,39 @@ def _natural_sort_content(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     def key(item: dict[str, Any]) -> tuple:
         meta = item.get("metadata") or {}
         title = str(item.get("title") or "")
-        raw = str(meta.get("chapter_number") or meta.get("rule_number") or title)
-        nums = tuple(int(x) for x in re.findall(r"\d+", raw)[:4])
+        raw = str(meta.get("chapter_number") or meta.get("article_number") or meta.get("rule_number") or title)
         lower = title.lower()
-        if lower.startswith("annex"):
+        article = re.match(r"article\s+(\d+)([a-z]*)\b", raw.lower()) or re.match(r"article\s+(\d+)([a-z]*)\b", lower)
+        annex = re.match(r"annex\s+([ivxlcdm]+)\b", raw.lower()) or re.match(r"annex\s+([ivxlcdm]+)\b", lower)
+        nums = tuple(int(x) for x in re.findall(r"\d+", raw)[:4])
+        if lower.startswith("annex") or annex:
             structure_rank = 3
+            ordinal = (_roman_to_int(annex.group(1)) if annex else 9999, "")
         elif lower.startswith("rules on standards"):
             structure_rank = 1
-        elif lower.startswith("article"):
+            ordinal = (nums[0] if nums else 9999, "")
+        elif lower.startswith("article") or article:
             structure_rank = 2
+            ordinal = (int(article.group(1)) if article else (nums[0] if nums else 9999), article.group(2) if article else "")
         else:
             structure_rank = 0
+            ordinal = (nums[0] if nums else 9999, "")
         type_rank = {"chapter": 0, "rule": 1, "guidance_section": 2, "guidance_paragraph": 3}.get(item.get("node_type"), 9)
-        return (type_rank, structure_rank, nums or (9999,), raw.lower())
+        return (type_rank, structure_rank, ordinal, raw.lower())
+
+
     return sorted(items, key=key)
+
+
+def _roman_to_int(value: str) -> int:
+    values = {"i": 1, "v": 5, "x": 10, "l": 50, "c": 100, "d": 500, "m": 1000}
+    total = 0
+    prev = 0
+    for char in reversed(value.lower()):
+        cur = values.get(char, 0)
+        total += -cur if cur < prev else cur
+        prev = max(prev, cur)
+    return total or 9999
 
 
 def _snippet(text: str, q: str, size: int = 240) -> str:

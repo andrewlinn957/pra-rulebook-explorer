@@ -85,9 +85,11 @@ def extract_part(html: str, url: str) -> tuple[list[Node], list[Edge]]:
             heading_el = el.select_one(".chapter-heading")
             chapter_num = clean_text(chapter_num_el.get_text(" ")) if chapter_num_el else ""
             chapter_title = clean_text(heading_el.get_text(" ")) if heading_el else f"Chapter {chapter_num}"
-            chapter_key = chapter_num or clean_text(chapter_title).lower() or el.get('id', '')
+            html_id = el.get("id", "")
+            chapter_key = chapter_num or f"{clean_text(chapter_title).lower()}:{html_id}" or html_id
             stable = f"chapter:{part_stable}:{chapter_key}"
-            current_chapter = Node(node_id(stable), "chapter", stable, chapter_title, url=f"{url}#{el.get('id','')}", metadata={"chapter_number": chapter_num, "part_title": title, "html_id": el.get("id", "")})
+            article_number = _article_or_annex_number(chapter_title)
+            current_chapter = Node(node_id(stable), "chapter", stable, chapter_title, url=f"{url}#{html_id}", metadata={"chapter_number": chapter_num, "article_number": article_number, "part_title": title, "html_id": html_id})
             nodes.append(current_chapter)
             edges.append(Edge(edge_id(part.id, current_chapter.id, "contains"), part.id, current_chapter.id, "contains", "site_structure", source_url=url))
             continue
@@ -197,6 +199,12 @@ def _append_link_edges(edges: list[Edge], from_node: Node, container: Tag, sourc
             target_key = f"external:{absolute_url(href)}"
             to_id = node_id(target_key)
             edges.append(Edge(edge_id(from_node.id, to_id, "references", href), from_node.id, to_id, "references", "html_link", 0.8, text, source_url, {"href": absolute_url(href), "target_key": target_key}))
+
+
+def _article_or_annex_number(title: str) -> str:
+    text = clean_text(title)
+    match = re.match(r"^(Article\s+\d+[A-Za-z]*|Annex\s+[IVXLCDM]+)\b", text, re.IGNORECASE)
+    return match.group(1) if match else ""
 
 
 def _rulebook_date(soup: BeautifulSoup) -> str | None:
