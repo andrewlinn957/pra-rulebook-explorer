@@ -86,7 +86,7 @@ Verify the backend against the scraped corpus:
 ./scripts/verify_backend.py
 ```
 
-Current full-corpus verification after advanced enrichment: 29,734 nodes, 307,669 edges, 67,124 MiniLM `similar_to` edges, 25,810 `references` edges, 12 keyword topic nodes, 36 embedding-derived topic clusters, 7,535 obligation-pattern nodes, 4,540 structured obligation-statement nodes, and zero missing edge targets.
+Current full-corpus verification after advanced enrichment: 29,734 nodes, 309,003 edges, 67,124 MiniLM `similar_to` edges, 26,810 `references` edges, 12 keyword topic nodes, 36 embedding-derived topic clusters, 7,535 obligation-pattern nodes, 4,540 structured obligation-statement nodes, and zero missing edge targets.
 
 Generated corpus artefacts are intentionally excluded from Git: `backend/data/raw/`, `backend/data/processed/`, and `backend/data/*.sqlite3*`. Rebuild them locally with the scrape, enrich and index commands above.
 

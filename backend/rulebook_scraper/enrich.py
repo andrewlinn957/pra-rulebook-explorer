@@ -101,7 +101,7 @@ MODAL_RE = re.compile(r"\b(?P<subject>[A-Z][A-Za-z0-9 ,()\-/]{0,80}?)\s+(?P<moda
 
 TOPICS = {
     "capital": ["own funds", "capital", "capital requirement", "scr", "mrel", "leverage ratio", "buffer"],
-    "liquidity": ["liquidity", "lcr", "nsfr", "funding", "liquid assets", "cash flow"],
+    "liquidity": ["liquidity", "liquidity coverage ratio", "liquidity coverage requirement", "lcr", "nsfr", "funding", "liquid assets", "liquidity buffer", "cash flow"],
     "governance": ["governance", "senior management", "management body", "committee", "accountability"],
     "operational resilience": ["operational resilience", "important business service", "impact tolerance", "disruption"],
     "outsourcing": ["outsourcing", "third party", "service provider", "material outsourcing"],
@@ -210,7 +210,7 @@ def _named_part_reference_patterns(part_titles: set[str]) -> list[tuple[str, re.
 def _topic_edges(conn: sqlite3.Connection) -> tuple[list[Node], list[Edge]]:
     topic_nodes = [Node(id=edge_id("topic", name, "node")[:16], node_type="topic", stable_key=f"topic:{name}", title=name.title(), text=", ".join(keywords), metadata={"keywords": keywords}) for name, keywords in TOPICS.items()]
     topic_id = {n.title.lower(): n.id for n in topic_nodes}
-    rows = conn.execute("SELECT id,node_type,title,text,url FROM node WHERE node_type IN ('rule','guidance_paragraph','guidance_document','part')").fetchall()
+    rows = conn.execute("SELECT id,node_type,title,text,url FROM node WHERE node_type IN ('rule','chapter','guidance_paragraph','guidance_document','part')").fetchall()
     edges: list[Edge] = []
     for node_id, node_type, title, text, url in rows:
         hay = f"{title} {text}".lower()
@@ -219,6 +219,10 @@ def _topic_edges(conn: sqlite3.Connection) -> tuple[list[Node], list[Edge]]:
             if not hits:
                 continue
             confidence = min(0.95, 0.45 + 0.12 * len(hits))
+            title_lower = (title or '').lower()
+            title_hits = [kw for kw in hits if kw in title_lower]
+            if title_hits:
+                confidence = max(confidence, min(0.95, 0.72 + 0.08 * len(title_hits)))
             edges.append(Edge(edge_id(node_id, topic_id[topic], "has_topic"), node_id, topic_id[topic], "has_topic", "keyword_topic", confidence, "; ".join(hits[:6]), url, {"topic": topic, "matched_keywords": hits, "node_type": node_type}))
     return topic_nodes, edges
 
