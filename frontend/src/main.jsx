@@ -240,7 +240,7 @@ function Evidence({node,edges,graph,onChoose}){
     <div className="layer-head"><span>Analytical evidence</span><h3>Selected node</h3></div>
     <Collapsible title="Selected provision" count={label(node.node_type)} open>
       <span className="kind">{label(node.node_type)}</span><h2>{node.title}</h2>{node.url&&<a className="source" href={node.url} target="_blank">Open source ↗</a>}
-      <p className="text">{node.text?truncate(node.text,1300):'No body text for this node.'}</p>
+      <p className="text">{node.text?truncate(node.text,1300):emptyNodeMessage(node)}</p>
     </Collapsible>
     {groups.length
       ? groups.map(([edgeType,items],i)=><Collapsible key={edgeType} title={label(edgeType)} count={`${items.length} link${items.length===1?'':'s'}`} open={i<2}>
@@ -285,6 +285,11 @@ function layout(graph, centreId){
   return{nodes:[centre,...others],edges};
 }
 function r(n){return Math.min(25,(n.node_type==='part'?14:n.node_type==='topic'?13:n.node_type==='defined_term'?11:9)+Math.sqrt(n.degree||1));}
+function emptyNodeMessage(node){
+  if(['part','chapter','guidance_document','guidance_section','rulebook'].includes(node?.node_type)) return 'This is a heading or container node. The substantive legal text is held in the child provision nodes shown in the left-hand contents panel.';
+  if(node?.metadata?.placeholder) return 'This is a placeholder reference node. Open the source link for the external definition or referenced material.';
+  return 'No body text for this node.';
+}
 function displayColour(v){return COLOUR[PROVISION_TYPES.includes(v)?'provision':v]||'#64748b'}
 function label(v){
   if(PROVISION_TYPES.includes(v)) return 'provision';
