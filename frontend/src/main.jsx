@@ -22,6 +22,8 @@ const RELATION_LABELS = { contains:'contains / child', references:'cross-referen
 const EDGE_COLOURS = { contains:'#94a3b8', references:'#60a5fa', uses_defined_term:'#f59e0b', defines:'#fbbf24', similar_to:'#d7ff64', has_topic:'#d35cff', has_topic_cluster:'#a78bfa', has_obligation_pattern:'#fb7185', shares_obligation_pattern:'#f97316', has_structured_obligation:'#f43f5e', amends:'#ef4444', resolves_to_part:'#38bdf8' };
 const MATERIAL_COLOURS = { rule:'#4f7cff', supervisory_statement:'#22c55e', statement_of_policy:'#14b8a6', definition:'#d28b24', external_reference:'#7b8190', legal_instrument:'#cc5c5c', analysis:'#d35cff', rulebook:'#9b6bff' };
 const CLUSTER_COLOURS = ['#4f7cff','#d28b24','#58a978','#d35cff','#cc5c5c','#35b6b4','#d7ff64','#a78bfa','#fb7185','#60a5fa','#f59e0b','#34d399'];
+const MATERIAL_FILTERS = ['rule','supervisory_statement','statement_of_policy','definition','legal_instrument','external_reference'];
+const RELATIONSHIP_FILTERS = TYPES;
 
 function App(){
   const [q,setQ]=useState('');
@@ -142,7 +144,7 @@ function App(){
   }
   function toggleType(t){ const next=new Set(types); next.has(t)?next.delete(t):next.add(t); setTypes(next); setRepresentation('custom'); }
   const activeRep=REPRESENTATIONS[representation]||{label:'Custom',hint:'Manual edge-type selection.'};
-  const visibleGraph=useMemo(()=>filterGraph(graph,nodeTypes,selected?.id,showInsurance),[graph,nodeTypes,selected?.id,showInsurance]);
+  const visibleGraph=useMemo(()=>filterGraph(graph,nodeTypes,types,selected?.id,showInsurance),[graph,nodeTypes,[...types].sort().join('|'),selected?.id,showInsurance]);
   const selectedEdges=useMemo(()=>visibleGraph.edges.filter(e=>detail&&(e.from_node_id===detail.id||e.to_node_id===detail.id)),[visibleGraph,detail]);
   function toggleNodeType(t){
     const next=new Set(nodeTypes);
@@ -176,7 +178,8 @@ function App(){
           <label>Node cap <input type="number" min="30" max="800" value={limit} onChange={e=>setLimit(Number(e.target.value))}/></label>
           <label className="check"><input type="checkbox" checked={explicitOnly} onChange={e=>{setExplicitOnly(e.target.checked);setRepresentation('custom')}}/> Explicit only</label>
           <label className="check"><input type="checkbox" checked={showInsurance} onChange={e=>setShowInsurance(e.target.checked)}/> Insurance parts</label>
-          <div className="type-grid">{TYPES.map(t=><button type="button" key={t} className={types.has(t)?'on':''} onClick={()=>toggleType(t)}><span>{t.replaceAll('_',' ')}</span><em>{graph.available_edge_types?.[t]||0}</em></button>)}</div>
+          <div className="filter-section"><h4>Material</h4><div className="type-grid material-grid">{MATERIAL_FILTERS.map(t=><button type="button" key={t} className={materialFilterOn(t,nodeTypes)?'on':''} onClick={()=>toggleNodeType(t)}><span>{materialLabel(t)}</span></button>)}</div></div>
+          <div className="filter-section"><h4>Relationship</h4><div className="type-grid">{RELATIONSHIP_FILTERS.map(t=><button type="button" key={t} className={types.has(t)?'on':''} onClick={()=>toggleType(t)}><span>{relationLabel(t)}</span><em>{graph.available_edge_types?.[t]||0}</em></button>)}</div></div>
         </div></details>
       </div>
     </header>
@@ -231,16 +234,7 @@ function Graph({graph,selected,detail,nodeTypes,onToggleNodeType,onSelect,onOpen
 }
 
 function Legend({active,onToggle}){
-  const materialItems=['rule','supervisory_statement','statement_of_policy','definition','legal_instrument','external_reference','analysis'];
-  const relationItems=['contains','references','uses_defined_term','similar_to','has_topic','has_obligation_pattern','shares_obligation_pattern','amends','resolves_to_part'];
-  const isOn=t=>{
-    if(t==='rule') return ['rule','chapter','part','rulebook'].some(x=>active?.has(x));
-    if(t==='definition') return ['defined_term','glossary','crr_terms_list'].some(x=>active?.has(x));
-    if(['supervisory_statement','statement_of_policy'].includes(t)) return ['guidance_document','guidance_section','guidance_paragraph'].some(x=>active?.has(x));
-    if(t==='analysis') return ['topic','topic_cluster','obligation_pattern','obligation_statement'].some(x=>active?.has(x));
-    return active?.has(t);
-  };
-  return <div className="legend split"><div className="legend-title">Material</div>{materialItems.map(t=><button key={t} className={isOn(t)?'on':'off'} onClick={()=>onToggle(t)} title={`Toggle ${materialLabel(t)}`}><i style={{background:MATERIAL_COLOURS[t]||'#64748b'}} /> <span>{materialLabel(t)}</span></button>)}<div className="legend-title">Relationship</div>{relationItems.map(t=><div key={t}><i className="line" style={{borderTopColor:edgeColour(t)}}/> <span>{relationLabel(t)}</span></div>)}<div><i className="line dash"/> <span>inferred/analytic</span></div></div>
+  return <div className="legend split"><div className="legend-title">Material</div>{MATERIAL_FILTERS.map(t=><button key={t} className={materialFilterOn(t,active)?'on':'off'} onClick={()=>onToggle(t)} title={`Toggle ${materialLabel(t)}`}><i style={{background:MATERIAL_COLOURS[t]||'#64748b'}} /> <span>{materialLabel(t)}</span></button>)}<div className="legend-title">Relationship</div>{['contains','references','uses_defined_term','similar_to','has_topic','has_obligation_pattern','shares_obligation_pattern','amends','resolves_to_part'].map(t=><div key={t}><i className="line" style={{borderTopColor:edgeColour(t)}}/> <span>{relationLabel(t)}</span></div>)}<div><i className="line dash"/> <span>computed link</span></div></div>
 }
 
 function Explore({node,edges,graph,onChoose}){
@@ -290,10 +284,10 @@ function groupEdges(edges){
     return (ai<0?99:ai)-(bi<0?99:bi) || b[1].length-a[1].length || a[0].localeCompare(b[0]);
   });
 }
-function filterGraph(graph,nodeTypes,selectedId,showInsurance=true){
+function filterGraph(graph,nodeTypes,relationshipTypes,selectedId,showInsurance=true){
   const keepNodes=(graph.nodes||[]).filter(n=>(nodeTypes.has(n.node_type)||n.id===selectedId) && (showInsurance || n.id===selectedId || !isInsuranceNode(n)));
   const keepIds=new Set(keepNodes.map(n=>n.id));
-  return {...graph,nodes:keepNodes,edges:(graph.edges||[]).filter(e=>keepIds.has(e.from_node_id)&&keepIds.has(e.to_node_id))};
+  return {...graph,nodes:keepNodes,edges:(graph.edges||[]).filter(e=>keepIds.has(e.from_node_id)&&keepIds.has(e.to_node_id)&&(!relationshipTypes?.size||relationshipTypes.has(e.edge_type)))};
 }
 
 function isInsuranceNode(n){
@@ -355,6 +349,17 @@ function emptyNodeMessage(node){
 }
 function edgeColour(v){return EDGE_COLOURS[v]||'#94a3b8'}
 function relationLabel(v){return RELATION_LABELS[v]||String(v||'').replaceAll('_',' ')}
+function materialFilterOn(t,active){
+  const groups={
+    rule:['rule','chapter','part','rulebook'],
+    definition:['defined_term','glossary','crr_terms_list'],
+    supervisory_statement:['guidance_document','guidance_section','guidance_paragraph'],
+    statement_of_policy:['guidance_document','guidance_section','guidance_paragraph'],
+    legal_instrument:['legal_instrument'],
+    external_reference:['external_reference','rule_reference'],
+  };
+  return (groups[t]||[t]).some(x=>active?.has(x));
+}
 function materialType(n){
   const type=typeof n==='string'?n:n?.node_type;
   const meta=(typeof n==='string'?{}:n?.metadata)||{};
@@ -371,7 +376,7 @@ function materialType(n){
   }
   return type||'external_reference';
 }
-function materialLabel(v){return ({rule:'Rulebook rule/Part',supervisory_statement:'Supervisory statement',statement_of_policy:'Statement of policy',definition:'Definition',external_reference:'External reference',legal_instrument:'Legal instrument',analysis:'Analytical node'}[v]||String(v||'').replaceAll('_',' '))}
+function materialLabel(v){return ({rule:'Rulebook part / rule',supervisory_statement:'Supervisory statement',statement_of_policy:'Statement of policy',definition:'Definition',external_reference:'External reference',legal_instrument:'Legal instrument',analysis:'Topic / obligation marker'}[v]||String(v||'').replaceAll('_',' '))}
 function displayColour(v){return MATERIAL_COLOURS[materialType(v)]||'#64748b'}
 function label(v){return materialLabel(materialType(v))}
 function truncate(s='',n=120){return s&&s.length>n?s.slice(0,n-1)+'…':s}
