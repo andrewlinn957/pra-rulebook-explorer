@@ -39,8 +39,7 @@ function App(){
   const [types,setTypes]=useState(DEFAULT_TYPES);
   const [nodeTypes,setNodeTypes]=useState(new Set(NODE_TYPES));
   const [showInsurance,setShowInsurance]=useState(false);
-  const [sideTab,setSideTab]=useState('explore');
-  const [analysis,setAnalysis]=useState({centrality:[],bridges:[],interesting:[],stats:null});
+  const [stats,setStats]=useState(null);
   const [panelOpen,setPanelOpen]=useState(true);
   const [graphExpanded,setGraphExpanded]=useState(false);
   const [busy,setBusy]=useState(false);
@@ -56,11 +55,10 @@ function App(){
   }
   async function bootstrap(){
     try{
-      const [stats,interesting,centrality,bridges,parts,roots]=await Promise.all([
-        api('/stats'), api('/interesting?limit=10'), api('/centrality?limit=10'), api('/analysis/betweenness?limit=8&k=60&max_nodes=800'),
-        api('/nodes?types=part&limit=300'), api('/nodes?types=rulebook&limit=1')
+      const [statsData,parts,roots]=await Promise.all([
+        api('/stats'), api('/nodes?types=part&limit=300'), api('/nodes?types=rulebook&limit=1')
       ]);
-      setAnalysis({stats,interesting:interesting.results||[],centrality:centrality.degree||[],bridges:bridges.results||[]});
+      setStats(statsData);
       setResults(parts.results||[]);
       setRailContext(null);
       setRailStack([]);
@@ -184,7 +182,7 @@ function App(){
     </header>
 
     <aside className="rail">
-      <div className="product"><strong>PRA Rulebook</strong><span>{railContext?`${railContext.kind} · ${railContext.title}`:(q.trim()?'Search results':'All Rulebook Parts')} · {analysis.stats?`${analysis.stats.nodes.toLocaleString()} nodes`:''}</span><div className="rail-actions">{railStack.length>0&&<button className="back-link" onClick={goUp}>‹ Up one level</button>}{railContext&&<button className="back-link secondary" onClick={loadAllParts}>All Parts</button>}</div></div>
+      <div className="product"><strong>PRA Rulebook</strong><span>{railContext?`${railContext.kind} · ${railContext.title}`:(q.trim()?'Search results':'All Rulebook Parts')} · {stats?`${stats.nodes.toLocaleString()} nodes`:''}</span><div className="rail-actions">{railStack.length>0&&<button className="back-link" onClick={goUp}>‹ Up one level</button>}{railContext&&<button className="back-link secondary" onClick={loadAllParts}>All Parts</button>}</div></div>
       {error&&<div className="error">{error}</div>}
       <div className="result-stack">{results.map(r=><button key={r.id} className={selected?.id===r.id?'hit active':'hit'} onClick={()=>choose(r)}><span>{label(r.node_type)}</span><strong>{r.title}</strong><small>{truncate(r.snippet||r.text,128)}</small></button>)}</div>
     </aside>
@@ -195,10 +193,7 @@ function App(){
     </main>
 
     <aside className={panelOpen?'inspector open':'inspector'}>
-      <div className="tabs"><button className={sideTab==='explore'?'on':''} onClick={()=>setSideTab('explore')}>Explore</button><button className={sideTab==='discover'?'on':''} onClick={()=>setSideTab('discover')}>Discover</button><button className={sideTab==='analysis'?'on':''} onClick={()=>setSideTab('analysis')}>Analysis</button></div>
-      {sideTab==='explore'&&<Explore node={detail} edges={selectedEdges} graph={graph} onChoose={choose}/>} 
-      {sideTab==='discover'&&<Discover interesting={analysis.interesting} onChoose={choose}/>} 
-      {sideTab==='analysis'&&<Analysis analysis={analysis} onChoose={choose}/>} 
+      <Explore node={detail} edges={selectedEdges} graph={graph} onChoose={choose}/>
     </aside>
   </div>;
 }
@@ -295,9 +290,6 @@ function groupEdges(edges){
     return (ai<0?99:ai)-(bi<0?99:bi) || b[1].length-a[1].length || a[0].localeCompare(b[0]);
   });
 }
-function Discover({interesting,onChoose}){return <div className="pane list">{interesting.map(e=><button key={e.id} onClick={()=>onChoose({id:e.from_node_id,title:e.from_title,node_type:e.from_type})}><span>{label(e.edge_type)} · {Math.round((e.confidence||0)*100)}%</span><strong>{e.from_title}</strong><small>→ {e.to_title}</small><em>{e.why}</em></button>)}</div>}
-function Analysis({analysis,onChoose}){return <div className="pane list"><div className="mini-metrics"><div><b>{analysis.stats?.nodes?.toLocaleString()||'…'}</b><span>nodes</span></div><div><b>{analysis.stats?.edges?.toLocaleString()||'…'}</b><span>edges</span></div><div><b>{analysis.stats?.edge_methods?.regex_named_reference||'…'}</b><span>named refs</span></div></div><h3>Central</h3>{analysis.centrality.map((x,i)=><button key={x.node?.id||i} onClick={()=>x.node&&onChoose(x.node)}><span>{x.degree} links</span><strong>{x.node?.title}</strong></button>)}<h3>Bridges</h3>{analysis.bridges.map((x,i)=><button key={x.node?.id||i} onClick={()=>x.node&&onChoose(x.node)}><span>{Number(x.betweenness||0).toFixed(4)}</span><strong>{x.node?.title}</strong></button>)}</div>}
-
 function filterGraph(graph,nodeTypes,selectedId,showInsurance=true){
   const keepNodes=(graph.nodes||[]).filter(n=>(nodeTypes.has(n.node_type)||n.id===selectedId) && (showInsurance || n.id===selectedId || !isInsuranceNode(n)));
   const keepIds=new Set(keepNodes.map(n=>n.id));
