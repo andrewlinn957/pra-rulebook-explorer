@@ -1,0 +1,8 @@
+requests>=2.31
+beautifulsoup4>=4.12
+lxml>=5.0
+fastapi>=0.115
+uvicorn[standard]>=0.30
+networkx>=3.3
+numpy>=1.26
+scikit-learn>=1.5
