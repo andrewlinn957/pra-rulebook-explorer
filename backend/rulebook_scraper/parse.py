@@ -107,10 +107,11 @@ def extract_part(html: str, url: str) -> tuple[list[Node], list[Edge]]:
             if current_chapter and not (current_chapter.metadata or {}).get("chapter_number"):
                 section_key = f":{current_chapter.stable_key.rsplit(':', 1)[-1]}"
             stable = f"rule:{part_stable}{section_key}:{rule_number}"
+            display_number = _display_rule_number(rule_number, current_chapter)
             rule = Node(
-                node_id(stable), "rule", stable, f"{title} {rule_number}", text=body_text,
+                node_id(stable), "rule", stable, display_number, text=body_text,
                 url=f"{url}#{el.get('id','')}",
-                metadata={"rule_number": rule_number, "part_title": title, "effective_dates": DATE_RE.findall(clean_text(el.get_text(" "))), "html_id": el.get("id", "")},
+                metadata={"rule_number": rule_number, "display_number": display_number, "part_title": title, "effective_dates": DATE_RE.findall(clean_text(el.get_text(" "))), "html_id": el.get("id", "")},
             )
             nodes.append(rule)
             if current_chapter:
@@ -205,6 +206,22 @@ def _article_or_annex_number(title: str) -> str:
     text = clean_text(title)
     match = re.match(r"^(Article\s+\d+[A-Za-z]*|Annex\s+[IVXLCDM]+)\b", text, re.IGNORECASE)
     return match.group(1) if match else ""
+
+
+def _display_rule_number(rule_number: str, current_chapter: Node | None) -> str:
+    """Return a compact legal citation for a row-level provision.
+
+    CRR-style pages repeat paragraph numbers inside each Article/Annex. A bare
+    "1" or "2" is ambiguous, so display these as Article 2(1), Annex I(3),
+    etc. Conventional PRA chapter rules already carry meaningful numbering
+    such as 2.1, so leave those as-is.
+    """
+    if current_chapter:
+        article_number = clean_text((current_chapter.metadata or {}).get("article_number", ""))
+        if article_number:
+            suffix = "".join(f"({part})" for part in rule_number.split(".") if part)
+            return f"{article_number}{suffix}"
+    return rule_number
 
 
 def _rulebook_date(soup: BeautifulSoup) -> str | None:

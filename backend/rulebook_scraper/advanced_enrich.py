@@ -28,6 +28,11 @@ STOP_ACTIONS = {"be", "have", "ensure", "make", "take", "provide", "include", "a
 
 
 def derive_advanced_topics_and_obligations(conn: sqlite3.Connection, *, n_topics: int = 36, min_cluster_size: int = 8, max_nodes: int = 12000) -> dict[str, int]:
+    # Topic clusters are derived afresh from current embeddings. Their labels can
+    # legitimately change when titles/text change, so remove the old derived
+    # cluster layer before upserting the new one.
+    conn.execute("DELETE FROM edge WHERE source_method='embedding_topic_cluster'")
+    conn.execute("DELETE FROM node WHERE node_type='topic_cluster'")
     nodes: list[Node] = []
     edges: list[Edge] = []
     topic_nodes, topic_edges = _embedding_topic_clusters(conn, n_topics=n_topics, min_cluster_size=min_cluster_size, max_nodes=max_nodes)
