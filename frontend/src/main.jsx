@@ -12,6 +12,7 @@ const COLOUR = { rule:'#4f7cff', part:'#9b6bff', chapter:'#738195', defined_term
 function App(){
   const [q,setQ]=useState('');
   const [results,setResults]=useState([]);
+  const [railContext,setRailContext]=useState(null);
   const [selected,setSelected]=useState(null);
   const [detail,setDetail]=useState(null);
   const [graph,setGraph]=useState({nodes:[],edges:[],available_edge_types:{}});
@@ -44,27 +45,37 @@ function App(){
       ]);
       setAnalysis({stats,interesting:interesting.results||[],centrality:centrality.degree||[],bridges:bridges.results||[]});
       setResults(parts.results||[]);
-      if(roots.results?.[0]) await choose(roots.results[0]);
+      setRailContext(null);
+      if(roots.results?.[0]) await choose(roots.results[0], {drill:false});
     }catch(e){setError(e.message||String(e));}
+  }
+  async function loadAllParts(){
+    const data=await api('/nodes?types=part&limit=300');
+    setResults(data.results||[]);
+    setRailContext(null);
   }
   async function search(e,first=false){
     e?.preventDefault(); setBusy(true); setError('');
     try{
       if(!q.trim()){
-        const data=await api('/nodes?types=part&limit=300');
-        setResults(data.results||[]);
+        await loadAllParts();
       }else{
         const data=await api(`/search?q=${encodeURIComponent(q)}&limit=30`);
         setResults(data.results||[]);
-        if((first || !selected) && data.results?.[0]) await choose(data.results[0]);
+        setRailContext({kind:'Search results',title:q.trim()});
+        if((first || !selected) && data.results?.[0]) await choose(data.results[0], {drill:false});
       }
     }catch(err){setError(err.message||String(err));}
     finally{setBusy(false);}
   }
-  async function choose(n){
+  async function choose(n, opts={drill:true}){
     const full=await api(`/node/${n.id}`);
     setSelected(full); setDetail(full); setPanelOpen(true);
     const [tree]=await Promise.all([loadContents(full.id), loadNeighbourhood(full.id)]);
+    if(opts.drill!==false && tree?.children?.length && ['rulebook','part','chapter'].includes(full.node_type)){
+      setResults(tree.children);
+      setRailContext({kind:'Contents',title:full.title});
+    }
   }
   async function loadContents(id){
     try{
@@ -106,7 +117,7 @@ function App(){
     </header>
 
     <aside className="rail">
-      <div className="product"><strong>PRA Rulebook</strong><span>{q.trim()?'Search results':'All Rulebook Parts'} · {analysis.stats?`${analysis.stats.nodes.toLocaleString()} nodes`:''}</span></div>
+      <div className="product"><strong>PRA Rulebook</strong><span>{railContext?`${railContext.kind} · ${railContext.title}`:(q.trim()?'Search results':'All Rulebook Parts')} · {analysis.stats?`${analysis.stats.nodes.toLocaleString()} nodes`:''}</span>{railContext&&<button className="back-link" onClick={loadAllParts}>‹ All Parts</button>}</div>
       {error&&<div className="error">{error}</div>}
       <div className="result-stack">{results.map(r=><button key={r.id} className={selected?.id===r.id?'hit active':'hit'} onClick={()=>choose(r)}><span>{label(r.node_type)}</span><strong>{r.title}</strong><small>{truncate(r.snippet||r.text,128)}</small></button>)}</div>
     </aside>
@@ -164,15 +175,17 @@ function Legend({active,onToggle}){
 
 function Explore({node,tree,edges,graph,onChoose}){
   const children=tree?.children||[];
-  return <div className="pane explore-pane">
-    <Evidence node={node} edges={edges} graph={graph} onChoose={onChoose}/>
-    <section className="explore-layer contents-layer" aria-label="Legal structure">
-      <div className="layer-head"><span>Legal structure</span><h3>Contents</h3></div>
-      {children.length
-        ? <div className="contents-list">{children.map(n=><ContentNode key={n.id} node={n} onChoose={onChoose}/>)}</div>
-        : <p className="muted">No contained articles/chapters for this node.</p>}
-    </section>
-  </div>;
+  const contents=<ContentsLayer children={children} onChoose={onChoose}/>;
+  const evidence=<Evidence node={node} edges={edges} graph={graph} onChoose={onChoose}/>;
+  return <div className="pane explore-pane">{children.length?contents:evidence}{children.length?evidence:contents}</div>;
+}
+function ContentsLayer({children,onChoose}){
+  return <section className="explore-layer contents-layer" aria-label="Legal structure">
+    <div className="layer-head"><span>Legal structure</span><h3>Contents</h3></div>
+    {children.length
+      ? <div className="contents-list">{children.map(n=><ContentNode key={n.id} node={n} onChoose={onChoose}/>)}</div>
+      : <p className="muted">No contained articles/chapters for this node.</p>}
+  </section>;
 }
 function ContentNode({node,onChoose}){
   const kids=node.children||[];
