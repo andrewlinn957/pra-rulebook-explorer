@@ -42,6 +42,7 @@ function App(){
   const [sideTab,setSideTab]=useState('explore');
   const [analysis,setAnalysis]=useState({centrality:[],bridges:[],interesting:[],stats:null});
   const [panelOpen,setPanelOpen]=useState(true);
+  const [graphExpanded,setGraphExpanded]=useState(false);
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
 
@@ -162,7 +163,7 @@ function App(){
     setNodeTypes(next);
   }
 
-  return <div className="shell">
+  return <div className={graphExpanded?'shell graph-expanded':'shell'}>
     <header className="topbar">
       <a className="home" href="/">‹</a>
       <form className="command" onSubmit={search}>
@@ -189,7 +190,7 @@ function App(){
     </aside>
 
     <main className="canvas">
-      <div className="canvas-meta"><strong>{selected?.title||'Select a node'}</strong><span>{activeRep.label} · {visibleGraph.nodes.length} shown · {visibleGraph.edges.length} visible links · {Object.values(graph.available_edge_types||{}).reduce((a,b)=>a+b,0)} direct links available</span></div>
+      <div className="canvas-meta"><strong>{selected?.title||'Select a node'}</strong><span>{activeRep.label} · {visibleGraph.nodes.length} shown · {visibleGraph.edges.length} visible links · {Object.values(graph.available_edge_types||{}).reduce((a,b)=>a+b,0)} direct links available</span><button className="expand-graph" onClick={()=>setGraphExpanded(v=>!v)}>{graphExpanded?'Collapse graph':'Expand graph'}</button></div>
       <Graph graph={visibleGraph} selected={selected} detail={detail} nodeTypes={nodeTypes} onToggleNodeType={toggleNodeType} onSelect={n=>{setDetail(n);setPanelOpen(true);}} onOpen={n=>choose(n,{drill:!['whole_map','article_map'].includes(representation)})}/>
     </main>
 
@@ -217,14 +218,14 @@ function Graph({graph,selected,detail,nodeTypes,onToggleNodeType,onSelect,onOpen
       onPointerDown={startPan} onPointerMove={movePan} onPointerUp={endPan} onPointerLeave={()=>{endPan();setHover(null)}}
       onWheel={e=>{e.preventDefault(); const dz=e.deltaY>0?.92:1.08; setView(v=>({...v,z:Math.max(.55,Math.min(1.8,v.z*dz))}));}}>
       <g transform={`translate(${view.x} ${view.y}) scale(${view.z})`}>
-        {edges.map(e=>{const a=byId.get(e.from_node_id),b=byId.get(e.to_node_id); if(!a||!b)return null; const inf=!EXPLICIT.has(e.source_method); const showLabel=graph.level!=='part' || (e.confidence||0)>0.82; return <g key={e.id} className={inf?'edge-group inferred':'edge-group'}><line x1={a.x} y1={a.y} x2={b.x} y2={b.y} className={`edge edge-${e.edge_type}`} style={{stroke:edgeColour(e.edge_type)}} strokeWidth={Math.max(1.2,(e.confidence||.45)*2.8)} />{showLabel&&<text className="edge-label" x={(a.x+b.x)/2} y={(a.y+b.y)/2} style={{fill:edgeColour(e.edge_type)}}>{relationLabel(e.edge_type)}</text>}</g>})}
+        {edges.map(e=>{const a=byId.get(e.from_node_id),b=byId.get(e.to_node_id); if(!a||!b)return null; const inf=!EXPLICIT.has(e.source_method); return <g key={e.id} className={inf?'edge-group inferred':'edge-group'}><line x1={a.x} y1={a.y} x2={b.x} y2={b.y} className={`edge edge-${e.edge_type}`} style={{stroke:edgeColour(e.edge_type)}} strokeWidth={Math.max(1.2,(e.confidence||.45)*2.8)} /></g>})}
         {nodes.map(n=><g key={n.id} className={`node ${selected?.id===n.id?'selected':''} ${detail?.id===n.id?'focus':''}`}
           onClick={()=>onSelect(n)} onDoubleClick={()=>onOpen(n)}
           onPointerEnter={e=>setHover({node:n,x:e.clientX,y:e.clientY})}
           onPointerMove={e=>setHover({node:n,x:e.clientX,y:e.clientY})}
           onPointerLeave={()=>setHover(null)}>
           <circle cx={n.x} cy={n.y} r={r(n,graph)} fill={nodeFill(n,graph)} />
-          <text x={n.x} y={n.y+r(n,graph)+15} textAnchor="middle">{truncate(n.title||n.id,n.id===selected?.id?38:24)}</text>
+          {showNodeLabel(n,view,graph,selected)&&<text x={n.x} y={n.y+r(n,graph)+labelOffset(view)} textAnchor="middle" fontSize={labelSize(view,graph)}>{truncate(n.title||n.id,labelChars(n,view,graph,selected))}</text>}
         </g>)}
       </g>
     </svg>
@@ -310,16 +311,44 @@ function isInsuranceNode(n){
 
 function layout(graph, centreId){
   const nodes=[...(graph.nodes||[])], edges=graph.edges||[]; if(!nodes.length)return{nodes,edges};
-  if(graph.level==='part' && nodes.every(n=>Number.isFinite(n.x)&&Number.isFinite(n.y))) return {nodes,edges};
+  if(['part','article'].includes(graph.level) && nodes.every(n=>Number.isFinite(n.x)&&Number.isFinite(n.y))) return {nodes:spreadNodes(nodes,graph),edges};
   const degree=new Map(nodes.map(n=>[n.id,0])); edges.forEach(e=>{degree.set(e.from_node_id,(degree.get(e.from_node_id)||0)+1); degree.set(e.to_node_id,(degree.get(e.to_node_id)||0)+1)});
   const centre=nodes.find(n=>n.id===centreId)||nodes[0], others=nodes.filter(n=>n.id!==centre.id).sort((a,b)=>(degree.get(b.id)||0)-(degree.get(a.id)||0));
   centre.x=600; centre.y=410; centre.degree=degree.get(centre.id)||1;
   others.forEach((n,i)=>{const ring=i<20?1:i<64?2:3; const idx=ring===1?i:ring===2?i-20:i-64; const count=ring===1?Math.min(20,others.length):ring===2?Math.min(44,Math.max(1,others.length-20)):Math.max(1,others.length-64); const a=(Math.PI*2*idx/count)+(ring*.21); const rad=ring===1?205:ring===2?335:455; n.x=600+Math.cos(a)*rad; n.y=410+Math.sin(a)*rad*.76; n.degree=degree.get(n.id)||1;});
-  return{nodes:[centre,...others],edges};
+  return{nodes:spreadNodes([centre,...others],graph),edges};
+}
+function spreadNodes(input,graph){
+  const nodes=input.map(n=>({...n}));
+  const minDist=graph?.level==='article'?18:graph?.level==='part'?34:22;
+  const iterations=graph?.level==='article'?18:10;
+  for(let k=0;k<iterations;k++){
+    for(let i=0;i<nodes.length;i++) for(let j=i+1;j<nodes.length;j++){
+      const a=nodes[i], b=nodes[j]; let dx=b.x-a.x, dy=b.y-a.y; let d=Math.hypot(dx,dy)||0.01;
+      const need=minDist+(r(a,graph)+r(b,graph))*0.45;
+      if(d<need){const push=(need-d)/2; dx/=d; dy/=d; a.x-=dx*push; a.y-=dy*push; b.x+=dx*push; b.y+=dy*push;}
+    }
+  }
+  for(const n of nodes){n.x=Math.max(35,Math.min(1165,n.x)); n.y=Math.max(35,Math.min(785,n.y));}
+  return nodes;
 }
 function r(n,graph){
   if(graph?.level==='part') return Math.min(34,8+Math.sqrt(Math.max(1,n.degree||n.metadata?.weighted_degree||1))*1.15);
   return Math.min(25,(n.node_type==='part'?14:n.node_type==='topic'?13:n.node_type==='defined_term'?11:9)+Math.sqrt(n.degree||1));
+}
+function showNodeLabel(n,view,graph,selected){
+  if(selected?.id===n.id) return true;
+  if(view.z<0.72) return false;
+  if(graph?.level==='article') return view.z>1.08 && (n.degree||0)>6;
+  if(graph?.level==='part') return view.z>0.82 || (n.degree||0)>80;
+  return view.z>0.7;
+}
+function labelSize(view,graph){return graph?.level==='article'?Math.max(8,11/view.z):Math.max(9,12/view.z)}
+function labelOffset(view){return 16/view.z}
+function labelChars(n,view,graph,selected){
+  if(selected?.id===n.id) return 54;
+  if(graph?.level==='article') return view.z>1.35?34:22;
+  return view.z>1.2?42:26;
 }
 function nodeFill(n,graph){
   if(graph?.level==='part' || graph?.level==='article') return CLUSTER_COLOURS[(n.metadata?.semantic_cluster??0)%CLUSTER_COLOURS.length];
