@@ -11,10 +11,10 @@ from sklearn.cluster import KMeans
 
 from .db import row_to_edge, row_to_node
 
-EXPLICIT_METHODS = {"site_structure", "html_link", "html_glossary_link", "glossary_source", "crr_terms_source", "legal_instrument_listing"}
-EDGE_LABELS = {"contains":"contains / child", "references":"cross-reference", "uses_defined_term":"uses defined term", "defines":"defines", "similar_to":"semantic similarity", "has_topic":"has topic", "has_topic_cluster":"topic cluster", "has_obligation_pattern":"obligation signal", "shares_obligation_pattern":"similar obligation", "has_structured_obligation":"structured obligation", "amends":"amends", "resolves_to_part":"resolved Part reference"}
-EDGE_COLOURS = {"contains":"#94a3b8", "references":"#60a5fa", "uses_defined_term":"#f59e0b", "defines":"#fbbf24", "similar_to":"#d7ff64", "has_topic":"#d35cff", "has_topic_cluster":"#a78bfa", "has_obligation_pattern":"#fb7185", "shares_obligation_pattern":"#f97316", "has_structured_obligation":"#f43f5e", "amends":"#ef4444", "resolves_to_part":"#38bdf8"}
-MATERIAL_COLOURS = {"rule":"#4f7cff", "supervisory_statement":"#22c55e", "statement_of_policy":"#14b8a6", "definition":"#d28b24", "external_reference":"#7b8190", "legal_instrument":"#cc5c5c", "analysis":"#d35cff", "rulebook":"#9b6bff"}
+EXPLICIT_METHODS = {"site_structure", "html_link", "html_anchor_resolved", "html_glossary_link", "glossary_source", "crr_terms_source", "legal_instrument_listing", "regex_reference", "regex_named_reference", "llm_extracted_reference", "resolved_part_reference", "fca_waivers_list"}
+EDGE_LABELS = {"contains":"contains / child", "references":"cross-reference", "uses_defined_term":"uses defined term", "defines":"defines", "has_topic":"topic assignment", "has_topic_cluster":"topic cluster", "has_obligation_pattern":"obligation pattern", "shares_obligation_pattern":"shared obligation pattern", "has_structured_obligation":"structured obligation", "amends":"amends", "has_permission":"firm permission"}
+EDGE_COLOURS = {"contains":"#94a3b8", "references":"#60a5fa", "uses_defined_term":"#f59e0b", "defines":"#fbbf24", "has_topic":"#c084fc", "has_topic_cluster":"#22d3ee", "has_obligation_pattern":"#fb7185", "shares_obligation_pattern":"#f97316", "has_structured_obligation":"#e11d48", "amends":"#ef4444", "has_permission":"#a78bfa"}
+MATERIAL_COLOURS = {"rule":"#4f7cff", "supervisory_statement":"#22c55e", "statement_of_policy":"#14b8a6", "definition":"#d28b24", "permission":"#a78bfa", "external_reference":"#7b8190", "legal_instrument":"#cc5c5c", "topic":"#c084fc", "topic_cluster":"#22d3ee", "obligation_pattern":"#fb7185", "obligation_statement":"#e11d48", "analysis":"#d35cff", "rulebook":"#9b6bff"}
 CLUSTER_COLOURS = ["#4f7cff", "#d28b24", "#58a978", "#d35cff", "#cc5c5c", "#35b6b4", "#d7ff64", "#a78bfa", "#fb7185", "#60a5fa", "#f59e0b", "#34d399"]
 
 
@@ -39,22 +39,26 @@ def search(conn: sqlite3.Connection, q: str, *, node_types: list[str] | None = N
         rows = conn.execute(
             f"""
             SELECT n.id,n.node_type,n.stable_key,n.title,n.text,n.url,n.metadata_json,
-                   bm25(node_fts) AS score
+                   CASE WHEN n.title LIKE ? THEN -1000000.0 ELSE bm25(node_fts) END AS score
             FROM node_fts f JOIN node n ON n.id=f.id
+            JOIN canonical_node cn ON cn.id=n.id AND cn.is_canonical=1
             WHERE node_fts MATCH ? {type_clause}
             ORDER BY score LIMIT ?
             """,
-            [q, *params, limit],
+            [f"%{q}%", q, *params, limit],
         ).fetchall()
     except sqlite3.OperationalError:
         rows = conn.execute(
             f"""
-            SELECT n.id,n.node_type,n.stable_key,n.title,n.text,n.url,n.metadata_json, 0 AS score
+            SELECT n.id,n.node_type,n.stable_key,n.title,n.text,n.url,n.metadata_json,
+                   CASE WHEN n.title LIKE ? THEN -1000000.0 ELSE 0 END AS score
             FROM node n
+            JOIN canonical_node cn ON cn.id=n.id AND cn.is_canonical=1
             WHERE (n.title LIKE ? OR n.text LIKE ?) {type_clause}
+            ORDER BY score, n.title
             LIMIT ?
             """,
-            [f"%{q}%", f"%{q}%", *params, limit],
+            [f"%{q}%", f"%{q}%", f"%{q}%", *params, limit],
         ).fetchall()
     out = []
     for row in rows:
@@ -151,9 +155,9 @@ def interesting(conn: sqlite3.Connection, *, limit: int = 50) -> list[dict[str, 
         FROM edge e
         JOIN node a ON a.id=e.from_node_id
         JOIN node b ON b.id=e.to_node_id
-        WHERE e.edge_type IN ('similar_to','shares_defined_term','shares_defined_term_with_guidance','resolves_to_part')
+        WHERE e.edge_type IN ('shares_defined_term','shares_defined_term_with_guidance')
         ORDER BY
-          CASE e.edge_type WHEN 'similar_to' THEN 0 WHEN 'shares_defined_term_with_guidance' THEN 1 ELSE 2 END,
+          CASE e.edge_type WHEN 'shares_defined_term_with_guidance' THEN 1 ELSE 2 END,
           e.confidence DESC
         LIMIT ?
         """,
@@ -185,6 +189,7 @@ def contents_tree(conn: sqlite3.Connection, node_id: str, *, max_depth: int = 4,
             """
             SELECT n.id,n.node_type,n.stable_key,n.title,n.text,n.url,n.metadata_json
             FROM edge e JOIN node n ON n.id=e.to_node_id
+            JOIN canonical_node cn ON cn.id=n.id AND cn.is_canonical=1
             WHERE e.from_node_id=? AND e.edge_type='contains'
             ORDER BY
               CASE n.node_type WHEN 'chapter' THEN 0 WHEN 'rule' THEN 1 WHEN 'guidance_section' THEN 2 WHEN 'guidance_paragraph' THEN 3 ELSE 9 END,
@@ -260,12 +265,8 @@ def _json(value: str) -> dict[str, Any]:
 
 
 def _why(edge: dict[str, Any], from_meta: dict[str, Any], to_meta: dict[str, Any]) -> str:
-    if edge["edge_type"] == "similar_to":
-        return f"Semantic similarity score {edge['confidence']:.2f}."
     if edge["edge_type"].startswith("shares_defined_term"):
         return f"Both nodes use defined term: {edge.get('evidence_text')}."
-    if edge["edge_type"] == "resolves_to_part":
-        return "Dated Part reference resolved to current parsed Part by title match."
     return edge.get("source_method", "")
 
 
@@ -346,11 +347,12 @@ def semantic_map(conn: sqlite3.Connection, *, level: str = "part", clusters: int
         node_to_part[row["id"]] = part["id"]
         vectors_by_part[part["id"]].append(np.array(json.loads(row["vector_json"]), dtype="float32"))
 
+    embedding_dim = next((len(vs[0]) for vs in vectors_by_part.values() if vs), 2)
     nodes: list[dict[str, Any]] = []
     part_vectors: list[np.ndarray] = []
     for part in parts_by_key.values():
         vectors = vectors_by_part.get(part["id"]) or []
-        vector = np.mean(np.vstack(vectors), axis=0) if vectors else np.zeros(256, dtype="float32")
+        vector = np.mean(np.vstack(vectors), axis=0) if vectors else np.zeros(embedding_dim, dtype="float32")
         part_vectors.append(vector)
         part["metadata"] = {**(part.get("metadata") or {}), "provision_count": len(vectors)}
         nodes.append(part)
@@ -365,7 +367,7 @@ def semantic_map(conn: sqlite3.Connection, *, level: str = "part", clusters: int
         """
         SELECT from_node_id,to_node_id,edge_type,source_method,confidence
         FROM edge
-        WHERE edge_type IN ('similar_to','references','uses_defined_term','has_topic','has_topic_cluster','has_obligation_pattern','shares_obligation_pattern')
+        WHERE edge_type IN ('references','uses_defined_term','has_topic','has_topic_cluster','has_obligation_pattern','shares_obligation_pattern')
           AND source_method <> 'site_structure'
         """
     ):
@@ -374,7 +376,7 @@ def semantic_map(conn: sqlite3.Connection, *, level: str = "part", clusters: int
         if not a or not b or a == b:
             continue
         key = tuple(sorted((a, b)))
-        kind_weight = {"similar_to": 1.4, "references": 1.2, "uses_defined_term": 0.45, "has_topic": 0.25, "has_topic_cluster": 0.35, "has_obligation_pattern": 0.35, "shares_obligation_pattern": 0.8}.get(row["edge_type"], 0.4)
+        kind_weight = {"references": 1.2, "uses_defined_term": 0.45, "has_topic": 0.25, "has_topic_cluster": 0.35, "has_obligation_pattern": 0.35, "shares_obligation_pattern": 0.8}.get(row["edge_type"], 0.4)
         pair_weights[key] += float(row["confidence"] or 0.5) * kind_weight
         pair_methods.setdefault(key, Counter())[row["edge_type"]] += 1
 
@@ -384,7 +386,7 @@ def semantic_map(conn: sqlite3.Connection, *, level: str = "part", clusters: int
         weighted_degree[a] += weight
         weighted_degree[b] += weight
         methods = pair_methods.get((a, b), Counter())
-        dominant = methods.most_common(1)[0][0] if methods else "similar_to"
+        dominant = methods.most_common(1)[0][0] if methods else "references"
         edges.append({
             "id": f"semantic-map:{i}:{a}:{b}",
             "from_node_id": a,
@@ -459,7 +461,7 @@ def _aggregate_container_edges(conn: sqlite3.Connection, node_to_container: dict
         """
         SELECT from_node_id,to_node_id,edge_type,source_method,confidence
         FROM edge
-        WHERE edge_type IN ('similar_to','references','uses_defined_term','has_topic','has_topic_cluster','has_obligation_pattern','shares_obligation_pattern')
+        WHERE edge_type IN ('references','uses_defined_term','has_topic','has_topic_cluster','has_obligation_pattern','shares_obligation_pattern')
           AND source_method <> 'site_structure'
         """
     ):
@@ -468,7 +470,7 @@ def _aggregate_container_edges(conn: sqlite3.Connection, node_to_container: dict
         if not a or not b or a == b:
             continue
         key = tuple(sorted((a, b)))
-        kind_weight = {"similar_to": 1.4, "references": 1.2, "uses_defined_term": 0.45, "has_topic": 0.25, "has_topic_cluster": 0.35, "has_obligation_pattern": 0.35, "shares_obligation_pattern": 0.8}.get(row["edge_type"], 0.4)
+        kind_weight = {"references": 1.2, "uses_defined_term": 0.45, "has_topic": 0.25, "has_topic_cluster": 0.35, "has_obligation_pattern": 0.35, "shares_obligation_pattern": 0.8}.get(row["edge_type"], 0.4)
         pair_weights[key] += float(row["confidence"] or 0.5) * kind_weight
         pair_methods.setdefault(key, Counter())[row["edge_type"]] += 1
     weighted_degree: Counter[str] = Counter()
@@ -477,7 +479,7 @@ def _aggregate_container_edges(conn: sqlite3.Connection, node_to_container: dict
         weighted_degree[a] += weight
         weighted_degree[b] += weight
         methods = pair_methods.get((a, b), Counter())
-        dominant = methods.most_common(1)[0][0] if methods else "similar_to"
+        dominant = methods.most_common(1)[0][0] if methods else "references"
         edges.append({
             "id": f"semantic-map:{i}:{a}:{b}", "from_node_id": a, "to_node_id": b,
             "edge_type": dominant, "source_method": "container_level_aggregate",
@@ -593,16 +595,16 @@ def _nodes_for_ids(conn: sqlite3.Connection, ids: list[str]) -> list[dict[str, A
 
 
 def list_nodes(conn: sqlite3.Connection, *, node_types: list[str] | None = None, limit: int = 500, offset: int = 0) -> list[dict[str, Any]]:
-    type_clause = ""
+    type_clause = "WHERE cn.is_canonical=1"
     params: list[Any] = []
     if node_types:
-        type_clause = "WHERE node_type IN (%s)" % ",".join("?" for _ in node_types)
+        type_clause += " AND node_type IN (%s)" % ",".join("?" for _ in node_types)
         params.extend(node_types)
     rows = conn.execute(
         f"""
-        SELECT id,node_type,stable_key,title,text,url,metadata_json
-        FROM node {type_clause}
-        ORDER BY title COLLATE NOCASE
+        SELECT n.id,n.node_type,n.stable_key,n.title,n.text,n.url,n.metadata_json
+        FROM node n JOIN canonical_node cn ON cn.id=n.id {type_clause}
+        ORDER BY n.title COLLATE NOCASE
         LIMIT ? OFFSET ?
         """,
         [*params, limit, offset],

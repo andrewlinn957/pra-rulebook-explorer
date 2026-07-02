@@ -5,6 +5,8 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from .canonical import rebuild_canonical_guidance
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DB = PROJECT_ROOT / "backend" / "data" / "rulebook.sqlite3"
 
@@ -33,6 +35,7 @@ def connect(db_path: Path = DEFAULT_DB) -> sqlite3.Connection:
 
 def ensure_indexes(conn: sqlite3.Connection) -> None:
     conn.executescript(INDEX_SCHEMA)
+    rebuild_canonical_guidance(conn)
     # Recreate FTS from scratch so schema changes are harmless and refreshes are exact.
     conn.execute("DROP TABLE IF EXISTS node_fts")
     conn.execute(

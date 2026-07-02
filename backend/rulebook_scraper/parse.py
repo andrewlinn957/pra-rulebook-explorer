@@ -10,6 +10,7 @@ from .models import Edge, Node
 from .store import sha1
 
 RULE_NUMBER_RE = re.compile(r"^\d+[A-Z]?(?:\.\d+[A-Z]?)*$|^\d+[A-Z]?$")
+GUIDANCE_PARA_RE = re.compile(r"^\d+(?:\.\d+)*[A-Z]?$", re.IGNORECASE)
 DATE_RE = re.compile(r"\b\d{2}/\d{2}/\d{4}\b")
 PRA_RULE_LINK_RE = re.compile(r"^/pra-rules/[^?#]+")
 GLOSSARY_HASH_RE = re.compile(r"#glossary-term-([A-Za-z0-9]+)")
@@ -97,9 +98,40 @@ def extract_part(html: str, url: str) -> tuple[list[Node], list[Edge]]:
         if "row-block" in classes:
             number_el = el.select_one(".rule-number:not(.chapter-number)")
             if not number_el:
+                heading_el = el.select_one("h2, h3, h4")
+                heading_title = clean_text(heading_el.get_text(" ")) if heading_el else ""
+                html_id = el.get("id", "")
+                if heading_title and html_id:
+                    stable = f"chapter:{part_stable}:heading:{html_id}"
+                    heading = Node(node_id(stable), "chapter", stable, heading_title, url=f"{url}#{html_id}", metadata={"part_title": title, "html_id": html_id, "heading_level": heading_el.name if heading_el else ""})
+                    nodes.append(heading)
+                    edges.append(Edge(edge_id(part.id, heading.id, "contains"), part.id, heading.id, "contains", "site_structure", source_url=url))
                 continue
             rule_number = clean_text(number_el.get_text(" ")).rstrip(".")
             if not RULE_NUMBER_RE.match(rule_number):
+                heading_el = el.select_one("h2, h3, h4")
+                heading_title = clean_text(heading_el.get_text(" ")) if heading_el else ""
+                html_id = el.get("id", "")
+                if heading_title and html_id:
+                    stable = f"chapter:{part_stable}:heading:{html_id}"
+                    heading = Node(node_id(stable), "chapter", stable, heading_title, url=f"{url}#{html_id}", metadata={"part_title": title, "html_id": html_id, "heading_level": heading_el.name if heading_el else ""})
+                    nodes.append(heading)
+                    edges.append(Edge(edge_id(part.id, heading.id, "contains"), part.id, heading.id, "contains", "site_structure", source_url=url))
+                else:
+                    body_el = el.select_one(".div-row__col-2")
+                    body_text = clean_text(body_el.get_text(" ")) if body_el else clean_text(el.get_text(" "))
+                    if current_chapter and html_id and len(body_text) > 20:
+                        stable = f"rule:{part_stable}:unnumbered:{html_id}"
+                        display_number = current_chapter.title
+                        rule = Node(
+                            node_id(stable), "rule", stable, display_number, text=body_text,
+                            url=f"{url}#{html_id}",
+                            metadata={"rule_number": "", "display_number": display_number, "part_title": title, "effective_dates": DATE_RE.findall(clean_text(el.get_text(" "))), "html_id": html_id, "unnumbered_row": True},
+                        )
+                        nodes.append(rule)
+                        edges.append(Edge(edge_id(current_chapter.id, rule.id, "contains"), current_chapter.id, rule.id, "contains", "site_structure", source_url=url))
+                        _append_link_edges(edges, rule, body_el or el, url)
+                        _append_inline_definition_nodes(nodes, edges, rule, body_el or el, url, part_stable, title)
                 continue
             body_el = el.select_one(".div-row__col-2")
             body_text = clean_text(body_el.get_text(" ")) if body_el else clean_text(el.get_text(" "))
@@ -119,6 +151,7 @@ def extract_part(html: str, url: str) -> tuple[list[Node], list[Edge]]:
             else:
                 edges.append(Edge(edge_id(part.id, rule.id, "contains"), part.id, rule.id, "contains", "site_structure", source_url=url))
             _append_link_edges(edges, rule, body_el or el, url)
+            _append_inline_definition_nodes(nodes, edges, rule, body_el or el, url, part_stable, title)
     return _dedupe_nodes(nodes), _dedupe_edges(edges)
 
 
@@ -193,13 +226,60 @@ def _append_link_edges(edges: list[Edge], from_node: Node, container: Tag, sourc
             to_id = node_id(target)
             edges.append(Edge(edge_id(from_node.id, to_id, "uses_defined_term", href), from_node.id, to_id, "uses_defined_term", "html_glossary_link", 1.0, term or text, source_url, {"href": href, "target_key": target, "glossary_hash": m.group(1)}))
         elif href.startswith("/pra-rules/"):
-            target_key = f"url:{urlparse(absolute_url(href)).path.strip('/')}"
+            parsed_href = urlparse(absolute_url(href))
+            fragment = f"#{parsed_href.fragment}" if parsed_href.fragment else ""
+            target_key = f"url:{parsed_href.path.strip('/')}{fragment}"
             to_id = node_id(target_key)
             edges.append(Edge(edge_id(from_node.id, to_id, "references", href), from_node.id, to_id, "references", "html_link", 1.0, text, source_url, {"href": absolute_url(href), "target_key": target_key}))
         elif href.startswith("/") or href.startswith("http"):
             target_key = f"external:{absolute_url(href)}"
             to_id = node_id(target_key)
             edges.append(Edge(edge_id(from_node.id, to_id, "references", href), from_node.id, to_id, "references", "html_link", 0.8, text, source_url, {"href": absolute_url(href), "target_key": target_key}))
+
+
+def _append_inline_definition_nodes(nodes: list[Node], edges: list[Edge], from_node: Node, container: Tag, source_url: str, part_stable: str, part_title: str) -> None:
+    """Extract Part-local definitions embedded in rule text.
+
+    The PRA site does not expose all definitions solely via the central
+    Glossary/CRR pages. Some Part-specific terms are rendered inline as a term
+    paragraph followed by an indented definition paragraph, while the clickable
+    term opens a glossary modal. Preserve those as first-class definition nodes
+    so the graph has the definition text even when the central glossary export
+    does not.
+    """
+    blocks = [b for b in container.find_all(["p", "li"], recursive=True) if clean_text(b.get_text(" "))]
+    for i, block in enumerate(blocks[:-1]):
+        term_link = block.select_one("a.glossary-link[href]") or block.find("a", href=GLOSSARY_HASH_RE)
+        if not term_link:
+            continue
+        term_text = clean_text(term_link.get("title") or term_link.get_text(" "))
+        block_text = clean_text(block.get_text(" "))
+        # A term heading is usually just the linked term. Avoid treating normal
+        # prose references as definitions.
+        if not term_text or len(block_text) > len(term_text) + 8:
+            continue
+        definition_block = blocks[i + 1]
+        definition = clean_text(definition_block.get_text(" "))
+        if not re.match(r"^(means|includes|has the meaning|is|are)\b", definition, re.IGNORECASE):
+            continue
+        href = term_link.get("href", "")
+        glossary_hash = (GLOSSARY_HASH_RE.search(href) or [None, ""])[1]
+        glossary_id = term_link.get("data-glossary-id", "")
+        stable = f"defined_term:part:{part_stable}:{term_text.lower()}"
+        term_node = Node(
+            node_id(stable), "defined_term", stable, term_text, text=definition, url=source_url,
+            metadata={
+                "source": "inline_part_definition",
+                "part_title": part_title,
+                "rule_id": from_node.id,
+                "rule_title": from_node.title,
+                "glossary_hash": glossary_hash,
+                "glossary_id": glossary_id,
+            },
+        )
+        nodes.append(term_node)
+        edges.append(Edge(edge_id(from_node.id, term_node.id, "defines", stable), from_node.id, term_node.id, "defines", "inline_part_definition", 1.0, term_text, source_url, {"part_title": part_title, "glossary_hash": glossary_hash, "glossary_id": glossary_id}))
+        edges.append(Edge(edge_id(from_node.id, term_node.id, "uses_defined_term", stable), from_node.id, term_node.id, "uses_defined_term", "inline_part_definition", 1.0, term_text, source_url, {"part_title": part_title, "glossary_hash": glossary_hash, "glossary_id": glossary_id}))
 
 
 def _article_or_annex_number(title: str) -> str:
@@ -286,7 +366,7 @@ def extract_guidance_detail(html: str, url: str) -> tuple[list[Node], list[Edge]
     nodes: list[Node] = [doc]
     edges: list[Edge] = []
     current_section: Node | None = None
-    content = soup.select_one(".rulebook-content") or soup
+    content = soup.select_one(".rulebook-content") or soup.select_one(".page-content") or soup
     for el in content.find_all("div", recursive=True):
         classes = set(el.get("class", []))
         if "chapter-section" in classes:
@@ -294,22 +374,39 @@ def extract_guidance_detail(html: str, url: str) -> tuple[list[Node], list[Edge]
             heading_el = el.select_one(".chapter-heading")
             num = clean_text(num_el.get_text(" ")) if num_el else ""
             heading = clean_text(heading_el.get_text(" ")) if heading_el else f"Section {num}"
-            stable = f"guidance_section:{doc_stable}:{num}"
-            current_section = Node(node_id(stable), "guidance_section", stable, heading, url=f"{url}#{el.get('id','')}", metadata={"section_number": num, "document_title": title})
+            html_id = el.get("id", "")
+            section_key = num or clean_text(heading).lower() or html_id
+            stable = f"guidance_section:{doc_stable}:{section_key}"
+            current_section = Node(node_id(stable), "guidance_section", stable, heading, url=f"{url}#{html_id}", metadata={"section_number": num, "document_title": title, "html_id": html_id})
             nodes.append(current_section)
             edges.append(Edge(edge_id(doc.id, current_section.id, "contains"), doc.id, current_section.id, "contains", "site_structure", source_url=url))
             continue
         if "row-block" in classes:
             number_el = el.select_one(".rule-number:not(.chapter-number)")
             body_el = el.select_one(".div-row__col-2")
-            if not number_el or not body_el:
+            if not body_el:
                 continue
-            para = clean_text(number_el.get_text(" "))
+            para = clean_text(number_el.get_text(" ")).rstrip(".") if number_el else ""
             text = clean_text(body_el.get_text(" "))
             if not text:
                 continue
-            stable = f"guidance_paragraph:{doc_stable}:{para}"
-            n = Node(node_id(stable), "guidance_paragraph", stable, f"{title} {para}", text=text, url=f"{url}#{el.get('id','')}", metadata={"paragraph_number": para, "document_title": title})
+            html_id = el.get("id", "")
+            if para and GUIDANCE_PARA_RE.match(para):
+                # Numbered guidance paragraphs have a stable legal identity in their
+                # paragraph number, but some guidance documents restart numbering in
+                # appendices/sections. Use the current section as context when present.
+                # The HTML id is stored as an alias/metadata, not as the canonical key.
+                paragraph_parent_key = current_section.stable_key if current_section else doc_stable
+                stable = f"guidance_paragraph:{paragraph_parent_key}:{para}"
+                para_title = f"{title} {para}"
+                metadata = {"paragraph_number": para, "document_title": title, "html_id": html_id}
+            elif html_id and len(text) > 20:
+                stable = f"guidance_paragraph:{doc_stable}:unnumbered:{html_id}"
+                para_title = f"{title} – unnumbered paragraph"
+                metadata = {"paragraph_number": "", "document_title": title, "html_id": html_id, "unnumbered_row": True}
+            else:
+                continue
+            n = Node(node_id(stable), "guidance_paragraph", stable, para_title, text=text, url=f"{url}#{html_id}", metadata=metadata)
             nodes.append(n)
             parent = current_section or doc
             edges.append(Edge(edge_id(parent.id, n.id, "contains"), parent.id, n.id, "contains", "site_structure", source_url=url))

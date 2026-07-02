@@ -61,14 +61,15 @@ Build search, embedding and similarity indexes:
 .venv/bin/python -m backend.app.cli build-indexes --embeddings --similar --top-k 5 --threshold 0.72
 ```
 
-For higher-quality semantic maps, rebuild embeddings with a Hugging Face Sentence Transformers model. Recommended first choice: `BAAI/bge-m3`, because it is strong, open, long-context, and still more practical than 1.5B/7B embedding models on a CPU VPS.
+For higher-quality semantic maps, rebuild embeddings with a Hugging Face Sentence Transformers model. Recommended first choice: `BAAI/bge-m3`, because it is strong, open, long-context, and still practical on a CPU VPS when node text is truncated. Sentence-transformer embedding runs default to the first 1600 characters per node; override with `--text-chars` if you need a faster run or have more CPU/RAM headroom.
 
 ```bash
-.venv/bin/pip install sentence-transformers
+.venv/bin/pip install -r requirements.txt
 .venv/bin/python -m backend.app.cli build-indexes \
   --embeddings \
-  --model sentence-transformers:BAAI/bge-m3 \
-  --similar --top-k 8 --threshold 0.66
+  --model sentence-transformers:BAAI/bge-m3
+.venv/bin/python -m backend.app.cli build-indexes \
+  --similar --top-k 5 --threshold 0.62
 .venv/bin/python -m backend.rulebook_scraper.cli enrich
 systemctl restart pra-rulebook-api
 ```
@@ -149,14 +150,16 @@ Add regex references, topic nodes and obligation-pattern nodes/edges:
 .venv/bin/python -m backend.rulebook_scraper.cli enrich
 ```
 
-Rebuild semantic embeddings with local MiniLM, using the shared sentence-transformers venv on this VPS:
+Rebuild semantic embeddings with BGE-M3 in the project venv:
 
 ```bash
-PYTHONPATH=$PWD /root/.openclaw/workspace/.venv-sentence-transformers/bin/python \
+PYTHONPATH=$PWD .venv/bin/python \
   -m backend.app.cli build-indexes \
   --embeddings \
-  --model sentence-transformers:sentence-transformers/all-MiniLM-L6-v2 \
-  --similar --top-k 5 --threshold 0.72
+  --model sentence-transformers:BAAI/bge-m3
+PYTHONPATH=$PWD .venv/bin/python \
+  -m backend.app.cli build-indexes \
+  --similar --top-k 5 --threshold 0.62
 ```
 
 Additional analysis endpoints:

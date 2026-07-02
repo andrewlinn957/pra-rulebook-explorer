@@ -6,3 +6,6 @@ uvicorn[standard]>=0.30
 networkx>=3.3
 numpy>=1.26
 scikit-learn>=1.5
+sentence-transformers>=3.0
+pypdf>=6.13
+cryptography>=48

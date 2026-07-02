@@ -5,9 +5,9 @@ import sqlite3
 from collections import defaultdict
 from itertools import combinations
 
-from .models import Edge
-from .parse import edge_id
-from .store import upsert_edges
+from .models import Edge, Node
+from .parse import edge_id, extract_part, node_id
+from .store import upsert_edges, upsert_nodes
 
 
 def derive_richer_edges(conn: sqlite3.Connection, *, max_term_degree: int = 25, max_edges_per_term: int = 300) -> dict[str, int]:
@@ -17,6 +17,7 @@ def derive_richer_edges(conn: sqlite3.Connection, *, max_term_degree: int = 25, 
     explicit references, but add useful rule-to-rule/guidance-to-rule bridges.
     """
     edges: list[Edge] = []
+    edges.extend(_resolve_html_anchor_reference_edges(conn))
     edges.extend(_shared_defined_term_edges(conn, max_term_degree=max_term_degree, max_edges_per_term=max_edges_per_term))
     edges.extend(_same_rulebook_part_name_edges(conn))
     upsert_edges(conn, edges)
@@ -25,6 +26,230 @@ def derive_richer_edges(conn: sqlite3.Connection, *, max_term_degree: int = 25, 
     for e in edges:
         counts[e.edge_type] += 1
     return dict(counts)
+
+
+def repair_internal_anchor_references(conn: sqlite3.Connection) -> dict[str, int]:
+    """Repair `/pra-rules/...#anchor` links into true internal graph links.
+
+    This is safe to run after an existing scrape. It reparses cached Part HTML
+    to add unnumbered heading/container nodes, then resolves hash-link reference
+    edges to parsed nodes by `metadata.html_id`.
+    """
+    heading_nodes = []
+    heading_edges = []
+    for url, raw_html in conn.execute("SELECT url, raw_html FROM document_source WHERE source_type='part'"):
+        nodes, edges = extract_part(raw_html, url)
+        ids = {n.id for n in nodes if n.node_type == "chapter" and (n.metadata or {}).get("heading_level")}
+        heading_nodes.extend([n for n in nodes if n.id in ids])
+        heading_edges.extend([e for e in edges if e.from_node_id in ids or e.to_node_id in ids])
+    upsert_nodes(conn, heading_nodes)
+    upsert_edges(conn, heading_edges)
+    resolved_edges = _resolve_html_anchor_reference_edges(conn)
+    upsert_edges(conn, resolved_edges)
+    unresolved_nodes, unresolved_edges = _repair_unresolved_anchor_placeholders(conn)
+    upsert_nodes(conn, unresolved_nodes)
+    upsert_edges(conn, unresolved_edges)
+    conn.commit()
+    return {"heading_nodes": len({n.id for n in heading_nodes}), "heading_edges": len({e.id for e in heading_edges}), "html_anchor_resolved": len({e.id for e in resolved_edges}), "html_anchor_unresolved": len({e.id for e in unresolved_edges})}
+
+
+def _resolve_html_anchor_reference_edges(conn: sqlite3.Connection) -> list[Edge]:
+    """Resolve PRA Rulebook hash links to parsed provision nodes.
+
+    The source site often links to internal provisions as
+    `/pra-rules/some-part#<html-id>` rather than the dated URL we scrape. The
+    original parser deliberately kept only the path as a placeholder target,
+    which means multiple distinct anchors in the same Part collapsed to one
+    `rule_reference` node. Resolve those links after the corpus has been parsed
+    by matching the hash against node.metadata.html_id.
+
+    Some legacy `html_link` rows lost the fragment in edge metadata, while the
+    cached source page still contains the exact anchor href. For those, resolve
+    only when the source HTML contains one unambiguous same-text link to the
+    same Rulebook path with a fragment.
+    """
+    import re
+    from urllib.parse import urljoin, urlparse
+
+    from bs4 import BeautifulSoup
+
+    def norm_text(value: str) -> str:
+        return " ".join((value or "").split()).casefold()
+
+    def pra_path(value: str) -> str:
+        parsed = urlparse(urljoin("https://www.prarulebook.co.uk", value or ""))
+        path = parsed.path.strip("/")
+        return path[:-11] if re.search(r"/\d{2}-\d{2}-\d{4}$", path) else path
+
+    def is_internal_anchor_path(path: str) -> bool:
+        return path.startswith("/pra-rules/") or path.startswith("/guidance/")
+
+    by_html_id: dict[str, tuple[str, str, str]] = {}
+    for node_id, title, url, metadata_json in conn.execute("SELECT id,title,url,metadata_json FROM node WHERE node_type IN ('chapter','rule','guidance_section','guidance_paragraph')"):
+        meta = json.loads(metadata_json or "{}")
+        html_id = meta.get("html_id")
+        if html_id and html_id not in by_html_id:
+            by_html_id[html_id] = (node_id, title, url)
+
+    source_anchor_cache: dict[str, list[tuple[str, str, str]]] = {}
+
+    def resolve_href_from_source_html(source_url: str, edge_href: str, evidence_text: str, target_title: str = "") -> str | None:
+        if not source_url or not edge_href or not evidence_text:
+            return None
+        if source_url not in source_anchor_cache:
+            raw = conn.execute("SELECT raw_html FROM document_source WHERE url=?", (source_url,)).fetchone()
+            anchors: list[tuple[str, str, str]] = []
+            if raw:
+                soup = BeautifulSoup(raw[0] or "", "lxml")
+                for a in soup.find_all("a", href=True):
+                    href = urljoin("https://www.prarulebook.co.uk", a.get("href", ""))
+                    parsed = urlparse(href)
+                    if parsed.fragment and is_internal_anchor_path(parsed.path):
+                        anchors.append((pra_path(href), norm_text(a.get_text(" ", strip=True)), href))
+            source_anchor_cache[source_url] = anchors
+        target_path = pra_path(edge_href)
+        edge_text = norm_text(evidence_text)
+        target_text = norm_text(target_title)
+        allowed_texts = {edge_text}
+        # Legacy placeholder edges sometimes kept only the Part name as edge
+        # evidence while the source anchor included the specific provision, e.g.
+        # "Senior Management Functions" vs "Senior Management Functions 6.2".
+        # Use the placeholder title to recover that exact source href only when
+        # it is a clear extension of the edge text; otherwise numeric/title
+        # collisions can create false provision links.
+        if edge_text and target_text.startswith(edge_text) and len(edge_text) >= 4:
+            allowed_texts.add(target_text)
+        matches = [href for path, text, href in source_anchor_cache[source_url] if path == target_path and text in allowed_texts]
+        return matches[0] if len(set(matches)) == 1 else None
+
+    out: list[Edge] = []
+    stale_edge_ids: list[str] = []
+    rows = conn.execute(
+        """
+        SELECT e.id,e.from_node_id,e.to_node_id,e.evidence_text,e.source_url,e.metadata_json,
+               target.node_type AS target_type,target.title AS target_title
+        FROM edge e
+        LEFT JOIN node target ON target.id=e.to_node_id
+        WHERE e.edge_type='references'
+          AND e.source_method='html_link'
+          AND (e.metadata_json LIKE '%/pra-rules/%' OR e.metadata_json LIKE '%/guidance/%')
+        """
+    ).fetchall()
+    for row in rows:
+        meta = json.loads(row[5] or "{}")
+        href = meta.get("href", "")
+        resolution_basis = "edge_metadata_href"
+        match = re.search(r"#([A-Za-z0-9]+)", href)
+        if not match:
+            source_href = resolve_href_from_source_html(row[4] or "", href, row[3] or "", row[7] or "")
+            if not source_href:
+                continue
+            href = source_href
+            resolution_basis = "source_html_href"
+            match = re.search(r"#([A-Za-z0-9]+)", href)
+        if not match:
+            continue
+        html_id = match.group(1)
+        target = by_html_id.get(html_id)
+        if not target:
+            continue
+        target_id, target_title, target_url = target
+        if target_id == row[1]:
+            continue
+        out.append(Edge(
+            edge_id(row[1], target_id, "references", f"html_anchor:{html_id}"),
+            row[1], target_id, "references", "html_anchor_resolved", 0.98,
+            row[3] or target_title, row[4] or target_url,
+            {"href": href, "html_id": html_id, "target_title": target_title, "replaces_edge_id": row[0], "resolution_basis": resolution_basis, "evidence_status": "direct_text", "extraction_run_id": "internal_anchor_resolution"},
+        ))
+        stale_edge_ids.append(row[0])
+
+    if stale_edge_ids:
+        conn.executemany("DELETE FROM edge WHERE id=?", [(edge_id_,) for edge_id_ in stale_edge_ids])
+    return out
+
+
+def _repair_unresolved_anchor_placeholders(conn: sqlite3.Connection) -> tuple[list[Node], list[Edge]]:
+    """Give still-unresolved hash links unique placeholders.
+
+    If an anchor cannot be resolved to a parsed node, keep it as unresolved, but
+    do not let it collapse onto a Part-level placeholder with an unrelated title.
+    """
+    import re
+
+    nodes: list[Node] = []
+    edges: list[Edge] = []
+    stale_edge_ids: list[str] = []
+    rows = conn.execute(
+        """
+        SELECT e.id,e.from_node_id,e.evidence_text,e.source_url,e.metadata_json,
+               target.node_type AS target_type
+        FROM edge e
+        LEFT JOIN node target ON target.id=e.to_node_id
+        WHERE e.edge_type='references'
+          AND e.source_method='html_link'
+          AND e.metadata_json LIKE '%#%'
+          AND e.metadata_json LIKE '%/pra-rules/%'
+        """
+    ).fetchall()
+    resolved = {
+        (source_id, href)
+        for source_id, href in conn.execute(
+            """
+            SELECT from_node_id, json_extract(metadata_json, '$.href')
+            FROM edge
+            WHERE edge_type='references' AND source_method='html_anchor_resolved'
+            """
+        )
+    }
+    for row in rows:
+        meta = json.loads(row[4] or "{}")
+        href = meta.get("href", "")
+        if (row[1], href) in resolved:
+            stale_edge_ids.append(row[0])
+            continue
+        parsed = re.match(r"https?://[^/]+/(pra-rules/[^#?]+)#([A-Za-z0-9]+)", href)
+        if not parsed:
+            continue
+        target_key = f"url:{parsed.group(1)}#{parsed.group(2)}"
+        target_id = node_id(target_key)
+        title = row[2] or target_key.rsplit("#", 1)[-1]
+        nodes.append(Node(target_id, "rule_reference", target_key, title, url=href, metadata={"placeholder": True, "unresolved_anchor": True, "href": href, "target_key": target_key, "html_id": parsed.group(2)}))
+        edges.append(Edge(edge_id(row[1], target_id, "references", f"html_anchor_unresolved:{parsed.group(2)}"), row[1], target_id, "references", "html_anchor_unresolved", 0.55, title, row[3] or href, {"href": href, "html_id": parsed.group(2), "target_key": target_key, "replaces_edge_id": row[0]}))
+        if row[5] in (None, "rule_reference"):
+            stale_edge_ids.append(row[0])
+    for row in conn.execute(
+        """
+        SELECT e.to_node_id,e.evidence_text,e.metadata_json
+        FROM edge e
+        LEFT JOIN node target ON target.id=e.to_node_id
+        WHERE e.edge_type='references'
+          AND e.source_method='html_anchor_unresolved'
+          AND target.id IS NULL
+        """
+    ):
+        meta = json.loads(row[2] or "{}")
+        href = meta.get("href", "")
+        target_key = meta.get("target_key", "")
+        html_id = meta.get("html_id", "")
+        if not target_key:
+            continue
+        nodes.append(Node(row[0], "rule_reference", target_key, row[1] or target_key.rsplit("#", 1)[-1], url=href, metadata={"placeholder": True, "unresolved_anchor": True, "href": href, "target_key": target_key, "html_id": html_id}))
+    if stale_edge_ids:
+        conn.executemany("DELETE FROM edge WHERE id=?", [(edge_id_,) for edge_id_ in stale_edge_ids])
+    conn.execute(
+        """
+        DELETE FROM edge
+        WHERE source_method='html_anchor_unresolved'
+          AND EXISTS (
+            SELECT 1 FROM edge resolved
+            WHERE resolved.source_method='html_anchor_resolved'
+              AND resolved.from_node_id=edge.from_node_id
+              AND json_extract(resolved.metadata_json, '$.href')=json_extract(edge.metadata_json, '$.href')
+          )
+        """
+    )
+    return nodes, edges
 
 
 def _shared_defined_term_edges(conn: sqlite3.Connection, *, max_term_degree: int, max_edges_per_term: int) -> list[Edge]:
@@ -97,6 +322,7 @@ from .models import Node
 from .store import upsert_nodes
 
 RULE_REF_RE = re.compile(r"(?<![\w/])(?P<num>\d{1,3}\.\d{1,3}[A-Z]?(?:\([a-z0-9ivx]+\))?)(?![\w/])")
+ARTICLE_REF_RE = re.compile(r"\bArticles?\s+(?P<refs>\d+[a-z]?(?:\s*\([a-z0-9]+\))?(?:\s*,\s*(?:and\s+)?\d+[a-z]?(?:\s*\([a-z0-9]+\))?)*(?:\s*,?\s*and\s+\d+[a-z]?(?:\s*\([a-z0-9]+\))?)?)", re.I)
 MODAL_RE = re.compile(r"\b(?P<subject>[A-Z][A-Za-z0-9 ,()\-/]{0,80}?)\s+(?P<modal>must|shall|should|may|is required to|are required to)\s+(?P<action>[a-z][a-z\-]+)(?P<object>[^.;:]{0,140})", re.I)
 
 TOPICS = {
@@ -138,7 +364,14 @@ def derive_phase4_edges_and_nodes(conn: sqlite3.Connection) -> dict[str, int]:
 def _regex_rule_reference_edges(conn: sqlite3.Connection) -> list[Edge]:
     rules = conn.execute("SELECT id,title,text,url,metadata_json FROM node WHERE node_type IN ('rule','guidance_paragraph')").fetchall()
     by_part_num: dict[tuple[str, str], tuple[str, str, str]] = {}
+    by_part_article: dict[tuple[str, str], tuple[str, str, str]] = {}
     part_titles: set[str] = set()
+    for r in conn.execute("SELECT id,node_type,title,url,metadata_json FROM node WHERE node_type IN ('chapter','rule') ORDER BY CASE node_type WHEN 'chapter' THEN 0 ELSE 1 END"):
+        meta = json.loads(r[4] or "{}")
+        part = _norm_part(meta.get("part_title") or "")
+        article = _norm_article(meta.get("article_number") or r[2] or "")
+        if part and article and (part, article) not in by_part_article:
+            by_part_article[(part, article)] = (r[0], r[2], r[3])
     for r in conn.execute("SELECT id,title,url,metadata_json FROM node WHERE node_type='rule'"):
         meta = json.loads(r[3] or "{}")
         part = _norm_part(meta.get("part_title") or "")
@@ -165,6 +398,18 @@ def _regex_rule_reference_edges(conn: sqlite3.Connection) -> list[Edge]:
             evidence = _window(text, m.start(), m.end())
             out.append(Edge(edge_id(source_id, target[0], "references", f"regex:{num}"), source_id, target[0], "references", "regex_reference", 0.82, evidence, source_url, {"reference": num, "target_title": target[1], "scope": "same_part"}))
 
+        for m in ARTICLE_REF_RE.finditer(text):
+            for article in _article_refs(m.group("refs")):
+                target = by_part_article.get((source_part, article))
+                if not target or target[0] == source_id:
+                    continue
+                key = (source_id, target[0], f"article:{article}")
+                if key in seen:
+                    continue
+                seen.add(key)
+                evidence = _window(text, m.start(), m.end())
+                out.append(Edge(edge_id(source_id, target[0], "references", f"regex_article:{article}"), source_id, target[0], "references", "regex_article_reference", 0.86, evidence, source_url, {"reference": f"Article {article}", "target_title": target[1], "scope": "same_part_article"}))
+
         for part_title, pattern in named_patterns:
             for m in pattern.finditer(text):
                 num = m.group("num").split("(", 1)[0]
@@ -186,6 +431,16 @@ def _regex_rule_reference_edges(conn: sqlite3.Connection) -> list[Edge]:
 
 def _norm_part(value: str) -> str:
     return re.sub(r"\s+", " ", value.lower().replace("–", "-").replace("—", "-")).strip()
+
+
+def _norm_article(value: str) -> str:
+    text = re.sub(r"\s+", " ", value or "").strip()
+    match = re.match(r"Article\s+(\d+[a-z]?)\b", text, re.I)
+    return match.group(1).lower() if match else ""
+
+
+def _article_refs(value: str) -> list[str]:
+    return [m.group(1).lower() for m in re.finditer(r"\b(\d+[a-z]?)(?:\s*\([a-z0-9]+\))?", value or "", re.I)]
 
 
 def _named_part_reference_patterns(part_titles: set[str]) -> list[tuple[str, re.Pattern]]:

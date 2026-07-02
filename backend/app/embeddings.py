@@ -21,10 +21,11 @@ def _edge_id(*parts: str) -> str:
     return sha1(":".join(parts))[:20]
 
 
-def build_embeddings(conn: sqlite3.Connection, *, node_types: tuple[str, ...] = DEFAULT_NODE_TYPES, model_name: str = "tfidf-svd-256", limit: int | None = None) -> dict[str, Any]:
+def build_embeddings(conn: sqlite3.Connection, *, node_types: tuple[str, ...] = DEFAULT_NODE_TYPES, model_name: str = "tfidf-svd-256", limit: int | None = None, text_chars: int | None = None) -> dict[str, Any]:
     rows = _text_rows(conn, node_types=node_types, limit=limit)
     ids = [r["id"] for r in rows]
-    texts = [_node_text(r) for r in rows]
+    parent_chapters = _parent_chapter_titles(conn, ids)
+    texts = [_node_text(r, max_chars=text_chars, parent_chapter_title=parent_chapters.get(r["id"])) for r in rows]
     if not rows:
         return {"model": model_name, "embedded": 0}
 
@@ -40,7 +41,7 @@ def build_embeddings(conn: sqlite3.Connection, *, node_types: tuple[str, ...] = 
         [(node_id, actual_model, text_hash(text), json.dumps(vec), now) for node_id, text, vec in zip(ids, texts, vectors)],
     )
     conn.commit()
-    return {"model": actual_model, "embedded": len(ids)}
+    return {"model": actual_model, "embedded": len(ids), "text_chars": text_chars or "uncapped"}
 
 
 def derive_similar_edges(conn: sqlite3.Connection, *, top_k: int = 5, threshold: float = 0.62, node_types: tuple[str, ...] = DEFAULT_NODE_TYPES, max_nodes: int | None = None) -> dict[str, Any]:
@@ -118,8 +119,55 @@ def _text_rows(conn: sqlite3.Connection, *, node_types: tuple[str, ...], limit: 
     ).fetchall()
 
 
-def _node_text(row: sqlite3.Row) -> str:
-    return f"{row['title']}\n{row['text']}"[:6000]
+def _parent_chapter_titles(conn: sqlite3.Connection, node_ids: list[str]) -> dict[str, str]:
+    if not node_ids:
+        return {}
+    out: dict[str, str] = {}
+    chunk_size = 900
+    for i in range(0, len(node_ids), chunk_size):
+        chunk = node_ids[i:i + chunk_size]
+        rows = conn.execute(
+            """
+            SELECT e.to_node_id AS node_id, p.title AS chapter_title
+            FROM edge e JOIN node p ON p.id=e.from_node_id
+            WHERE e.to_node_id IN (%s)
+              AND e.edge_type='contains'
+              AND e.source_method='site_structure'
+              AND p.node_type='chapter'
+            ORDER BY p.title
+            """ % ",".join("?" for _ in chunk),
+            chunk,
+        ).fetchall()
+        for row in rows:
+            out.setdefault(row["node_id"], row["chapter_title"])
+    return out
+
+
+def _node_text(row: sqlite3.Row, *, max_chars: int | None = None, parent_chapter_title: str | None = None) -> str:
+    """Build embedding-only text with enough hierarchy to disambiguate sparse rule text."""
+    try:
+        meta = json.loads(row["metadata_json"] or "{}")
+    except Exception:
+        meta = {}
+
+    context: list[str] = []
+    part_title = meta.get("part_title")
+    document_title = meta.get("document_title")
+
+    if part_title:
+        context.append(f"PRA Rulebook Part: {part_title}")
+    if document_title:
+        context.append(f"PRA supervisory statement or guidance document: {document_title}")
+    if parent_chapter_title:
+        context.append(f"Chapter: {parent_chapter_title}")
+    if row["node_type"] == "defined_term":
+        source = meta.get("source")
+        if source:
+            context.append(f"Defined term source: {source}")
+
+    parts = [*context, f"Node type: {row['node_type']}", f"Title: {row['title']}", row["text"]]
+    text = "\n".join(p for p in parts if p)
+    return text[:max_chars] if max_chars else text
 
 
 def _embed_texts(texts: list[str], *, model_name: str) -> tuple[list[list[float]], str]:

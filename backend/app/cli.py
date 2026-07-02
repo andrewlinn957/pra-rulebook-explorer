@@ -13,11 +13,11 @@ def cmd_build_indexes(args: argparse.Namespace) -> None:
     ensure_indexes(conn)
     print("rebuilt FTS/search indexes")
     if args.embeddings:
-        result = build_embeddings(conn, model_name=args.model, limit=args.limit)
-        print(f"embeddings: {result}")
+        result = build_embeddings(conn, model_name=args.model, limit=args.limit, text_chars=args.text_chars)
+        print(result)
     if args.similar:
         result = derive_similar_edges(conn, top_k=args.top_k, threshold=args.threshold, max_nodes=args.max_nodes)
-        print(f"similar edges: {result}")
+        print(result)
     print(stats(conn))
 
 
@@ -26,10 +26,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--db", type=Path, default=DEFAULT_DB)
     sub = parser.add_subparsers(dest="command", required=True)
     idx = sub.add_parser("build-indexes")
-    idx.add_argument("--embeddings", action="store_true")
-    idx.add_argument("--similar", action="store_true")
+    idx.add_argument("--embeddings", action="store_true", help="Rebuild node embeddings used by semantic-map views")
+    idx.add_argument("--similar", action="store_true", help="Derive cosine-similarity edges from existing embeddings")
     idx.add_argument("--model", default="tfidf-svd-256", help="Use sentence-transformers:<model_id> if installed, otherwise tfidf-svd-256")
     idx.add_argument("--limit", type=int, default=None)
+    idx.add_argument("--text-chars", type=int, default=None, help="Maximum characters per node for embedding text; default is uncapped")
     idx.add_argument("--max-nodes", type=int, default=None)
     idx.add_argument("--top-k", type=int, default=5)
     idx.add_argument("--threshold", type=float, default=0.62)

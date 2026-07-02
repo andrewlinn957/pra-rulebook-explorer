@@ -9,7 +9,7 @@ from pathlib import Path
 from bs4 import BeautifulSoup
 
 from .fetch import fetch_url, normalise_url
-from .enrich import derive_phase4_edges_and_nodes, derive_richer_edges, derive_rollup_and_shared_analysis_edges
+from .enrich import derive_phase4_edges_and_nodes, derive_richer_edges, derive_rollup_and_shared_analysis_edges, repair_internal_anchor_references
 from .advanced_enrich import derive_advanced_topics_and_obligations
 from .parse import (
     extract_crr_terms,
@@ -85,15 +85,27 @@ def command_stats(args: argparse.Namespace) -> None:
 
 def command_enrich(args: argparse.Namespace) -> None:
     conn = connect(args.db)
+    repair_counts = repair_internal_anchor_references(conn)
     counts = derive_phase4_edges_and_nodes(conn)
     extra_counts = derive_rollup_and_shared_analysis_edges(conn)
     advanced_counts = derive_advanced_topics_and_obligations(conn)
-    counts = {**counts, **{f"analysis:{k}": v for k, v in extra_counts.items()}, **{f"advanced:{k}": v for k, v in advanced_counts.items()}}
+    counts = {**{f"repair:{k}": v for k, v in repair_counts.items()}, **counts, **{f"analysis:{k}": v for k, v in extra_counts.items()}, **{f"advanced:{k}": v for k, v in advanced_counts.items()}}
     backfill_placeholder_targets(conn)
     conn.commit()
     if args.out:
         export_json(conn, args.out)
     print(f"phase4 enrichment: {counts}")
+    print_stats(conn)
+
+
+def command_repair_internal_links(args: argparse.Namespace) -> None:
+    conn = connect(args.db)
+    counts = repair_internal_anchor_references(conn)
+    backfill_placeholder_targets(conn)
+    conn.commit()
+    if args.out:
+        export_json(conn, args.out)
+    print(f"internal-link repair: {counts}")
     print_stats(conn)
 
 
@@ -187,6 +199,10 @@ def build_parser() -> argparse.ArgumentParser:
     enrich = sub.add_parser("enrich", help="Add regex references, topic nodes and obligation-pattern nodes/edges")
     enrich.add_argument("--out", type=Path, default=DEFAULT_OUT)
     enrich.set_defaults(func=command_enrich)
+
+    repair = sub.add_parser("repair-internal-links", help="Resolve /pra-rules/...#anchor links to parsed internal nodes")
+    repair.add_argument("--out", type=Path, default=DEFAULT_OUT)
+    repair.set_defaults(func=command_repair_internal_links)
     return parser
 
 

@@ -1,0 +1,312 @@
+edges 9539 unique targets 976
+target types Counter({'rule_reference': 5367, 'external_reference': 4172})
+methods [('rollup_child_edge', 6742), ('html_link', 2668), ('html_anchor_unresolved', 123), ('legal_instrument_listing', 6)]
+
+categories
+3162 edges 137 targets other
+2333 edges 337 targets raw URL title
+1369 edges 385 targets Bank of England external
+923 edges 87 targets bare numeric/paragraph
+823 edges 15 targets bare article/chapter/rule label
+404 edges 57 targets PRA supervisory statement ref
+341 edges 40 targets CRR / EU regulation
+75 edges 4 targets other external authority/site
+53 edges 11 targets PRA statement of policy ref
+32 edges 9 targets appendix/annex reference
+24 edges 10 targets legacy PRA rulebook URL
+
+## bare numeric/paragraph
+ - target= 13.5A | key= external:https://www.prarulebook.co.uk/guidance/supervisory-statements/ss11-13--internal-ratings-based-irb-approaches#295e952c5c0b4888adbaaf02fca94712 | source= Loss Given Default in IRB approaches | text= 
+ - target= 13.5A | key= external:https://www.prarulebook.co.uk/guidance/supervisory-statements/ss11-13--internal-ratings-based-irb-approaches#295e952c5c0b4888adbaaf02fca94712 | source= Loss Given Default in IRB approaches | text= 
+ - target= 13.5A | key= external:https://www.prarulebook.co.uk/guidance/supervisory-statements/ss11-13--internal-ratings-based-irb-approaches#295e952c5c0b4888adbaaf02fca94712 | source= SS11/13 – Internal Ratings Based (IRB) approaches 13.5A | text= For the purpose of applying paragraph 135 of the EBA’s Guidelines on PD estimation, LGD estimation and defaulted assets (EBA/GL/2017/16), the PRA expects: (a) the artificial cash flow should reflect: (i) principal: total
+ - target= 13.5A | key= external:https://www.prarulebook.co.uk/guidance/supervisory-statements/ss11-13--internal-ratings-based-irb-approaches#295e952c5c0b4888adbaaf02fca94712 | source= SS11/13 – Internal Ratings Based (IRB) approaches 13.5A | text= For the purpose of applying paragraph 135 of the EBA’s Guidelines on PD estimation, LGD estimation and defaulted assets (EBA/GL/2017/16), the PRA expects: (a) the artificial cash flow should reflect: (i) principal: total
+ - target= 3.107 | key= external:https://www.prarulebook.co.uk/guidance/supervisory-statements/ss19-15-exercising-certain-functions-under-the-building-societies-act-1986#486dd37da51c430983ec188aceb5870b | source= Merger procedures | text= 
+ - target= 3.107 | key= external:https://www.prarulebook.co.uk/guidance/supervisory-statements/ss19-15-exercising-certain-functions-under-the-building-societies-act-1986#486dd37da51c430983ec188aceb5870b | source= SS19/15 – Exercising certain functions under the Building Societies Act 1986 3.107 | text= The members approval of bonus payments is required as part of the Merger Resolutions (see section 96(4) to (6) of the 1986 Act) and see paragraph 3.59 for the PRA’s view of what may constitute a bonus). If the total gros
+ - target= 3.107 | key= external:https://www.prarulebook.co.uk/guidance/supervisory-statements/ss19-15-exercising-certain-functions-under-the-building-societies-act-1986#486dd37da51c430983ec188aceb5870b | source= SS19/15 – Exercising certain functions under the Building Societies Act 1986 3.107 | text= The members approval of bonus payments is required as part of the Merger Resolutions (see section 96(4) to (6) of the 1986 Act) and see paragraph 3.59 for the PRA’s view of what may constitute a bonus). If the total gros
+ - target= 3.143 | key= external:https://www.prarulebook.co.uk/guidance/supervisory-statements/ss19-15-exercising-certain-functions-under-the-building-societies-act-1986#e1d1d33ab68c4f12a0cd840cfabb8cbd | source= SS19/15 – Exercising certain functions under the Building Societies Act 1986 4.143 | text= Experience has demonstrated the need for societies to take the greatest care to ensure that they comply strictly with the statutory procedural requirements and their own Rules on meetings and resolutions. The person chai
+ - target= 3.143 | key= external:https://www.prarulebook.co.uk/guidance/supervisory-statements/ss19-15-exercising-certain-functions-under-the-building-societies-act-1986#e1d1d33ab68c4f12a0cd840cfabb8cbd | source= SS19/15 – Exercising certain functions under the Building Societies Act 1986 4.143 | text= Experience has demonstrated the need for societies to take the greatest care to ensure that they comply strictly with the statutory procedural requirements and their own Rules on meetings and resolutions. The person chai
+ - target= 3.143 | key= external:https://www.prarulebook.co.uk/guidance/supervisory-statements/ss19-15-exercising-certain-functions-under-the-building-societies-act-1986#e1d1d33ab68c4f12a0cd840cfabb8cbd | source= Transfer procedures | text= 
+
+## other
+ - target= 2.36(1)–(3) | key= external:https://www.prarulebook.co.uk/guidance/statements-of-policy/the-pras-approach-to-insurance-business-transfers#c58597416eb8452f907867b8bb3f0413 | source= SoP3/15 – The Prudential Regulation Authority's approach to insurance business transfers 2.36 | text= For a scheme involving long-term insurance business, the report should: (1) describe the effect of the scheme on the nature and value of any rights of policyholders to participate in profits; (2) if any such rights will 
+ - target= 2.36(1)–(3) | key= external:https://www.prarulebook.co.uk/guidance/statements-of-policy/the-pras-approach-to-insurance-business-transfers#c58597416eb8452f907867b8bb3f0413 | source= SoP3/15 – The Prudential Regulation Authority's approach to insurance business transfers 2.36 | text= For a scheme involving long-term insurance business, the report should: (1) describe the effect of the scheme on the nature and value of any rights of policyholders to participate in profits; (2) if any such rights will 
+ - target= 2.36(1)–(3) | key= external:https://www.prarulebook.co.uk/guidance/statements-of-policy/the-pras-approach-to-insurance-business-transfers#c58597416eb8452f907867b8bb3f0413 | source= Transfers of insurance business under Part VII of the Financial Services and Markets Act 2000 | text= 
+ - target= 2.36(1)–(3) | key= external:https://www.prarulebook.co.uk/guidance/statements-of-policy/the-pras-approach-to-insurance-business-transfers#c58597416eb8452f907867b8bb3f0413 | source= Transfers of insurance business under Part VII of the Financial Services and Markets Act 2000 | text= 
+ - target= FSB Compensation Standards | key= external:http://www.financialstabilityboard.org/wp-content/uploads/r_090925c.pdf?page_moved=1 | source= 10.1 | text= A firm that benefits from exceptional government intervention must ensure that: (1) variable remuneration is strictly limited as a percentage of net revenues when it is inconsistent with the maintenance of a sound capita
+ - target= FSB Compensation Standards | key= external:http://www.financialstabilityboard.org/wp-content/uploads/r_090925c.pdf?page_moved=1 | source= 11.1 | text= (1) A firm must ensure that any measurement of performance used to calculate variable remuneration components or pools of variable remuneration components: (a) includes adjustments for all types of current and future ris
+ - target= FSB Compensation Standards | key= external:http://www.financialstabilityboard.org/wp-content/uploads/r_090925c.pdf?page_moved=1 | source= 11.6 | text= A firm must ensure that its total variable remuneration is generally considerably contracted where subdued or negative financial performance of the firm occurs, taking into account both current remuneration and reduction
+ - target= FSB Compensation Standards | key= external:http://www.financialstabilityboard.org/wp-content/uploads/r_090925c.pdf?page_moved=1 | source= 13.1 | text= (1) A firm must ensure that its employees undertake not to use personal hedging strategies to undermine the risk alignment effects embedded in their remuneration arrangements. (2) A firm must ensure that its employees un
+ - target= FSB Compensation Standards | key= external:http://www.financialstabilityboard.org/wp-content/uploads/r_090925c.pdf?page_moved=1 | source= 15.14 | text= A firm must ensure that payments relating to the early termination of a contract reflect performance achieved over time and are designed in a way that does not reward failure or misconduct. [Note: Art. 94(1)(h) of the CR
+ - target= FSB Compensation Standards | key= external:http://www.financialstabilityboard.org/wp-content/uploads/r_090925c.pdf?page_moved=1 | source= 15.19 | text= Subject to 15.17 , the length of the deferral period must be established in accordance with the business cycle, the nature of the business, its risks and the activities of the employee in question. [Note: Art. 94(1)(m) o
+
+## PRA supervisory statement ref
+ - target= 34/15 | key= external:https://www.prarulebook.co.uk/guidance/supervisory-statements/ss34-15---guidelines-for-completing-regulatory-reports | source= General organisational requirements | text= 
+ - target= 34/15 | key= external:https://www.prarulebook.co.uk/guidance/supervisory-statements/ss34-15---guidelines-for-completing-regulatory-reports | source= General organisational requirements | text= 
+ - target= 34/15 | key= external:https://www.prarulebook.co.uk/guidance/supervisory-statements/ss34-15---guidelines-for-completing-regulatory-reports | source= Introduction | text= 
+ - target= 34/15 | key= external:https://www.prarulebook.co.uk/guidance/supervisory-statements/ss34-15---guidelines-for-completing-regulatory-reports | source= Introduction | text= 
+ - target= 34/15 | key= external:https://www.prarulebook.co.uk/guidance/supervisory-statements/ss34-15---guidelines-for-completing-regulatory-reports | source= SS4/16 – Internal governance of third country branches 2.3A | text= Firms should be aware of the expectations set out in SS34/15 ‘Guidelines for completing regulatory reports’ in relation to the following reporting requirement for branches of third-country banks: risk management arrangem
+ - target= 34/15 | key= external:https://www.prarulebook.co.uk/guidance/supervisory-statements/ss34-15---guidelines-for-completing-regulatory-reports | source= SS4/16 – Internal governance of third country branches 2.3A | text= Firms should be aware of the expectations set out in SS34/15 ‘Guidelines for completing regulatory reports’ in relation to the following reporting requirement for branches of third-country banks: risk management arrangem
+ - target= B3 Cash Services | key= external:https://www.prarulebook.co.uk/guidance/supervisory-statements/ss19-13-resolution-planning/01-06-2026#d9d4991a428445ed90f779d7ee55abd5 | source= Phase 2 | text= 
+ - target= B3 Cash Services | key= external:https://www.prarulebook.co.uk/guidance/supervisory-statements/ss19-13-resolution-planning/01-06-2026#d9d4991a428445ed90f779d7ee55abd5 | source= Phase 2 | text= 
+ - target= B3 Cash Services | key= external:https://www.prarulebook.co.uk/guidance/supervisory-statements/ss19-13-resolution-planning/01-06-2026#d9d4991a428445ed90f779d7ee55abd5 | source= SS19/13 – Resolution planning 2.41 | text= The authorities’ need for further information will depend on the complexity of the individual firm and its preferred resolution strategy. Additional information requested may include, but is not limited to, the following
+ - target= B3 Cash Services | key= external:https://www.prarulebook.co.uk/guidance/supervisory-statements/ss19-13-resolution-planning/01-06-2026#d9d4991a428445ed90f779d7ee55abd5 | source= SS19/13 – Resolution planning 2.41 | text= The authorities’ need for further information will depend on the complexity of the individual firm and its preferred resolution strategy. Additional information requested may include, but is not limited to, the following
+
+## Bank of England external
+ - target= 34/15 | key= external:https://www.prarulebook.co.uk/guidance/supervisory-statements/ss34-15---guidelines-for-completing-regulatory-reports | source= SS4/16 – Internal governance of third country branches 1.3 | text= The statement should be read in conjunction with the PRA Fundamental Rules and with: Internal Governance of Third Country Branches parts of the PRA rulebook. The PRA’s approach to banking supervision (approach document) 
+ - target= 34/15 | key= external:https://www.prarulebook.co.uk/guidance/supervisory-statements/ss34-15---guidelines-for-completing-regulatory-reports | source= SS4/16 – Internal governance of third country branches 1.3 | text= The statement should be read in conjunction with the PRA Fundamental Rules and with: Internal Governance of Third Country Branches parts of the PRA rulebook. The PRA’s approach to banking supervision (approach document) 
+ - target= Corporate governance: Board responsibilities | key= external:https://www.prarulebook.co.uk/guidance/supervisory-statements/ss05-16---corporate-governance-board-responsibilities/01-06-2026 | source= SS2/21 – Outsourcing and third party risk management 4.4 | text= Firms’ boards should: set ‘the control environment throughout the firm, including the appetite and tolerance levels in respect of outsourcing’ and third party risk management; ‘bear responsibility for the effective manag
+ - target= Corporate governance: Board responsibilities | key= external:https://www.prarulebook.co.uk/guidance/supervisory-statements/ss05-16---corporate-governance-board-responsibilities/01-06-2026 | source= SS2/21 – Outsourcing and third party risk management 4.4 | text= Firms’ boards should: set ‘the control environment throughout the firm, including the appetite and tolerance levels in respect of outsourcing’ and third party risk management; ‘bear responsibility for the effective manag
+ - target= FSA080 | key= external:https://www.prarulebook.co.uk/guidance/supervisory-statements/ss32-15-pillar-2-reporting-including-instructions-for-completing/01-06-2026#fef5b1b0911f4082ad39fbd3d15c298a | source= SS32/15 – Pillar 2 reporting, including instructions for completing data items FSA071 to FSA082, and PRA111 – unnumbered paragraph | text= Name Data items Instructions FSA071 Firm information and Pillar 2A summary https://www.bankofengland.co.uk/-/media/boe/files/prudential-regulation/regulatory-reporting/banking/fsa-data-items/fsa071-firm-information-and-p
+ - target= LIAF01/26 - Low Impact Amendments Finalisation April 2026 | key= external:https://www.bankofengland.co.uk/prudential-regulation/publication/2026/april/low-impact-amendments-finalisation-april-2026 | source= PRA2026/13 - PRA Rulebook: Fees (Amendment) Instrument 2026 | text= 
+ - target= LIAF01/26 - Low Impact Amendments Finalisation April 2026 | key= external:https://www.bankofengland.co.uk/prudential-regulation/publication/2026/april/low-impact-amendments-finalisation-april-2026 | source= PRA2026/14 - PRA Rulebook: CRR Firms: Skills, Knowledge and Expertise Instrument 2026 | text= 
+ - target= PS12/26 - Review of the Senior Managers and Certification Regime (SM&CR) − Phase 1 | key= external:https://www.bankofengland.co.uk/prudential-regulation/publication/2026/april/review-of-the-smcr-phase-1-policy-statement | source= PRA2026/12 - PRA Rulebook: CRR Firms, Non-CRR Firms, Solvency II Firms and Non-Solvency II Firms: Senior Managers Regime (Amendment) Instrument 2026 | text= 
+ - target= PS13/26 - Solvency II Firms: Third Country Branches Instrument 2026 | key= external:https://www.bankofengland.co.uk/prudential-regulation/publication/2026/may/insurance-third-country-branches-policy-statement | source= PRA2026/15 - PRA Rulebook: Solvency II Firms: Third Country Branches Instrument 2026 | text= 
+ - target= PS14/26 - CRR Definitions: restatement in PRA Rulebook | key= external:https://www.bankofengland.co.uk/prudential-regulation/publication/2026/may/crr-definitions-restatement-in-pra-rulebook-policy-statement | source= PRA2026/16 - PRA Rulebook: Definitions and Interpretation (CRR) Instrument 2026 | text= 
+
+## other external authority/site
+ - target= CRD | key= external:http://eur-lex.europa.eu/LexUriServ/LexUriServ.do?uri=OJ:L:2013:176:0338:0436:EN:PDF | source= 1.3 | text= (1) In this Part, the following definitions shall apply: accounting reference date means (1) (in relation to a body corporate incorporated in the UK under the Companies Acts) the accounting reference date of that body co
+ - target= CRD | key= external:http://eur-lex.europa.eu/LexUriServ/LexUriServ.do?uri=OJ:L:2013:176:0338:0436:EN:PDF | source= 1.4 | text= Unless otherwise defined, any italicised expression used in this Part and in the CRD or CRR has the same meaning as in the CRD or CRR . [Note: CRD and CRR ]
+ - target= CRD | key= external:http://eur-lex.europa.eu/LexUriServ/LexUriServ.do?uri=OJ:L:2013:176:0338:0436:EN:PDF | source= 10.1 | text= A firm that benefits from exceptional government intervention must ensure that: (1) variable remuneration is strictly limited as a percentage of net revenues when it is inconsistent with the maintenance of a sound capita
+ - target= CRD | key= external:http://eur-lex.europa.eu/LexUriServ/LexUriServ.do?uri=OJ:L:2013:176:0338:0436:EN:PDF | source= 11.1 | text= (1) A firm must ensure that any measurement of performance used to calculate variable remuneration components or pools of variable remuneration components: (a) includes adjustments for all types of current and future ris
+ - target= CRD | key= external:http://eur-lex.europa.eu/LexUriServ/LexUriServ.do?uri=OJ:L:2013:176:0338:0436:EN:PDF | source= 11.6 | text= A firm must ensure that its total variable remuneration is generally considerably contracted where subdued or negative financial performance of the firm occurs, taking into account both current remuneration and reduction
+ - target= CRD | key= external:http://eur-lex.europa.eu/LexUriServ/LexUriServ.do?uri=OJ:L:2013:176:0338:0436:EN:PDF | source= 12.1 | text= A firm must ensure that its pension policy is in line with its business strategy, objectives, values and long-term interests. [Note: Art. 94(1)(o) of the CRD ] [Note: CRD ]
+ - target= CRD | key= external:http://eur-lex.europa.eu/LexUriServ/LexUriServ.do?uri=OJ:L:2013:176:0338:0436:EN:PDF | source= 13.1 | text= (1) A firm must ensure that its employees undertake not to use personal hedging strategies to undermine the risk alignment effects embedded in their remuneration arrangements. (2) A firm must ensure that its employees un
+ - target= CRD | key= external:http://eur-lex.europa.eu/LexUriServ/LexUriServ.do?uri=OJ:L:2013:176:0338:0436:EN:PDF | source= 14.1 | text= A firm must ensure that variable remuneration is not paid through vehicles or methods that facilitate non-compliance with obligations arising from CRR or this Part. [Note: Art. 94(1)(q) of the CRD ] [Note: CRD and CRR ]
+ - target= CRD | key= external:http://eur-lex.europa.eu/LexUriServ/LexUriServ.do?uri=OJ:L:2013:176:0338:0436:EN:PDF | source= 15.14 | text= A firm must ensure that payments relating to the early termination of a contract reflect performance achieved over time and are designed in a way that does not reward failure or misconduct. [Note: Art. 94(1)(h) of the CR
+ - target= CRD | key= external:http://eur-lex.europa.eu/LexUriServ/LexUriServ.do?uri=OJ:L:2013:176:0338:0436:EN:PDF | source= 15.19 | text= Subject to 15.17 , the length of the deferral period must be established in accordance with the business cycle, the nature of the business, its risks and the activities of the employee in question. [Note: Art. 94(1)(m) o
+
+## CRR / EU regulation
+ - target= FSB Compensation Standards | key= external:http://www.financialstabilityboard.org/wp-content/uploads/r_090925c.pdf?page_moved=1 | source= 15.20 | text= A firm must ensure that: (1) any variable remuneration , including a deferred portion, is paid or vests only if it is sustainable according to the financial situation of the firm as a whole, and justified on the basis of
+ - target= 3K.6(1) | key= url:pra-rules/own-funds#fe2738c2e38f430d8f7e032503d00a8c | source= 3K.6 | text= Participations in financial and credit institutions must comprise the following: (1) participations which the firm holds in: (a) credit institutions and financial institutions ; (b) investment firms ; and (2) subordinate
+ - target= 3K.6(1) | key= url:pra-rules/own-funds#fe2738c2e38f430d8f7e032503d00a8c | source= 3K.6 | text= Participations in financial and credit institutions must comprise the following: (1) participations which the firm holds in: (a) credit institutions and financial institutions ; (b) investment firms ; and (2) subordinate
+ - target= 428az(2) | key= url:pra-rules/liquidity-crr#a95395902bb3438b837af8120dd8bb6f | source= Article 428d Derivative Contracts | text= 
+ - target= 428az(2) | key= url:pra-rules/liquidity-crr#a95395902bb3438b837af8120dd8bb6f | source= Article 428d Derivative Contracts | text= 
+ - target= 428az(2) | key= url:pra-rules/liquidity-crr#a95395902bb3438b837af8120dd8bb6f | source= Article 428d(2) | text= Without prejudice to Articles 428ah(2) and 428az(2) , institutions shall take into account the fair value of derivative positions on a net basis where those positions are included in the same netting set that fulfils the
+ - target= 428az(2) | key= url:pra-rules/liquidity-crr#a95395902bb3438b837af8120dd8bb6f | source= Article 428d(2) | text= Without prejudice to Articles 428ah(2) and 428az(2) , institutions shall take into account the fair value of derivative positions on a net basis where those positions are included in the same netting set that fulfils the
+ - target= 428az(2) | key= url:pra-rules/liquidity-crr#a95395902bb3438b837af8120dd8bb6f | source= Article 428d(4) | text= Without prejudice to Articles 428ah(2) and 428az(2) , all derivative contracts listed in points 2(a) to (e) of Annex II of the CRR that involve a full exchange of principal amounts on the same date shall be calculated on
+ - target= 428az(2) | key= url:pra-rules/liquidity-crr#a95395902bb3438b837af8120dd8bb6f | source= Article 428d(4) | text= Without prejudice to Articles 428ah(2) and 428az(2) , all derivative contracts listed in points 2(a) to (e) of Annex II of the CRR that involve a full exchange of principal amounts on the same date shall be calculated on
+ - target= 7.1 Regulatory Reporting | key= url:pra-rules/regulatory-reporting | source= 1.1 | text= This Part applies to a CRR firm that receives critical services supporting critical functions if it fulfils any of the following conditions on 1 January of any year: (1) the average of the firm’s total assets it was requ
+
+## legacy PRA rulebook URL
+ - target= SS5/16 | key= external:https://www.prarulebook.co.uk/guidance/supervisory-statements/ss05-16---corporate-governance-board-responsibilities | source= SS3/21 – Non-systemic UK banks: The Prudential Regulation Authority’s approach to new and growing banks 3.8 | text= PRA rules require banks to have robust and comprehensive governance arrangements which reflect the nature, scale and complexity of the risks inherent in the bank’s business model and activities. 50 SS5/16 sets out the PR
+ - target= SS5/16 | key= external:https://www.prarulebook.co.uk/guidance/supervisory-statements/ss05-16---corporate-governance-board-responsibilities | source= SS3/21 – Non-systemic UK banks: The Prudential Regulation Authority’s approach to new and growing banks 3.8 | text= PRA rules require banks to have robust and comprehensive governance arrangements which reflect the nature, scale and complexity of the risks inherent in the bank’s business model and activities. 50 SS5/16 sets out the PR
+ - target= SS9/17 – Recovery planning | key= external:https://www.prarulebook.co.uk/guidance/supervisory-statements/ss09-17---recovery-planning | source= SS2/24 – Solvent exit planning for non-systemic banks and building societies 1.8 | text= This SS complements, and should be read in conjunction, with: the Recovery Plans Part of the PRA Rulebook; 8 SS9/17 – Recovery planning ; 9 the PRA’s web page on ‘Cancelling a firm’s permissions’; 10 the PRA’s web page o
+ - target= SS9/17 – Recovery planning | key= external:https://www.prarulebook.co.uk/guidance/supervisory-statements/ss09-17---recovery-planning | source= SS2/24 – Solvent exit planning for non-systemic banks and building societies 1.8 | text= This SS complements, and should be read in conjunction, with: the Recovery Plans Part of the PRA Rulebook; 8 SS9/17 – Recovery planning ; 9 the PRA’s web page on ‘Cancelling a firm’s permissions’; 10 the PRA’s web page o
+ - target= Supervisory Statement (SS) 1/22 ‘Trading activity wind-down’ | key= external:https://www.prarulebook.co.uk/guidance/supervisory-statements/ss01-22-trading-activity-wind-down | source= SoP1/22 – Trading activity wind-down 3.1 | text= Rule 8 in the Fundamental Rules Part of the PRA Rulebook requires firms to prepare for resolution so, if the need arises, they can be resolved in an orderly manner with a minimum disruption to critical services. 13 While
+ - target= 1.3 of the Counter Credit Risk Part | key= url:pra-rules/counterparty-credit-risk#53d227f606ed4c65a6f8e00576cb55a6 | source= SS3/25 – Identification of groups of connected clients for large exposures purposes 7.3 | text= To assess if there is no single risk despite the existence of a control relationship, the firm may assess the following in relation to each special purpose entities (B, C and D): a. The absence of economic interdependenc
+ - target= 1.3 of the Counter Credit Risk Part | key= url:pra-rules/counterparty-credit-risk#53d227f606ed4c65a6f8e00576cb55a6 | source= SS3/25 – Identification of groups of connected clients for large exposures purposes 7.3 | text= To assess if there is no single risk despite the existence of a control relationship, the firm may assess the following in relation to each special purpose entities (B, C and D): a. The absence of economic interdependenc
+ - target= 1.3 of the Counter Credit Risk Part | key= url:pra-rules/counterparty-credit-risk#53d227f606ed4c65a6f8e00576cb55a6 | source= SS3/25 – Identification of groups of connected clients for large exposures purposes 7.3 | text= To assess if there is no single risk despite the existence of a control relationship, the firm may assess the following in relation to each special purpose entities (B, C and D): a. The absence of economic interdependenc
+ - target= Conditions Governing Business 6 | key= url:pra-rules/conditions-governing-business | source= SS4/18 – Financial management and planning by insurers 1.2 | text= This SS should be read in conjunction with: the Conditions Governing Business and Investments Parts of the PRA Rulebook 1 ; the ‘PRA’s approach to insurance supervision’ 2 ; SS41/15 ‘Solvency II: applying EIOPA Set 2, Sy
+ - target= Conditions Governing Business 6 | key= url:pra-rules/conditions-governing-business | source= SS4/18 – Financial management and planning by insurers 1.2 | text= This SS should be read in conjunction with: the Conditions Governing Business and Investments Parts of the PRA Rulebook 1 ; the ‘PRA’s approach to insurance supervision’ 2 ; SS41/15 ‘Solvency II: applying EIOPA Set 2, Sy
+
+## PRA statement of policy ref
+ - target= SoP The Prudential Regulation Authority's approach to insurance branch authorisation and supervision | key= external:https://www.prarulebook.co.uk/guidance/statements-of-policy/sop---the-pra-approach-to-insurance-branch-authorisation-and-supervision | source=  | text= 
+ - target= SoP The Prudential Regulation Authority's approach to insurance branch authorisation and supervision | key= external:https://www.prarulebook.co.uk/guidance/statements-of-policy/sop---the-pra-approach-to-insurance-branch-authorisation-and-supervision | source=  | text= 
+ - target= SoP – Interpretation of EU Guidelines and Recommendations: Bank of England and PRA approach after the UK’s withdrawal from the EU | key= external:https://www.prarulebook.co.uk/guidance/statements-of-policy/sop---interpretation-of-eu-guidelines-and-recommendations | source= Introduction | text= 
+ - target= SoP – Interpretation of EU Guidelines and Recommendations: Bank of England and PRA approach after the UK’s withdrawal from the EU | key= external:https://www.prarulebook.co.uk/guidance/statements-of-policy/sop---interpretation-of-eu-guidelines-and-recommendations | source= Introduction | text= 
+ - target= SoP – Interpretation of EU Guidelines and Recommendations: Bank of England and PRA approach after the UK’s withdrawal from the EU | key= external:https://www.prarulebook.co.uk/guidance/statements-of-policy/sop---interpretation-of-eu-guidelines-and-recommendations | source= Introduction | text= 
+ - target= SoP – Interpretation of EU Guidelines and Recommendations: Bank of England and PRA approach after the UK’s withdrawal from the EU | key= external:https://www.prarulebook.co.uk/guidance/statements-of-policy/sop---interpretation-of-eu-guidelines-and-recommendations | source= Introduction | text= 
+ - target= SoP – Interpretation of EU Guidelines and Recommendations: Bank of England and PRA approach after the UK’s withdrawal from the EU | key= external:https://www.prarulebook.co.uk/guidance/statements-of-policy/sop---interpretation-of-eu-guidelines-and-recommendations | source= Introduction | text= 
+ - target= SoP – Interpretation of EU Guidelines and Recommendations: Bank of England and PRA approach after the UK’s withdrawal from the EU | key= external:https://www.prarulebook.co.uk/guidance/statements-of-policy/sop---interpretation-of-eu-guidelines-and-recommendations | source= Introduction | text= 
+ - target= SoP – Solvency II: Matching Adjustment Permissions | key= external:https://www.prarulebook.co.uk/guidance/statements-of-policy/sop---solvency-ii-matching-adjustment-permissions | source= Changes to MA portfolios | text= 
+ - target= SoP – Solvency II: Matching Adjustment Permissions | key= external:https://www.prarulebook.co.uk/guidance/statements-of-policy/sop---solvency-ii-matching-adjustment-permissions | source= Changes to MA portfolios | text= 
+
+## appendix/annex reference
+ - target= here | key= external:https://public-prod-api.azurewebsites.net/files/form/sup/sup_chapter16_annex13r_20130401.pdf | source= 16.25 | text= Cover sheet can be found here .
+ - target= here | key= external:https://public-prod-api.azurewebsites.net/files/form/sup/sup_chapter16_annex13r_20130401.pdf | source= Data Items and Other Forms | text= 
+ - target= Annex I | key= url:pra-rules/financial-conglomerates#4fcbfeaeda5b4d8fa1e789329bdfefb1 | source= 2.1 | text= A financial conglomerate means a consolidation group that is a financial conglomerate when assessed against the decision tree in Annex 1 . [Note: Art 2(14) and Art 3(1) to 3(3) of the Financial Groups Directive ]
+ - target= Annex I | key= url:pra-rules/financial-conglomerates#4fcbfeaeda5b4d8fa1e789329bdfefb1 | source= 2.1 | text= A financial conglomerate means a consolidation group that is a financial conglomerate when assessed against the decision tree in Annex 1 . [Note: Art 2(14) and Art 3(1) to 3(3) of the Financial Groups Directive ]
+ - target= Annex I | key= url:pra-rules/financial-conglomerates#4fcbfeaeda5b4d8fa1e789329bdfefb1 | source= 2.4 | text= For the purposes of Annex 1 : (1) a mixed financial holding company is outside the overall financial sector for the purposes of the tests set out in the boxes entitled Threshold Test 1, Threshold Test 2 and Threshold Tes
+ - target= Annex I | key= url:pra-rules/financial-conglomerates#4fcbfeaeda5b4d8fa1e789329bdfefb1 | source= 2.4 | text= For the purposes of Annex 1 : (1) a mixed financial holding company is outside the overall financial sector for the purposes of the tests set out in the boxes entitled Threshold Test 1, Threshold Test 2 and Threshold Tes
+ - target= Annex I | key= url:pra-rules/financial-conglomerates#4fcbfeaeda5b4d8fa1e789329bdfefb1 | source= 2.5 | text= In respect of a financial conglomerate in relation to which a financial conglomerate notification has been issued, the figures in Annex 1 are altered as follows: (1) the figure of 40% in the box titled Threshold Test 1 i
+ - target= Annex I | key= url:pra-rules/financial-conglomerates#4fcbfeaeda5b4d8fa1e789329bdfefb1 | source= 2.5 | text= In respect of a financial conglomerate in relation to which a financial conglomerate notification has been issued, the figures in Annex 1 are altered as follows: (1) the figure of 40% in the box titled Threshold Test 1 i
+ - target= Annex I | key= url:pra-rules/financial-conglomerates#4fcbfeaeda5b4d8fa1e789329bdfefb1 | source= 2.7 | text= The calculations referred to in Annex 1 regarding the balance sheet must be made on the basis of the aggregated balance sheet total of the members of the consolidation group , according to their annual accounts. For the 
+ - target= Annex I | key= url:pra-rules/financial-conglomerates#4fcbfeaeda5b4d8fa1e789329bdfefb1 | source= 2.7 | text= The calculations referred to in Annex 1 regarding the balance sheet must be made on the basis of the aggregated balance sheet total of the members of the consolidation group , according to their annual accounts. For the 
+
+## raw URL title
+ - target= http://eur-lex.europa.eu/eli/reg_impl/2015/460/oj | key= external:http://eur-lex.europa.eu/eli/reg_impl/2015/460/oj | source= SS12/16 – Solvency II: Changes to internal models used by UK insurance firms 4.3 | text= Firms’ major model change applications should also include the information specified in Articles 2 and 7 of the Commission Implementing Regulation EU 2015/460 for internal models 8 . Footnotes 8. http://eur-lex.europa.eu
+ - target= http://eur-lex.europa.eu/eli/reg_impl/2015/460/oj | key= external:http://eur-lex.europa.eu/eli/reg_impl/2015/460/oj | source= SS12/16 – Solvency II: Changes to internal models used by UK insurance firms 4.3 | text= Firms’ major model change applications should also include the information specified in Articles 2 and 7 of the Commission Implementing Regulation EU 2015/460 for internal models 8 . Footnotes 8. http://eur-lex.europa.eu
+ - target= http://eur-lex.europa.eu/eli/reg_impl/2015/460/oj | key= external:http://eur-lex.europa.eu/eli/reg_impl/2015/460/oj | source= The information to be provided with a model change application | text= 
+ - target= http://eur-lex.europa.eu/eli/reg_impl/2015/460/oj | key= external:http://eur-lex.europa.eu/eli/reg_impl/2015/460/oj | source= The information to be provided with a model change application | text= 
+ - target= http://www.bailii.org/ew/cases/EWHC/Ch/2016/1538.html | key= external:http://www.bailii.org/ew/cases/EWHC/Ch/2016/1538.html | source= Introduction | text= 
+ - target= http://www.bailii.org/ew/cases/EWHC/Ch/2016/1538.html | key= external:http://www.bailii.org/ew/cases/EWHC/Ch/2016/1538.html | source= Introduction | text= 
+ - target= http://www.bailii.org/ew/cases/EWHC/Ch/2016/1538.html | key= external:http://www.bailii.org/ew/cases/EWHC/Ch/2016/1538.html | source= SS1/20 – Solvency II: Prudent Person Principle 1.3 | text= The PRA notes that the PPP sets objective standards for prudent investment. 2 These include standards in relation to portfolio diversification, 3 the use of financial derivatives, 4 exposure to non-regulated markets 5 an
+ - target= http://www.bailii.org/ew/cases/EWHC/Ch/2016/1538.html | key= external:http://www.bailii.org/ew/cases/EWHC/Ch/2016/1538.html | source= SS1/20 – Solvency II: Prudent Person Principle 1.3 | text= The PRA notes that the PPP sets objective standards for prudent investment. 2 These include standards in relation to portfolio diversification, 3 the use of financial derivatives, 4 exposure to non-regulated markets 5 an
+ - target= http://www.bankofengland.co.uk/pra/Pages/publications/cp/2014/cp1014.aspx | key= external:http://www.bankofengland.co.uk/pra/Pages/publications/cp/2014/cp1014.aspx | source= Introduction | text= 
+ - target= http://www.bankofengland.co.uk/pra/Pages/publications/cp/2014/cp1014.aspx | key= external:http://www.bankofengland.co.uk/pra/Pages/publications/cp/2014/cp1014.aspx | source= Introduction | text= 
+
+## bare article/chapter/rule label
+ - target= Article 106(3) | key= url:pra-rules/trading-book-crr | source= Article 10 Calculation of Close-Out Costs AVA | text= 
+ - target= Article 106(3) | key= url:pra-rules/trading-book-crr | source= Article 10 Calculation of Close-Out Costs AVA | text= 
+ - target= Article 106(3) | key= url:pra-rules/trading-book-crr | source= Article 10 Calculation of Close-Out Costs AVA | text= 
+ - target= Article 106(3) | key= url:pra-rules/trading-book-crr | source= Article 10 Calculation of Close-Out Costs AVA | text= 
+ - target= Article 106(3) | key= url:pra-rules/trading-book-crr | source= Article 102 Requirements for the Trading Book | text= 
+ - target= Article 106(3) | key= url:pra-rules/trading-book-crr | source= Article 102 Requirements for the Trading Book | text= 
+ - target= Article 106(3) | key= url:pra-rules/trading-book-crr | source= Article 102 Requirements for the Trading Book | text= 
+ - target= Article 106(3) | key= url:pra-rules/trading-book-crr | source= Article 102 Requirements for the Trading Book | text= 
+ - target= Article 106(3) | key= url:pra-rules/trading-book-crr | source= Article 104 Inclusion in the Trading Book | text= 
+ - target= Article 106(3) | key= url:pra-rules/trading-book-crr | source= Article 105 Requirements for Prudent Valuation | text= 
+
+Top repeated unresolved targets
+1226 external_reference here
+367 rule_reference Solvency Capital Requirement – Standard Formula 3D2
+219 rule_reference Depositor Protection 4
+184 rule_reference Reporting 2
+178 rule_reference Chapter 2
+159 rule_reference Matching Adjustment 10.1
+157 rule_reference Chapter 3
+151 rule_reference 2.2
+147 rule_reference Conditions Governing Business 6
+140 rule_reference Reporting (CRR) Part
+124 rule_reference Valuation Part
+118 rule_reference Own Funds 5
+107 rule_reference Chapter 5A
+105 external_reference https://www.bankofengland.co.uk/prudential-regulation/publication/pras-approach-to-supervision-of-the-banking-and-insurance-sectors
+102 external_reference Supervisory Statement (SS) 1/22 ‘Trading activity wind-down’
+100 rule_reference Group Supervision 2.1
+92 rule_reference Technical Provisions 9.1
+91 rule_reference 7.1 Regulatory Reporting
+86 rule_reference 5.1
+85 rule_reference Chapter 9
+85 rule_reference Section 3
+79 rule_reference 26
+78 rule_reference Articles 447(e)(ii)
+75 rule_reference Investments Part
+71 rule_reference Securitisation 1.3
+69 rule_reference Article 390(6)
+65 external_reference https://www.bankofengland.co.uk/prudential-regulation/publication/2017/recovery-planning-ss
+62 rule_reference Technical Provisions - Further Requirements 4
+61 rule_reference Insurance Companies – Reporting Part
+60 external_reference CRD
+60 rule_reference 1.1
+55 rule_reference Solvency Capital Requirement – Internal Models
+54 rule_reference 3.2
+54 rule_reference Chapter 3 of the Own Funds (CRR) Part
+49 rule_reference 3.22
+47 rule_reference Notifications 10.3
+46 external_reference https://www.bankofengland.co.uk/financial-stability/resolution/resolvability-assessment-framework/resolvability-assessment-framework-policy-documents
+46 rule_reference Article 106(3)
+44 rule_reference Management Expenses in respect of Relevant Schemes Part
+41 rule_reference 3.3
+40 rule_reference Securitisation Part
+39 rule_reference 1.5
+39 rule_reference Friendly Society - Liability Valuation
+39 rule_reference Solvency Capital Requirement – Undertaking Specific Parameters 2.3
+38 external_reference https://www.bankofengland.co.uk/prudential-regulation/publication/2015/strengthening-individual-accountability-in-banking-ss
+38 rule_reference General Organisational Requirements 4.7
+37 external_reference https://www.bankofengland.co.uk/prudential-regulation/publication/2013/the-internal-capital-adequacy-assessment-process-and-supervisory-review-ss
+37 rule_reference Insurance Special Purpose Vehicles 2
+37 rule_reference Solvency Capital Requirement - General Provisions 3.3(1)
+34 external_reference SS9/17 – Recovery planning
+34 rule_reference Article 429
+33 rule_reference Conditions Governing Business 2
+33 rule_reference Recovery Plans 1.2
+32 external_reference www.bankofengland.co.uk/pra/Documents/publications/cp/2014/cp1614.pdf
+32 rule_reference Insurance Company - Capital Resources Requirements 3.1
+32 rule_reference Internal Liquidity Adequacy Assessment Part
+32 rule_reference Minimum Capital Requirement Part
+31 rule_reference 3.1
+31 rule_reference Insurance – Allocation of Responsibilities 4
+30 rule_reference Risk Control 3.4
+29 external_reference https://www.bankofengland.co.uk/prudential-regulation/publication/2021/march/outsourcing-and-third-party-risk-management-ss
+29 external_reference https://www.bankofengland.co.uk/stress-testing
+29 rule_reference 2.1
+29 rule_reference 7
+29 rule_reference Non-Solvency II Firms – Governance 5
+28 external_reference FSB Compensation Standards
+28 external_reference www.bankofengland.co.uk/prudential-regulation/publication/pras-approach-to-supervision-of-the-banking-and-insurance-sectors
+28 rule_reference Surplus Funds 2.2
+27 rule_reference Insurance Company - Mathematical Reserves 14.1
+26 external_reference https://www.bankofengland.co.uk/prudential-regulation/publication/2015/internal-governance-ss
+26 external_reference https://www.bankofengland.co.uk/prudential-regulation/publication/2016/ensuring-operational-continuity-in-resolution-ss
+26 external_reference www.bankofengland.co.uk/prudential-regulation/supervision
+26 rule_reference Solvency II Firms
+25 external_reference www.bankofengland.co.uk/prudential-regulation/regulatory-reporting/regulatory-reporting-banking-sector
+25 rule_reference 4.2(2)
+25 rule_reference Friendly Society - Required Margin 2
+25 rule_reference Insurance Company – Risk Management 4
+25 rule_reference Senior Management Functions 6.2
+24 external_reference SS3/17
+24 external_reference https://www.bankofengland.co.uk/-/media/boe/files/prudential-regulation/approach/insurance-approach-2014.pdf
+
+Top source titles
+719 Introduction
+198 Application and Definitions
+106 Pillar 3 Templates and Instructions
+87 Reporting and Disclosure Templates
+84 1.2
+83 Reporting and Disclosure Templates Data Item Instructions
+73 Expectations of new and growing banks
+70 The PRA’s approach once banks become established
+65 Orderly exit: recovery, solvent exit and resolution
+58 Capital expectations of new and growing banks
+53 Overview of the PRA’s supervisory approach for new and growing banks
+51 Annex I
+50 SS3/21 – Non-systemic UK banks: The Prudential Regulation Authority’s approach to new and growing banks – unnumbered paragraph
+48 SS1/20 – Solvency II: Prudent Person Principle 1.5
+48 SS3/21 – Non-systemic UK banks: The Prudential Regulation Authority’s approach to new and growing banks 
+47 Appendix 1
+43 Simplification in the Standard Formula
+42 Annex IV Part 1
+40 Interest Risk Arising from Non-Trading Book Activities
+35 Proportionality
+35 Appendices
+32 Definitions and scope
+32 Annex III Part 1
+32 Annexes
+31 Having a credible recovery plan
+30 SS5/19 – Liquidity risk management for insurers 1.5
+30 FSCS Levies
+30 Calculation Methods: Method 1
+28 Appendix 3 Instructions for completing data items FSA071 to FSA082, and PRA111
+28 SS32/15 – Pillar 2 reporting, including instructions for completing data items FSA071 to FSA082, and PRA111 – unnumbered paragraph
+28 Data Items and Other Forms
+27 SS32/15 – Pillar 2 reporting, including instructions for completing data items FSA071 to FSA082, and PRA111 
+26 Forms
+26 Lloyd’s
+25 Governance
+25 Conditions Governing Business
+25 Public Disclosure: Solvency and Financial Condition Report
+24 Governance and record-keeping
+24 Level of Application
+24 Tier 1 – Features Determining Classification
+24 Records
+23 Disclosure
+22 Asset eligibility
+22 The PRA buffer
+22 SS2/24 – Solvent exit planning for non-systemic banks and building societies 1.8
+21 Calculation of the MA
+21 TWD capabilities
+20 Transfer procedures
+20 Appendix 2
+20 Pre-outsourcing phase
+20 SS4/18 – Financial management and planning by insurers 1.2
+20 3E4 Loss-Given-Default
+19 The procedure for considering MA permissions
+19 Risk identification and modelling of Income Producing Real Estate loans
+19 Risk Management
+19 Funding of the FSCS
+19 The Basic SCR
+17 Merger procedures
+17 Procedure for Making Applications and Notifications
+17 Rates of Interest
+17 Provisions for Insurance and Reinsurance Obligations
+17 Capital+ Reports
+16 General approach
+16 Sub-consolidation as an alternative to application on the individual basis
+16 Use of internal credit assessments for assigning fundamental spreads
+16 Fitness and Propriety Assessments by Firms
+16 General
+16 Periodic Fees
+16 Allocation of Responsibilities
+16 Single Customer View
+16 General requirements under the Securitisation Part of the PRA Rulebook
+16 3D24 Specific Exposures
+15 The need to prepare for resolution
+15 Application to Perform a PRA Senior Management Function
+14 SS4/16 – Internal governance of third country branches 1.3
+14 Phase 2
+14 6.3
+14 Remuneration Structures
+14 Business continuity and exit plans
+14 Data security
