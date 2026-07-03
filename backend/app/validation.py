@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import re
 import sqlite3
 from pathlib import Path
@@ -345,7 +346,7 @@ def _high_degree_nodes(conn: sqlite3.Connection) -> list[dict[str, Any]]:
 
 
 def _unresolved_reference_samples(conn: sqlite3.Connection) -> list[dict[str, Any]]:
-    return _fetch_dicts(
+    rows = _fetch_dicts(
         conn,
         """
         SELECT
@@ -385,6 +386,30 @@ def _unresolved_reference_samples(conn: sqlite3.Connection) -> list[dict[str, An
         LIMIT 2000
         """,
     )
+    reviews = _load_unresolved_reference_reviews()
+    for row in rows:
+        review = reviews.get(row.get("target_id")) or reviews.get(row.get("edge_id")) or {}
+        row["review_decision"] = review.get("decision", "")
+        row["review_replacement_url"] = review.get("replacement_url", "")
+        row["review_rulebook_target"] = review.get("rulebook_target", "")
+        row["review_note"] = review.get("note", "")
+        row["review_updated_at"] = review.get("updated_at", "")
+    return rows
+
+
+def _unresolved_reference_review_path() -> Path:
+    return Path(__file__).resolve().parents[2] / "outputs/broken-reference-check/unresolved-reference-review-decisions.json"
+
+
+def _load_unresolved_reference_reviews() -> dict[str, Any]:
+    path = _unresolved_reference_review_path()
+    if not path.exists():
+        return {}
+    try:
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
 
 
 def _near_self_loop_samples(conn: sqlite3.Connection, limit: int = 40) -> list[dict[str, Any]]:

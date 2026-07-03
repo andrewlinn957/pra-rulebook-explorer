@@ -316,7 +316,7 @@ function ValidationDashboard({data,busy}){
             {activeIssue.reporting?<ReportingFixPlan issue={activeIssue}/>:<FixPlan issue={activeIssue}/>}
           </details>
           <details className="quality-samples" open>
-            <summary>Show evidence</summary>
+            <summary>{activeIssue.id==='unresolved-references'?'Review finding':'Show evidence'}</summary>
             {activeIssue.reporting?<ReportingProspectiveIssues issue={activeIssue}/>:activeIssue.id==='suspect-403-links'?<Suspect403Review issue={activeIssue} choices={linkReviewChoices} setChoices={setLinkReviewChoices}/>:activeIssue.id==='unresolved-references'?<UnresolvedReferencePatterns issue={activeIssue} visibleSamples={visibleSamples} sampleQuery={sampleQuery} setSampleQuery={setSampleQuery}/>:<>
               <div className="sample-toolbar compact"><input value={sampleQuery} onChange={e=>setSampleQuery(e.target.value)} placeholder="Filter sample rows…"/><button onClick={()=>downloadCsv(`${activeIssue.id}-samples.csv`,visibleSamples)}>Export samples</button></div>
               <QualityTable title={activeIssue.sampleTitle} rows={visibleSamples.slice(0,activeIssue.sampleLimit||100)} cols={activeIssue.cols}/>
@@ -346,7 +346,7 @@ function QualityIssueCard({issue,active,state,onOpen}){
       <span className="issue-topline"><b>{statusIcon(issue.status)} {issue.title}</b><em>{triage}</em></span>
       <span className="issue-summary">{issue.summary}</span>
       <span className="issue-answer"><strong>Why it matters</strong>{issue.impact}</span>
-      <span className="issue-footer"><em>{fmt(issue.affected)} affected</em><strong>Show evidence</strong></span>
+      <span className="issue-footer"><em>{fmt(issue.affected)} affected</em><strong>{issue.id==='unresolved-references'?'Review finding':'Show evidence'}</strong></span>
     </button>
   </article>;
 }
@@ -354,16 +354,17 @@ function QualityIssueCard({issue,active,state,onOpen}){
 function UnresolvedReferencePatterns({issue,visibleSamples,sampleQuery,setSampleQuery}){
   const queues=useMemo(()=>buildUnresolvedActionQueues(visibleSamples),[visibleSamples]);
   const [activeQueue,setActiveQueue]=useState('all');
+  const [reviewDrafts,setReviewDrafts]=useState({});
   useEffect(()=>{
     if(activeQueue==='all') return;
     if(!queues.some(q=>q.id===activeQueue)) setActiveQueue('all');
   },[queues,activeQueue]);
   const selectedQueue=queues.find(q=>q.id===activeQueue);
   const workingRows=activeQueue==='all'?visibleSamples.map(r=>({next_action:'Review pattern',why:'Choose an action queue or use the pattern cards to decide the next step.',...r})):selectedQueue?.rows||[];
-  const cols=['next_action','why','target_type','target_title','source_title','source_text','source_url','confidence'];
+  const cols=['next_action','why','target_type','target_title','source_title','source_text','source_url','confidence','review_decision','review_note'];
   return <div className="unresolved-patterns workflow-mode">
     <div className="workflow-intro">
-      <div><strong>What to do next</strong><p>Pick an action queue. Each unresolved link is labelled with the decision Andrew needs to make, rather than just shown as a raw sample row.</p></div>
+      <div><strong>Review one link, then record the finding</strong><p>Open the source and target URL. Choose the outcome below so Declan can repair the graph, update the URL, or deliberately leave the link external.</p></div>
       <button onClick={()=>downloadCsv(`${issue.id}-${activeQueue}-workflow.csv`,workingRows)}>Export current queue</button>
     </div>
     <div className="action-queue-grid" role="tablist" aria-label="Unresolved link action queues">
@@ -372,9 +373,38 @@ function UnresolvedReferencePatterns({issue,visibleSamples,sampleQuery,setSample
     </div>
     <div className="pattern-grid compact-patterns">{(issue.patterns||[]).map(p=><article key={p.pattern} className="pattern-card"><div><span>{fmt(p.targets)} targets</span><strong>{p.pattern}</strong><em>{fmt(p.live_edges)} live links</em></div><ul>{(p.examples||[]).slice(0,3).map(ex=><li key={ex.target_id}><b>{ex.target_title}</b><small>{ex.example_source_title||ex.stable_key}</small></li>)}</ul></article>)}</div>
     <div className="sample-toolbar compact"><input value={sampleQuery} onChange={e=>setSampleQuery(e.target.value)} placeholder="Filter unresolved links by title, source, URL or action…"/><button onClick={()=>downloadCsv(`${issue.id}-samples.csv`,visibleSamples)}>Export all filtered</button></div>
+    <UnresolvedLinkReview rows={workingRows.slice(0,18)} choices={reviewDrafts} setChoices={setReviewDrafts}/>
     <QualityTable title={activeQueue==='all'?'Unresolved links: all action types':`${selectedQueue?.label||'Selected'} queue`} rows={workingRows.slice(0,issue.sampleLimit||100)} cols={cols}/>
   </div>;
 }
+
+function UnresolvedLinkReview({rows,choices,setChoices}){
+  const outcomes=[
+    ['outdated','URL works but points to an out-of-date document','Give the current URL if you found it.'],
+    ['irrelevant','URL works but irrelevant','Say why it is not relevant to the source provision.'],
+    ['dead','URL is dead','Note the error or where you checked.'],
+    ['rulebook_target','Link should point to an existing Rulebook page/provision','Paste the correct Rulebook page, provision title, or node id.'],
+    ['keep_external','Keep as external reference','Use when it is valid context but should not be matched to a Rulebook provision.'],
+  ];
+  const setDraft=(row,patch)=>setChoices(prev=>({...prev,[rowKey(row)]:{decision:row.review_decision||'',replacement_url:row.review_replacement_url||'',rulebook_target:row.review_rulebook_target||'',note:row.review_note||'',...(prev[rowKey(row)]||{}),...patch}}));
+  async function submit(row){
+    const draft={decision:row.review_decision||'',replacement_url:row.review_replacement_url||'',rulebook_target:row.review_rulebook_target||'',note:row.review_note||'',...(choices[rowKey(row)]||{})};
+    if(!draft.decision) return alert('Choose an outcome first.');
+    const res=await fetch(API_BASE+'/validation/unresolved-reference-review',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target_id:row.target_id,edge_id:row.edge_id,sample_id:row.sample_id,decision:draft.decision,replacement_url:draft.replacement_url||'',rulebook_target:draft.rulebook_target||'',note:draft.note||''})});
+    if(!res.ok) return alert(await res.text());
+    setChoices(prev=>({...prev,[rowKey(row)]:{...draft,saved:true}}));
+  }
+  return <section className="unresolved-review"><div className="review-guide"><strong>What Declan needs from you</strong><p>Pick a row, open the URLs, then save a finding. If it is outdated or should point elsewhere, paste the replacement URL or Rulebook page. If it is irrelevant or dead, a short note is enough.</p></div>{rows.map(row=>{const draft={decision:row.review_decision||'',replacement_url:row.review_replacement_url||'',rulebook_target:row.review_rulebook_target||'',note:row.review_note||'',...(choices[rowKey(row)]||{})}; return <article key={rowKey(row)} className={`unresolved-review-row ${draft.saved?'saved':''}`}>
+    <div className="review-row-head"><span>{row.sample_id}</span><strong>{row.target_title}</strong><em>{draft.saved?'saved':draft.decision?draft.decision.replaceAll('_',' '):'not reviewed'}</em></div>
+    <p>{row.why}</p>
+    <div className="review-links"><a href={row.source_url} target="_blank" rel="noopener noreferrer">Open source</a>{row.target_url&&<a href={row.target_url} target="_blank" rel="noopener noreferrer">Open target URL</a>}</div>
+    <div className="decision-buttons unresolved-decisions">{outcomes.map(([value,label,help])=><button key={value} type="button" className={draft.decision===value?'on':''} title={help} onClick={()=>setDraft(row,{decision:value})}>{label}</button>)}</div>
+    <div className="review-fields"><label>Correct URL<input value={draft.replacement_url||''} onChange={e=>setDraft(row,{replacement_url:e.target.value})} placeholder="Paste newer or corrected URL, if any"/></label><label>Correct Rulebook page or provision<input value={draft.rulebook_target||''} onChange={e=>setDraft(row,{rulebook_target:e.target.value})} placeholder="Paste Rulebook URL, provision title, or node id"/></label><label className="wide">Finding note<textarea value={draft.note||''} onChange={e=>setDraft(row,{note:e.target.value})} placeholder="Example: URL loads but is a 2018 version; newer PS is at …"/></label></div>
+    <button type="button" className="save-finding" onClick={()=>submit(row)}>Save finding for Declan</button>
+  </article>})}</section>;
+}
+
+function rowKey(row){return row.target_id||row.edge_id||row.sample_id}
 
 function Suspect403Review({issue,choices,setChoices}){
   async function submit(row){

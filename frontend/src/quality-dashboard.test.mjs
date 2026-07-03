@@ -24,3 +24,16 @@ test('quality redesign styles make issue cards and evidence drawers first-class'
   assert.match(styles, /\.quality-issue-card/);
   assert.match(styles, /\.quality-evidence-drawer/);
 });
+
+test('unresolved link review captures actionable findings', () => {
+  assert.match(source, /Review finding/);
+  assert.match(source, /function UnresolvedLinkReview/);
+  assert.match(source, /URL works but points to an out-of-date document/);
+  assert.match(source, /URL works but irrelevant/);
+  assert.match(source, /URL is dead/);
+  assert.match(source, /Link should point to an existing Rulebook page\/provision/);
+  assert.match(source, /Keep as external reference/);
+  assert.match(source, /Correct URL/);
+  assert.match(source, /Correct Rulebook page or provision/);
+  assert.doesNotMatch(source, /reviewed by/i);
+});

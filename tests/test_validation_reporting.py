@@ -1,4 +1,5 @@
 import csv
+import json
 import sqlite3
 import unittest
 from pathlib import Path
@@ -337,6 +338,54 @@ class ValidationSuspect403Tests(unittest.TestCase):
             self.assertEqual(rows[0]['review_id'], '403-0001')
             self.assertEqual(rows[0]['target_id'], 'target-1')
         finally:
+            if original is None:
+                path.unlink(missing_ok=True)
+            else:
+                path.write_text(original, encoding='utf-8')
+
+class ValidationUnresolvedReviewTests(unittest.TestCase):
+    def test_unresolved_reference_samples_include_saved_review_findings(self):
+        from backend.app.validation import _unresolved_reference_review_path, _unresolved_reference_samples
+        path = _unresolved_reference_review_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        original = path.read_text(encoding='utf-8') if path.exists() else None
+        conn = sqlite3.connect(':memory:')
+        conn.row_factory = sqlite3.Row
+        conn.executescript(
+            """
+            CREATE TABLE node (
+              id TEXT PRIMARY KEY,
+              node_type TEXT,
+              title TEXT,
+              stable_key TEXT,
+              url TEXT,
+              text TEXT DEFAULT '',
+              metadata_json TEXT DEFAULT '{}'
+            );
+            CREATE TABLE edge (
+              id TEXT PRIMARY KEY,
+              from_node_id TEXT,
+              to_node_id TEXT,
+              edge_type TEXT,
+              source_method TEXT,
+              confidence REAL,
+              evidence_text TEXT DEFAULT '',
+              source_url TEXT DEFAULT '',
+              metadata_json TEXT DEFAULT '{}'
+            );
+            """
+        )
+        conn.execute("INSERT INTO node(id,node_type,title,stable_key,text,metadata_json) VALUES ('source','rule','Source rule','rule:source','See Target','{}')")
+        conn.execute("INSERT INTO node(id,node_type,title,stable_key,url,metadata_json) VALUES ('target','rule_reference','Target rule','target','https://example.test/old','{""placeholder"":1}')")
+        conn.execute("INSERT INTO edge(id,from_node_id,to_node_id,edge_type,source_method,confidence,evidence_text,source_url,metadata_json) VALUES ('edge-123','source','target','references','regex_reference',0.8,'Target','https://example.test','{}')")
+        try:
+            path.write_text(json.dumps({'target': {'target_id':'target','edge_id':'edge-123','decision':'outdated','replacement_url':'https://example.test/new','note':'Old PDF still loads'}}), encoding='utf-8')
+            rows = _unresolved_reference_samples(conn)
+            self.assertEqual(rows[0]['review_decision'], 'outdated')
+            self.assertEqual(rows[0]['review_replacement_url'], 'https://example.test/new')
+            self.assertEqual(rows[0]['review_note'], 'Old PDF still loads')
+        finally:
+            conn.close()
             if original is None:
                 path.unlink(missing_ok=True)
             else:
