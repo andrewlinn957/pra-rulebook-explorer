@@ -569,8 +569,10 @@ function Graph({graph,selected,detail,nodeTypes,relationshipTypes,relationshipFi
     fg.d3Force('collide',forceCollide(node=>Math.max(22,node.size||22)+10).strength(.88));
     fg.d3Force('charge')?.strength(-260);
     fg.d3Force('link')?.distance(edge=>edge.edge_type==='contains'?90:160).strength(edge=>edge.edge_type==='contains'?.45:.12);
-    setTimeout(()=>fg.zoomToFit(420,70),260);
-  },[data]);
+    const id=detail?.id||selected?.id;
+    const node=id?data.nodes.find(n=>n.id===id):null;
+    setTimeout(()=>node?frameNode(fg,node,420):fg.zoomToFit(420,70),260);
+  },[data,detail?.id,selected?.id]);
 
   useEffect(()=>{
     const fg=fgRef.current;
@@ -578,9 +580,13 @@ function Graph({graph,selected,detail,nodeTypes,relationshipTypes,relationshipFi
     const id=detail?.id||selected?.id;
     if(!id) return;
     const node=data.nodes.find(n=>n.id===id);
-    if(node) fg.centerAt(node.x||0,node.y||0,420);
+    if(node) frameNode(fg,node,420);
   },[detail?.id,selected?.id,data]);
 
+  function frameNode(fg,node,duration=360){
+    fg.centerAt(node.x||0,node.y||0,duration);
+    fg.zoom(1.75,duration);
+  }
   function zoom(mult){
     const fg=fgRef.current; if(!fg) return;
     fg.zoom(Math.max(.15,Math.min(5,fg.zoom()*mult)),260);
@@ -589,7 +595,7 @@ function Graph({graph,selected,detail,nodeTypes,relationshipTypes,relationshipFi
   function focusNode(n){
     const fg=fgRef.current; if(!fg||!n) return;
     const node=data.nodes.find(x=>x.id===n.id);
-    if(node){ fg.centerAt(node.x||0,node.y||0,360); fg.zoom(1.75,360); }
+    if(node) frameNode(fg,node);
   }
   function clickNode(node){
     const now=Date.now();

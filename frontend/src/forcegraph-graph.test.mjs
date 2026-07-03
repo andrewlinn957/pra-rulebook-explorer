@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 const source = readFileSync(new URL('./main.jsx', import.meta.url), 'utf8');
+const styles = readFileSync(new URL('./styles.css', import.meta.url), 'utf8');
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 
 test('graph view uses ForceGraph2D rather than Cytoscape', () => {
@@ -44,4 +45,14 @@ test('legend exposes clickable node and edge type filters', () => {
   assert.match(source, /onClick=\{\(\)=>onToggleRelationship\(t\)\}/);
   assert.match(source, /legend-title">Node types/);
   assert.match(source, /legend-title">Edge types/);
+});
+
+test('graph focus uses the selected-node framing when selection changes', () => {
+  assert.match(source, /function frameNode\(fg,node,duration=360\)/);
+  assert.match(source, /frameNode\(fg,node,420\)/);
+  assert.match(source, /function focusNode\(n\)[\s\S]*frameNode\(fg,node\)/);
+});
+
+test('graph legend sits below the graph and has room for two columns', () => {
+  assert.match(styles, /\.legend\{[^}]*left:50%[^}]*bottom:18px[^}]*transform:translateX\(-50%\)[^}]*grid-template-columns:repeat\(2,minmax\(170px,1fr\)\)[^}]*width:min\(760px,calc\(100% - 220px\)\)/);
 });
