@@ -53,6 +53,11 @@ test('graph focus uses the selected-node framing when selection changes', () => 
   assert.match(source, /function focusNode\(n\)[\s\S]*frameNode\(fg,node\)/);
 });
 
-test('graph legend sits below the graph and has room for two columns', () => {
-  assert.match(styles, /\.legend\{[^}]*left:50%[^}]*bottom:18px[^}]*transform:translateX\(-50%\)[^}]*grid-template-columns:repeat\(2,minmax\(170px,1fr\)\)[^}]*width:min\(760px,calc\(100% - 220px\)\)/);
+test('graph legend is compact and sits below the graph', () => {
+  assert.match(styles, /\.legend\{[^}]*left:50%[^}]*bottom:18px[^}]*transform:translateX\(-50%\)[^}]*grid-template-columns:1fr[^}]*width:min\(340px,calc\(100% - 96px\)\)[^}]*max-height:92px/);
+});
+
+test('narrow desktop layout reserves space for the open inspector instead of drawing graph underneath it', () => {
+  assert.match(styles, /@media\(max-width:1050px\)\{[\s\S]*?\.shell\.panel-open\{grid-template-columns:280px minmax\(0,1fr\) 390px\}/);
+  assert.match(styles, /\.shell\.panel-open \.inspector\.open\{position:static;grid-column:3;grid-row:2/);
 });
