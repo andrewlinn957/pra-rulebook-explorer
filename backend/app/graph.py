@@ -115,7 +115,95 @@ def neighbourhood(conn: sqlite3.Connection, node_id: str, *, depth: int = 1, lim
         "SELECT id,node_type,stable_key,title,text,url,metadata_json FROM node WHERE id IN (%s)" % ",".join("?" for _ in seen_nodes),
         list(seen_nodes),
     ).fetchall()]
-    return {"nodes": nodes, "edges": list(seen_edges.values()), "available_edge_types": available}
+    nodes, edges = _roll_up_guidance_reference_nodes(conn, nodes, list(seen_edges.values()))
+    return {"nodes": nodes, "edges": edges, "available_edge_types": available}
+
+
+def _roll_up_guidance_reference_nodes(conn: sqlite3.Connection, nodes: list[dict[str, Any]], edges: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    reference_node_ids = {
+        endpoint
+        for edge in edges
+        if edge.get("edge_type") == "references"
+        for endpoint in (edge.get("from_node_id"), edge.get("to_node_id"))
+        if endpoint
+    }
+    rollups = {node_id: doc for node_id in reference_node_ids if (doc := _guidance_document_ancestor(conn, node_id)) and doc.get("id") != node_id}
+    if not rollups:
+        return nodes, edges
+
+    nodes_by_id = {node["id"]: node for node in nodes}
+    for doc in rollups.values():
+        nodes_by_id[doc["id"]] = doc
+
+    deduped_edges: dict[tuple[str, str, str], dict[str, Any]] = {}
+    replaced_node_ids: set[str] = set()
+    for edge in edges:
+        edge = {**edge, "metadata": dict(edge.get("metadata") or {})}
+        rolled_from: list[str] = []
+        if edge.get("edge_type") == "references":
+            for field in ("from_node_id", "to_node_id"):
+                original = edge.get(field)
+                doc = rollups.get(original)
+                if doc:
+                    edge[field] = doc["id"]
+                    rolled_from.append(original)
+                    replaced_node_ids.add(original)
+        if edge.get("from_node_id") == edge.get("to_node_id"):
+            continue
+        key = (edge.get("from_node_id") or "", edge.get("to_node_id") or "", edge.get("edge_type") or "")
+        if key in deduped_edges:
+            existing = deduped_edges[key]
+            existing["confidence"] = max(float(existing.get("confidence") or 0), float(edge.get("confidence") or 0))
+            existing_meta = existing.setdefault("metadata", {})
+            existing_rollups = existing_meta.setdefault("rolled_up_from_node_ids", [])
+            for node_id in rolled_from or edge.get("metadata", {}).get("rolled_up_from_node_ids", []):
+                if node_id not in existing_rollups:
+                    existing_rollups.append(node_id)
+            continue
+        if rolled_from:
+            edge["metadata"]["rolled_up_from_node_ids"] = rolled_from
+        deduped_edges[key] = edge
+
+    kept_node_ids = {edge["from_node_id"] for edge in deduped_edges.values()} | {edge["to_node_id"] for edge in deduped_edges.values()}
+    kept_node_ids |= {node["id"] for node in nodes if node["id"] not in replaced_node_ids}
+    return [node for node_id, node in nodes_by_id.items() if node_id in kept_node_ids], list(deduped_edges.values())
+
+
+def _guidance_document_ancestor(conn: sqlite3.Connection, node_id: str) -> dict[str, Any] | None:
+    row = conn.execute("SELECT id,node_type,stable_key,title,text,url,metadata_json FROM node WHERE id=?", (node_id,)).fetchone()
+    node = row_to_node(row)
+    if not node or node.get("node_type") not in {"guidance_document", "guidance_section", "guidance_paragraph"}:
+        return None
+    if node.get("node_type") == "guidance_document":
+        return node if _is_statement_guidance(node) else None
+    current_id = node_id
+    for _ in range(8):
+        parent_row = conn.execute(
+            """
+            SELECT p.id,p.node_type,p.stable_key,p.title,p.text,p.url,p.metadata_json
+            FROM edge e JOIN node p ON p.id=e.from_node_id
+            WHERE e.to_node_id=? AND e.edge_type='contains'
+            ORDER BY CASE p.node_type WHEN 'guidance_document' THEN 0 WHEN 'guidance_section' THEN 1 ELSE 2 END
+            LIMIT 1
+            """,
+            (current_id,),
+        ).fetchone()
+        parent = row_to_node(parent_row)
+        if not parent:
+            return None
+        if parent.get("node_type") == "guidance_document" and _is_statement_guidance(parent):
+            return parent
+        current_id = parent["id"]
+    return None
+
+
+def _is_statement_guidance(node: dict[str, Any]) -> bool:
+    if node.get("node_type") not in {"guidance_document", "guidance_section", "guidance_paragraph"}:
+        return False
+    meta = node.get("metadata") or {}
+    doc_type = (meta.get("document_type") or "").lower()
+    url = (node.get("url") or "").lower()
+    return doc_type in {"supervisory_statement", "statement_of_policy"} or "/supervisory-statements/" in url or "/statements-of-policy/" in url
 
 
 def shortest_path(conn: sqlite3.Connection, source: str, target: str, *, max_edges: int = 200000) -> dict[str, Any]:
