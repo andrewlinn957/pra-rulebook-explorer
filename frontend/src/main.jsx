@@ -678,8 +678,12 @@ function forceNodeLayoutLane(node,selectedId,edges){
   for(const edge of incident){
     if(edge.edge_type==='references' && edge.to_node_id===selectedId) return 'west';
     if(edge.edge_type==='references' && edge.from_node_id===selectedId) return 'east';
+    if(edge.from_node_id===selectedId && isPurpleAnalysisNode(node)) return 'east';
   }
   return 'related';
+}
+function isPurpleAnalysisNode(node){
+  return ['topic','topic_cluster','obligation_pattern','obligation_statement'].includes(node.node_type);
 }
 function forceNodeTargetX(node){
   if(node.layoutLane==='west') return -280;
