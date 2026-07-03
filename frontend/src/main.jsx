@@ -225,13 +225,11 @@ function ValidationDashboard({data,busy}){
     ...(reportingIssue?[reportingIssue]:[]),
     ...(suspect403Issue?[suspect403Issue]:[]),
   ].sort((a,b)=>issueRank(b)-issueRank(a)),[checks,data,reportingIssue,suspect403Issue]);
-  const activeIssues=issues.filter(i=>i.status!=='pass');
-  const statusCounts=checks.reduce((acc,c)=>{acc[c.status]=(acc[c.status]||0)+1;return acc;},{});
+  const attentionIssues=issues.filter(i=>i.status!=='pass');
+  const passedIssues=issues.filter(i=>i.status==='pass');
   const [activeId,setActiveId]=useState('');
-  const [detailTab,setDetailTab]=useState('samples');
-  const [queueFilter,setQueueFilter]=useState('open');
-  const [checksMinimised,setChecksMinimised]=useState(false);
   const [sampleQuery,setSampleQuery]=useState('');
+  const [showPassed,setShowPassed]=useState(false);
   const [evidenceFilters,setEvidenceFilters]=useState({type:'all',evidence:'all',method:'all',minConfidence:0,query:''});
   const [reviewDraft,setReviewDraft]=useState('');
   const [auditState,setAuditState]=useState(()=>readAuditState());
@@ -239,125 +237,118 @@ function ValidationDashboard({data,busy}){
 
   useEffect(()=>{
     if(!issues.length) return;
-    if(!activeId || !issues.some(i=>i.id===activeId)) setActiveId((activeIssues[0]||issues[0]).id);
-  },[issues,activeIssues,activeId]);
+    if(!activeId || !issues.some(i=>i.id===activeId)) setActiveId((attentionIssues[0]||issues[0]).id);
+  },[issues,attentionIssues,activeId]);
 
   if(busy&&!data) return <section className="quality"><div className="canvas-meta"><strong>Quality</strong><span>Checking the full database…</span></div></section>;
-  if(!data) return <section className="quality"><div className="canvas-meta"><strong>Quality</strong><span>Open Quality to load the audit.</span></div></section>;
+  if(!data) return <section className="quality"><div className="canvas-meta"><strong>Quality</strong><span>Open Quality to load the checks.</span></div></section>;
 
-  const activeIssue=issues.find(i=>i.id===activeId)||activeIssues[0]||issues[0];
-  const reviewedCount=issues.filter(i=>auditState[i.id]?.status==='reviewed').length;
+  const activeIssue=issues.find(i=>i.id===activeId)||attentionIssues[0]||issues[0];
+  const statusCounts=issues.reduce((acc,i)=>{acc[i.status]=(acc[i.status]||0)+1;return acc;},{pass:0,warn:0,fail:0});
   const acceptedCount=issues.filter(i=>auditState[i.id]?.status==='accepted').length;
-  const riskScore=issues.reduce((sum,i)=>sum+issueRank(i),0);
+  const reviewedCount=issues.filter(i=>auditState[i.id]?.status==='reviewed').length;
+  const openAttention=attentionIssues.filter(i=>(auditState[i.id]?.status||'open')!=='accepted');
+  const posture=statusCounts.fail?'fail':statusCounts.warn?'warn':'pass';
   const visibleSamples=filterRows(activeIssue?.rows||[],sampleQuery);
   const evidenceRows=filterEvidenceRows(data.edges_by_type_method||[],evidenceFilters);
-  const queue=issues.filter(i=>{
-    const state=auditState[i.id]?.status||'open';
-    if(queueFilter==='all') return true;
-    if(queueFilter==='reporting') return i.reporting;
-    if(queueFilter==='passing') return i.status==='pass';
-    if(queueFilter==='accepted') return state==='accepted';
-    return i.status!=='pass' && state!=='accepted';
-  });
-  const nextIssue=activeIssues.find(i=>(auditState[i.id]?.status||'open')!=='accepted')||activeIssues[0]||issues[0];
-  const posture=statusCounts.fail?'fail':statusCounts.warn?'warn':'pass';
+  const displayedIssues=showPassed?issues:[...attentionIssues,...passedIssues.slice(0,3)];
+  const trustCopy=posture==='pass'
+    ? 'No hard quality gates are currently failing. The explorer is suitable for navigation, subject to normal source checking.'
+    : posture==='warn'
+      ? 'The core graph is usable, but some links need review before treating every relationship as authoritative.'
+      : 'There are hard quality failures. Use the explorer for diagnosis, not final reliance, until these are fixed.';
 
-  function openIssue(issue,tab='samples'){
+  function openIssue(issue){
     setActiveId(issue.id);
-    setDetailTab(tab);
     setSampleQuery('');
   }
+  function setState(status){
+    if(activeIssue) setIssueState(activeIssue.id,status,setAuditState);
+  }
 
-  return <section className="quality audit-cockpit">
+  return <section className="quality quality-redesign">
     <div className="canvas-meta"><strong>Quality</strong><span className={`quality-state ${posture}`}>{statusCounts.fail||0} fail · {statusCounts.warn||0} warn · {statusCounts.pass||0} pass</span></div>
 
-    <div className="audit-strip">
-      <div className="audit-strip-main">
-        <span>Next check</span>
-        <strong>{nextIssue?.title||'No checks'}</strong>
-        <p>{nextIssue?.summary||'No validation data available.'}</p>
+    <div className={`quality-hero ${posture}`}>
+      <div>
+        <span className="eyebrow">Can I trust the explorer?</span>
+        <h2>{posture==='pass'?'Yes, with normal source checks':posture==='warn'?'Mostly, but review the highlighted gaps':'Not yet for final reliance'}</h2>
+        <p>{trustCopy}</p>
       </div>
-      <div className="audit-strip-stats">
-        <div><span>Risk</span><strong>{fmt(riskScore)}</strong></div>
-        <div><span>Open</span><strong>{fmt(activeIssues.filter(i=>(auditState[i.id]?.status||'open')!=='accepted').length)}</strong></div>
+      <div className="quality-summary-grid" aria-label="Quality summary">
+        <div><span>Needs attention</span><strong>{fmt(openAttention.length)}</strong></div>
+        <div><span>Checks passed</span><strong>{fmt(statusCounts.pass||0)}</strong></div>
         <div><span>Reviewed</span><strong>{fmt(reviewedCount)}</strong></div>
         <div><span>Accepted</span><strong>{fmt(acceptedCount)}</strong></div>
       </div>
-      <button type="button" onClick={()=>downloadCsv('audit-evidence.csv',data.edges_by_type_method||[])}>Export evidence</button>
     </div>
 
-    <div className={`audit-layout ${checksMinimised?'checks-minimised':''}`}>
-      <aside className={`audit-queue ${checksMinimised?'minimised':''}`} aria-label="Quality checks">
-        {checksMinimised?<button type="button" className="checks-rail-tab" onClick={()=>setChecksMinimised(false)} title="Expand checks"><span>Checks</span><strong>{queue.length}</strong></button>:<>
-        <div className="queue-tools">
-          <div>
-            <strong>Checks</strong>
-            <span>{fmt(data.totals?.nodes)} nodes · {fmt(data.totals?.edges)} links</span>
-          </div>
-          <button type="button" className="minimise-checks" onClick={()=>setChecksMinimised(true)} title="Minimise checks">‹</button>
-          <div className="queue-filter" role="tablist" aria-label="Filter checks">
-            {['open','reporting','all','passing','accepted'].map(f=><button key={f} type="button" className={queueFilter===f?'on':''} onClick={()=>setQueueFilter(f)}>{f}</button>)}
-          </div>
+    <div className="quality-layout-v2">
+      <main className="quality-issues" aria-label="Quality issues">
+        <div className="section-heading">
+          <div><span className="eyebrow">What needs attention</span><h3>Issues, in plain English</h3></div>
+          <div className="quality-actions"><button type="button" onClick={()=>downloadCsv('quality-evidence.csv',data.edges_by_type_method||[])}>Export evidence</button><button type="button" onClick={()=>setShowPassed(v=>!v)}>{showPassed?'Hide passed checks':'Show all checks'}</button></div>
         </div>
-        <div className="queue-list">
-          {queue.length?queue.map(issue=><IssueQueueButton key={issue.id} issue={issue} active={activeIssue?.id===issue.id} state={auditState[issue.id]} onOpen={()=>openIssue(issue)} />):<p className="empty-good">Nothing in this queue.</p>}
+        <div className="quality-card-list">
+          {displayedIssues.map(issue=><QualityIssueCard key={issue.id} issue={issue} active={activeIssue?.id===issue.id} state={auditState[issue.id]} onOpen={()=>openIssue(issue)}/>) }
         </div>
-        </>}
-      </aside>
+      </main>
 
-      <main className="audit-detail" aria-label="Selected quality check">
+      <aside className="quality-evidence-drawer" aria-label="Selected issue evidence">
         {activeIssue&&<>
-          <div className={`detail-hero ${activeIssue.status}`}>
-            <div>
-              <span>{activeIssue.severity}</span>
-              <h2>{activeIssue.title}</h2>
-              <p>{activeIssue.summary}</p>
-            </div>
-            <div className="detail-metrics">
-              <div><span>Affected</span><strong>{fmt(activeIssue.affected)}</strong></div>
-              <div><span>Priority</span><strong>{fmt(issueRank(activeIssue))}</strong></div>
-              <div><span>State</span><strong>{auditState[activeIssue.id]?.status||'open'}</strong></div>
-            </div>
+          <div className={`drawer-header ${activeIssue.status}`}>
+            <span>{statusIcon(activeIssue.status)} {activeIssue.severity}</span>
+            <h3>{activeIssue.title}</h3>
+            <p>{activeIssue.summary}</p>
           </div>
-
-          <div className="detail-cards">
-            <div><span>Impact</span><p>{activeIssue.impact}</p></div>
-            <div><span>Likely cause</span><p>{activeIssue.cause}</p></div>
-            <div><span>Pass condition</span><p>{activeIssue.test}</p></div>
+          <div className="drawer-explainers">
+            <section><h4>What this means</h4><p>{activeIssue.cause}</p></section>
+            <section><h4>Why it matters</h4><p>{activeIssue.impact}</p></section>
+            <section><h4>What to do next</h4><p>{activeIssue.fix}</p></section>
           </div>
-
-          <div className="detail-tabs" role="tablist" aria-label="Issue tools">
-            {[['samples','Samples'],['fix','Fix plan'],['evidence','Evidence'],['review','Notes']].map(([key,label])=><button key={key} type="button" className={detailTab===key?'on':''} onClick={()=>setDetailTab(key)}>{label}</button>)}
-            <button type="button" className="ghost" onClick={()=>setIssueState(activeIssue.id,'reviewed',setAuditState)}>Mark reviewed</button>
-            <button type="button" className="ghost" onClick={()=>setIssueState(activeIssue.id,'accepted',setAuditState)}>Accept warning</button>
+          <div className="drawer-toolbar">
+            <button type="button" onClick={()=>setState('reviewed')}>Mark reviewed</button>
+            <button type="button" onClick={()=>setState('accepted')}>Accept warning</button>
+            <button type="button" onClick={()=>setState('open')}>Reopen</button>
           </div>
-
-          {detailTab==='samples'&&<div className="detail-panel">
+          <details className="quality-steps" open>
+            <summary>Fix steps and pass condition</summary>
+            {activeIssue.reporting?<ReportingFixPlan issue={activeIssue}/>:<FixPlan issue={activeIssue}/>}
+          </details>
+          <details className="quality-samples" open>
+            <summary>Show evidence</summary>
             {activeIssue.reporting?<ReportingProspectiveIssues issue={activeIssue}/>:activeIssue.id==='suspect-403-links'?<Suspect403Review issue={activeIssue} choices={linkReviewChoices} setChoices={setLinkReviewChoices}/>:activeIssue.id==='unresolved-references'?<UnresolvedReferencePatterns issue={activeIssue} visibleSamples={visibleSamples} sampleQuery={sampleQuery} setSampleQuery={setSampleQuery}/>:<>
               <div className="sample-toolbar compact"><input value={sampleQuery} onChange={e=>setSampleQuery(e.target.value)} placeholder="Filter sample rows…"/><button onClick={()=>downloadCsv(`${activeIssue.id}-samples.csv`,visibleSamples)}>Export samples</button></div>
               <QualityTable title={activeIssue.sampleTitle} rows={visibleSamples.slice(0,activeIssue.sampleLimit||100)} cols={activeIssue.cols}/>
             </>}
-          </div>}
-
-          {detailTab==='fix'&&<div className="detail-panel">{activeIssue.reporting?<ReportingFixPlan issue={activeIssue}/>:<FixPlan issue={activeIssue}/>}</div>}
-
-          {detailTab==='evidence'&&<div className="detail-panel evidence-workbench">
+          </details>
+          <details className="quality-evidence-table">
+            <summary>Technical evidence table</summary>
             {activeIssue.reporting?<QualityTable title="Reporting relationship evidence" rows={(activeIssue.reportingData.edges_by_type_method||[]).slice(0,120)} cols={['edge_type','extraction_method','review_status','edges','avg_confidence','min_confidence','max_confidence']}/>:<>
               <EvidenceFilters rows={data.edges_by_type_method||[]} filters={evidenceFilters} setFilters={setEvidenceFilters}/>
               <QualityTable rows={evidenceRows.slice(0,120)} cols={['edge_type','source_method','evidence_status','edges','avg_confidence','min_confidence','max_confidence']}/>
             </>}
-          </div>}
-
-          {detailTab==='review'&&<div className="detail-panel review-editor inline-review">
-            <div className="review-actions"><button onClick={()=>setIssueState(activeIssue.id,'reviewed',setAuditState)}>Mark reviewed</button><button onClick={()=>setIssueState(activeIssue.id,'accepted',setAuditState)}>Accept warning</button><button onClick={()=>setIssueState(activeIssue.id,'open',setAuditState)}>Reopen</button></div>
-            <textarea value={reviewDraft} onChange={e=>setReviewDraft(e.target.value)} placeholder="Add reviewer note…"/>
-            <button onClick={()=>{appendIssueNote(activeIssue.id,reviewDraft,setAuditState);setReviewDraft('');}}>Save note</button>
-            <ReviewNotes notes={auditState[activeIssue.id]?.notes||[]}/>
-          </div>}
+          </details>
+          <details className="quality-notes">
+            <summary>Reviewer notes</summary>
+            <div className="review-editor inline-review"><textarea value={reviewDraft} onChange={e=>setReviewDraft(e.target.value)} placeholder="Add reviewer note…"/><button onClick={()=>{appendIssueNote(activeIssue.id,reviewDraft,setAuditState);setReviewDraft('');}}>Save note</button><ReviewNotes notes={auditState[activeIssue.id]?.notes||[]}/></div>
+          </details>
         </>}
-      </main>
+      </aside>
     </div>
   </section>;
+}
+
+function QualityIssueCard({issue,active,state,onOpen}){
+  const triage=state?.status||'open';
+  return <article className={`quality-issue-card ${issue.status} ${active?'active':''}`}>
+    <button type="button" onClick={onOpen}>
+      <span className="issue-topline"><b>{statusIcon(issue.status)} {issue.title}</b><em>{triage}</em></span>
+      <span className="issue-summary">{issue.summary}</span>
+      <span className="issue-answer"><strong>Why it matters</strong>{issue.impact}</span>
+      <span className="issue-footer"><em>{fmt(issue.affected)} affected</em><strong>Show evidence</strong></span>
+    </button>
+  </article>;
 }
 
 function UnresolvedReferencePatterns({issue,visibleSamples,sampleQuery,setSampleQuery}){
@@ -414,24 +405,6 @@ function ReportingProspectiveIssues({issue}){
 
 function ReportingFixPlan({issue}){
   return <div className="fix-plan"><div className="fix-summary"><h3>Prospective reporting issues</h3><p>Use these as candidate quality gates for the reporting tables and reporting-rule links. Promote stable checks into hard failures once the expected coverage baseline is agreed.</p></div><ol>{issue.prospectiveIssues.map(p=><li key={p.check}><strong>{plainCheckName(p.check)}</strong><p>{p.purpose}</p></li>)}</ol><div className="acceptance"><span>Done when</span><p>{issue.test}</p></div></div>;
-}
-
-function IssueQueueButton({issue,active,state,onOpen}){
-  const triage=state?.status||'open';
-  return <button type="button" className={`queue-item ${issue.status} ${active?'on':''}`} onClick={onOpen}>
-    <span className="queue-status">{statusIcon(issue.status)}</span>
-    <span className="queue-copy"><strong>{issue.title}</strong><em>{issue.summary}</em></span>
-    <span className="queue-meta"><b>{fmt(issue.affected)}</b><small>{triage}</small></span>
-  </button>;
-}
-
-function IssueCard({issue,active,state,onOpen,onState}){
-  return <article className={`work-issue ${issue.status} ${active?'active':''}`}>
-    <div className="work-title"><span>{statusIcon(issue.status)}</span><div><strong>{issue.title}</strong><em>{issue.summary}</em></div><b>{issue.severity}</b></div>
-    <div className="work-metrics"><div><span>Affected</span><strong>{fmt(issue.affected)}</strong></div><div><span>Priority</span><strong>{fmt(issueRank(issue))}</strong></div><div><span>State</span><strong>{state?.status||'open'}</strong></div></div>
-    <p>{issue.impact}</p>
-    <div className="work-actions"><button onClick={onOpen}>Inspect</button><button onClick={()=>onState('reviewed')}>Reviewed</button><button onClick={()=>onState('accepted')}>Accept</button></div>
-  </article>;
 }
 
 function EvidenceFilters({rows,filters,setFilters}){
