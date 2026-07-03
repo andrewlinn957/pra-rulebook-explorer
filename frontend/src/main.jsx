@@ -562,6 +562,7 @@ function Graph({graph,selected,detail,nodeTypes,relationshipTypes,relationshipFi
   const [hover,setHover]=useState(null);
   const [hoverEdge,setHoverEdge]=useState(null);
   const data=useMemo(()=>forceGraphData(graph,selected),[graph,selected?.id]);
+  const graphDensity=forceGraphDensity(data);
 
   useEffect(()=>{
     const fg=fgRef.current;
@@ -613,7 +614,7 @@ function Graph({graph,selected,detail,nodeTypes,relationshipTypes,relationshipFi
       nodeId="id"
       nodeVal={node=>node.size}
       nodeLabel={node=>displayNodeTitle(node.raw||node)}
-      nodeCanvasObject={(node,ctx,globalScale)=>drawGraphNode(node,ctx,globalScale,selected)}
+      nodeCanvasObject={(node,ctx,globalScale)=>drawGraphNode(node,ctx,globalScale,selected,graphDensity)}
       nodePointerAreaPaint={(node,colour,ctx)=>{ctx.fillStyle=colour;ctx.beginPath();ctx.arc(node.x,node.y,Math.max(12,node.size||12),0,Math.PI*2);ctx.fill();}}
       linkSource="source"
       linkTarget="target"
@@ -660,7 +661,7 @@ function forceNodeSize(node,graph,selected){
   const base=r(node,graph);
   return Math.max(8,Math.min(18,base*.72));
 }
-function drawGraphNode(node,ctx,globalScale,selected){
+function drawGraphNode(node,ctx,globalScale,selected,graphDensity){
   const raw=node.raw||node;
   const radius=node.size||10;
   const badge=node.badge;
@@ -679,19 +680,27 @@ function drawGraphNode(node,ctx,globalScale,selected){
   ctx.strokeStyle=selectedNode?'#2457d6':role==='parent'?'#be123c':role==='child'?'#2563eb':'#ffffff';
   ctx.stroke();
   ctx.setLineDash([]);
-  const label=forceGraphNodeLabel(node,selected,globalScale);
+  const label=forceGraphNodeLabel(node,selected,globalScale,graphDensity);
   if(label){ drawCanvasLabel(ctx,label,node.x,node.y+radius+11/globalScale,selectedNode?12:10,globalScale,selectedNode); }
   ctx.restore();
 }
-function forceGraphNodeLabel(node,selected,globalScale){
+function forceGraphNodeLabel(node,selected,globalScale,graphDensity){
   const raw=node.raw||node;
   if(raw.id===selected?.id) return truncate(displayNodeTitle(raw),42);
   if(globalScale<.65) return '';
+  const importantNode=node.badge || node.role==='parent' || (node.degree||0)>=8 || ['part','guidance_document','defined_term'].includes(raw.node_type);
+  if(graphDensity==='dense' && !importantNode && globalScale<1.85) return '';
   if(node.badge) return truncate(displayNodeTitle(raw),30);
   if(node.role==='parent'||node.role==='child') return truncate(displayNodeTitle(raw),28);
   if((node.degree||0)>=4 || ['part','chapter','guidance_document','defined_term'].includes(raw.node_type)) return truncate(displayNodeTitle(raw),30);
-  if(globalScale>1.05) return truncate(displayNodeTitle(raw),24);
+  if(globalScale>(graphDensity==='dense'?1.35:1.05)) return truncate(displayNodeTitle(raw),24);
   return '';
+}
+function forceGraphDensity(data){
+  const nodes=data?.nodes?.length||0;
+  const links=data?.links?.length||0;
+  if(nodes>=70 || links>=150 || links/Math.max(1,nodes)>2.4) return 'dense';
+  return 'normal';
 }
 function drawGraphLink(edge,ctx,globalScale,selected){
   if(edge.edge_type==='contains') return;

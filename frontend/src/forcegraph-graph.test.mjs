@@ -24,12 +24,20 @@ test('ForceGraph data preserves parent child document and parallel edge metadata
 });
 
 test('ForceGraph renderer draws readable canvas labels without PARENT or CHILD text', () => {
-  assert.match(source, /function drawGraphNode\(node,ctx,globalScale,selected\)/);
-  assert.match(source, /forceGraphNodeLabel\(node,selected,globalScale\)/);
+  assert.match(source, /function drawGraphNode\(node,ctx,globalScale,selected,graphDensity\)/);
+  assert.match(source, /forceGraphNodeLabel\(node,selected,globalScale,graphDensity\)/);
   assert.doesNotMatch(source, /PARENT\\n/);
   assert.doesNotMatch(source, /CHILD\\n/);
   assert.match(source, /node\.role==='parent'/);
   assert.match(source, /node\.role==='child'/);
+});
+
+test('dense ForceGraph views hide most labels until users zoom in', () => {
+  assert.match(source, /const graphDensity=forceGraphDensity\(data\)/);
+  assert.match(source, /nodeCanvasObject=\{\(node,ctx,globalScale\)=>drawGraphNode\(node,ctx,globalScale,selected,graphDensity\)\}/);
+  assert.match(source, /function forceGraphDensity\(data\)/);
+  assert.match(source, /if\(nodes>=70 \|\| links>=150 \|\| links\/Math\.max\(1,nodes\)>2\.4\) return 'dense'/);
+  assert.match(source, /if\(graphDensity==='dense' && !importantNode && globalScale<1\.85\) return ''/);
 });
 
 test('ForceGraph uses visible directional arrows and separate parallel links', () => {
