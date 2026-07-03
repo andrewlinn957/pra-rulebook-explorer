@@ -567,7 +567,7 @@ function Graph({graph,selected,detail,nodeTypes,relationshipTypes,relationshipFi
   useEffect(()=>{
     const fg=fgRef.current;
     if(!fg) return;
-    fg.d3Force('collide',forceCollide(node=>Math.max(22,node.size||22)+10).strength(.88));
+    fg.d3Force('collide',forceCollide(node=>forceNodeCollisionRadius(node)).strength(.88));
     fg.d3Force('charge')?.strength(-260);
     fg.d3Force('link')?.distance(edge=>edge.edge_type==='contains'?90:160).strength(edge=>edge.edge_type==='contains'?.45:.12);
     const id=detail?.id||selected?.id;
@@ -660,6 +660,11 @@ function forceNodeSize(node,graph,selected){
   if(node.id===selected?.id||node.id===graph?.centre_id) return 18;
   const base=r(node,graph);
   return Math.max(8,Math.min(18,base*.72));
+}
+function forceNodeCollisionRadius(node){
+  const busyBonus=Math.min(34,Math.log2(Math.max(1,node.degree||1))*7);
+  const labelBonus=node.badge||node.role==='parent'?8:0;
+  return Math.max(22,node.size||22)+10+busyBonus+labelBonus;
 }
 function drawGraphNode(node,ctx,globalScale,selected,graphDensity){
   const raw=node.raw||node;

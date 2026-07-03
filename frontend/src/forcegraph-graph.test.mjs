@@ -47,6 +47,12 @@ test('ForceGraph uses visible directional arrows and separate parallel links', (
   assert.match(source, /linkCanvasObject=\{\(edge,ctx,globalScale\)=>drawGraphLink\(edge,ctx,globalScale,selected\)\}/);
 });
 
+test('busy graph nodes receive extra collision spacing', () => {
+  assert.match(source, /forceCollide\(node=>forceNodeCollisionRadius\(node\)\)\.strength\(\.88\)/);
+  assert.match(source, /function forceNodeCollisionRadius\(node\)/);
+  assert.match(source, /const busyBonus=Math\.min\(34,Math\.log2\(Math\.max\(1,node\.degree\|\|1\)\)\*7\)/);
+});
+
 test('legend exposes clickable node and edge type filters', () => {
   assert.match(source, /function Legend\(\{active,relationshipTypes,relationshipFilters,availableEdgeTypes,onToggle,onToggleRelationship\}\)/);
   assert.match(source, /onClick=\{\(\)=>onToggle\(t\)\}/);
