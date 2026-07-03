@@ -8,7 +8,7 @@ const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url),
 
 test('graph view uses ForceGraph2D rather than Cytoscape', () => {
   assert.match(source, /import ForceGraph2D from 'react-force-graph-2d'/);
-  assert.match(source, /import \{ forceCollide \} from 'd3-force'/);
+  assert.match(source, /import \{ forceCollide, forceX, forceY \} from 'd3-force'/);
   assert.doesNotMatch(source, /import cytoscape from 'cytoscape'/);
   assert.equal(pkg.dependencies['react-force-graph-2d'], '^1.29.1');
   assert.equal(pkg.dependencies['d3-force'], '^3.0.0');
@@ -17,7 +17,8 @@ test('graph view uses ForceGraph2D rather than Cytoscape', () => {
 
 test('ForceGraph data preserves parent child document and parallel edge metadata', () => {
   assert.match(source, /function forceGraphData\(graph,selected\)/);
-  assert.match(source, /role:relativeNodeRole\(node,selected\?\.id,graph\)/);
+  assert.match(source, /const role=relativeNodeRole\(node,selected\?\.id,graph\)/);
+  assert.match(source, /role,layoutLane:forceNodeLayoutLane/);
   assert.match(source, /badge:documentBadge\(node\)/);
   assert.match(source, /parallelCurveDistance\(parallelCounts,key,parallelIndex\)/);
   assert.match(source, /edgeDirectionLabel\(edge,selected\?\.id\)/);
@@ -53,6 +54,17 @@ test('busy graph nodes receive extra collision spacing', () => {
   assert.match(source, /forceCollide\(node=>forceNodeCollisionRadius\(node\)\)\.strength\(\.88\)/);
   assert.match(source, /function forceNodeCollisionRadius\(node\)/);
   assert.match(source, /const busyBonus=Math\.min\(34,Math\.log2\(Math\.max\(1,node\.degree\|\|1\)\)\*7\)/);
+});
+
+test('selected-node graph layout biases relationship groups into compass lanes', () => {
+  assert.match(source, /import \{ forceCollide, forceX, forceY \} from 'd3-force'/);
+  assert.match(source, /layoutLane:forceNodeLayoutLane\(\{\.\.\.node,role\},selected\?\.id,graph\.edges\|\|\[\]\)/);
+  assert.match(source, /fg\.d3Force\('x',forceX\(node=>forceNodeTargetX\(node\)\)\.strength\(node=>forceNodeAxisStrength\(node\)\)\)/);
+  assert.match(source, /fg\.d3Force\('y',forceY\(node=>forceNodeTargetY\(node\)\)\.strength\(node=>forceNodeAxisStrength\(node\)\)\)/);
+  assert.match(source, /if\(node\.role==='parent' \|\| \['defined_term','glossary','crr_terms_list'\]\.includes\(node\.node_type\)\) return 'north'/);
+  assert.match(source, /if\(node\.role==='child'\) return 'south'/);
+  assert.match(source, /if\(edge\.edge_type==='references' && edge\.to_node_id===selectedId\) return 'west'/);
+  assert.match(source, /if\(edge\.edge_type==='references' && edge\.from_node_id===selectedId\) return 'east'/);
 });
 
 test('legend exposes clickable node and edge type filters', () => {

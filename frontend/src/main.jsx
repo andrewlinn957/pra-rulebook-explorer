@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import ForceGraph2D from 'react-force-graph-2d';
-import { forceCollide } from 'd3-force';
+import { forceCollide, forceX, forceY } from 'd3-force';
 import { isInsuranceNode } from './graphFilters.js';
 import { buildUnresolvedActionQueues } from './unresolvedWorkflow.js';
 import { displayNodeTitle, documentBadge, relativeNodeRole, edgeDirectionGlyph, edgeDirectionLabel } from './graphPresentation.js';
@@ -568,6 +568,8 @@ function Graph({graph,selected,detail,nodeTypes,relationshipTypes,relationshipFi
     const fg=fgRef.current;
     if(!fg) return;
     fg.d3Force('collide',forceCollide(node=>forceNodeCollisionRadius(node)).strength(.88));
+    fg.d3Force('x',forceX(node=>forceNodeTargetX(node)).strength(node=>forceNodeAxisStrength(node)));
+    fg.d3Force('y',forceY(node=>forceNodeTargetY(node)).strength(node=>forceNodeAxisStrength(node)));
     fg.d3Force('charge')?.strength(-260);
     fg.d3Force('link')?.distance(edge=>edge.edge_type==='contains'?90:160).strength(edge=>edge.edge_type==='contains'?.45:.12);
     const id=detail?.id||selected?.id;
@@ -643,7 +645,8 @@ function Graph({graph,selected,detail,nodeTypes,relationshipTypes,relationshipFi
 
 function forceGraphData(graph,selected){
   const nodes=(graph.nodes||[]).map(node=>{
-    return {...node,raw:node,id:node.id,role:relativeNodeRole(node,selected?.id,graph),badge:documentBadge(node),colour:nodeFill(node,graph),size:forceNodeSize(node,graph,selected),degree:node.degree||node.metadata?.weighted_degree||1};
+    const role=relativeNodeRole(node,selected?.id,graph);
+    return {...node,raw:node,id:node.id,role,layoutLane:forceNodeLayoutLane({...node,role},selected?.id,graph.edges||[]),badge:documentBadge(node),colour:nodeFill(node,graph),size:forceNodeSize(node,graph,selected),degree:node.degree||node.metadata?.weighted_degree||1};
   });
   const ids=new Set(nodes.map(n=>n.id));
   const parallelCounts=countParallelEdges(graph.edges||[]);
@@ -665,6 +668,33 @@ function forceNodeCollisionRadius(node){
   const busyBonus=Math.min(34,Math.log2(Math.max(1,node.degree||1))*7);
   const labelBonus=node.badge||node.role==='parent'?8:0;
   return Math.max(22,node.size||22)+10+busyBonus+labelBonus;
+}
+function forceNodeLayoutLane(node,selectedId,edges){
+  if(!selectedId || node.id===selectedId) return 'centre';
+  if(node.role==='parent' || ['defined_term','glossary','crr_terms_list'].includes(node.node_type)) return 'north';
+  if(node.role==='child') return 'south';
+  if(node.node_type==='part' || node.node_type==='rulebook') return 'north';
+  const incident=(edges||[]).filter(edge=>edge.from_node_id===node.id||edge.to_node_id===node.id);
+  for(const edge of incident){
+    if(edge.edge_type==='references' && edge.to_node_id===selectedId) return 'west';
+    if(edge.edge_type==='references' && edge.from_node_id===selectedId) return 'east';
+  }
+  return 'related';
+}
+function forceNodeTargetX(node){
+  if(node.layoutLane==='west') return -280;
+  if(node.layoutLane==='east') return 280;
+  return 0;
+}
+function forceNodeTargetY(node){
+  if(node.layoutLane==='north') return -220;
+  if(node.layoutLane==='south') return 240;
+  return 0;
+}
+function forceNodeAxisStrength(node){
+  if(node.layoutLane==='centre') return .22;
+  if(['north','south','west','east'].includes(node.layoutLane)) return .105;
+  return .018;
 }
 function drawGraphNode(node,ctx,globalScale,selected,graphDensity){
   const raw=node.raw||node;
