@@ -32,12 +32,14 @@ test('ForceGraph renderer draws readable canvas labels without PARENT or CHILD t
   assert.match(source, /node\.role==='child'/);
 });
 
-test('dense ForceGraph views hide most labels until users zoom in', () => {
+test('dense ForceGraph views show smaller labels instead of hiding ordinary nodes', () => {
   assert.match(source, /const graphDensity=forceGraphDensity\(data\)/);
   assert.match(source, /nodeCanvasObject=\{\(node,ctx,globalScale\)=>drawGraphNode\(node,ctx,globalScale,selected,graphDensity\)\}/);
   assert.match(source, /function forceGraphDensity\(data\)/);
   assert.match(source, /if\(nodes>=70 \|\| links>=150 \|\| links\/Math\.max\(1,nodes\)>2\.4\) return 'dense'/);
-  assert.match(source, /if\(graphDensity==='dense' && !importantNode && globalScale<1\.85\) return ''/);
+  assert.doesNotMatch(source, /graphDensity==='dense' && !importantNode && globalScale<1\.85/);
+  assert.match(source, /const denseSmallLabel=graphDensity==='dense' && !importantNode/);
+  assert.match(source, /drawCanvasLabel\(ctx,label,node\.x,node\.y\+radius\+9\/globalScale,denseSmallLabel\?7/);
 });
 
 test('ForceGraph uses visible directional arrows and separate parallel links', () => {

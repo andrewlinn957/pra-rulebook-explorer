@@ -685,21 +685,27 @@ function drawGraphNode(node,ctx,globalScale,selected,graphDensity){
   ctx.strokeStyle=selectedNode?'#2457d6':role==='parent'?'#be123c':role==='child'?'#2563eb':'#ffffff';
   ctx.stroke();
   ctx.setLineDash([]);
+  const importantNode=isImportantForceNode(node);
+  const denseSmallLabel=graphDensity==='dense' && !importantNode;
   const label=forceGraphNodeLabel(node,selected,globalScale,graphDensity);
-  if(label){ drawCanvasLabel(ctx,label,node.x,node.y+radius+11/globalScale,selectedNode?12:10,globalScale,selectedNode); }
+  if(label){ drawCanvasLabel(ctx,label,node.x,node.y+radius+9/globalScale,denseSmallLabel?7:(selectedNode?12:10),globalScale,selectedNode,denseSmallLabel?6.25:8); }
   ctx.restore();
 }
 function forceGraphNodeLabel(node,selected,globalScale,graphDensity){
   const raw=node.raw||node;
   if(raw.id===selected?.id) return truncate(displayNodeTitle(raw),42);
   if(globalScale<.65) return '';
-  const importantNode=node.badge || node.role==='parent' || (node.degree||0)>=8 || ['part','guidance_document','defined_term'].includes(raw.node_type);
-  if(graphDensity==='dense' && !importantNode && globalScale<1.85) return '';
+  const importantNode=isImportantForceNode(node);
+  if(graphDensity==='dense' && !importantNode) return truncate(displayNodeTitle(raw),18);
   if(node.badge) return truncate(displayNodeTitle(raw),30);
   if(node.role==='parent'||node.role==='child') return truncate(displayNodeTitle(raw),28);
   if((node.degree||0)>=4 || ['part','chapter','guidance_document','defined_term'].includes(raw.node_type)) return truncate(displayNodeTitle(raw),30);
-  if(globalScale>(graphDensity==='dense'?1.35:1.05)) return truncate(displayNodeTitle(raw),24);
+  if(globalScale>1.05) return truncate(displayNodeTitle(raw),24);
   return '';
+}
+function isImportantForceNode(node){
+  const raw=node.raw||node;
+  return Boolean(node.badge || node.role==='parent' || (node.degree||0)>=8 || ['part','guidance_document','defined_term'].includes(raw.node_type));
 }
 function forceGraphDensity(data){
   const nodes=data?.nodes?.length||0;
@@ -714,8 +720,8 @@ function drawGraphLink(edge,ctx,globalScale,selected){
   const label='';
   if(label) drawCanvasLabel(ctx,label,(sx+tx)/2,(sy+ty)/2,8,globalScale,false);
 }
-function drawCanvasLabel(ctx,text,x,y,fontSize,globalScale,strong=false){
-  const size=Math.max(8,fontSize/globalScale);
+function drawCanvasLabel(ctx,text,x,y,fontSize,globalScale,strong=false,minFontSize=8){
+  const size=Math.max(minFontSize,fontSize/globalScale);
   ctx.font=`${strong?'800':'700'} ${size}px Inter, system-ui, sans-serif`;
   ctx.textAlign='center'; ctx.textBaseline='middle';
   const width=Math.min(220/globalScale,ctx.measureText(text).width+10/globalScale);
