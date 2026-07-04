@@ -28,9 +28,11 @@ def main() -> None:
     # `similar_to`/embedding-derived edges are optional: semantic similarity passes
     # are periodically reset before being rebuilt with a cleaner strategy.
     assert stats["edges_by_type"].get("similar_to", 0) >= 0, stats
-    assert stats["nodes_by_type"].get("topic", 0) >= 10, stats
+    assert stats["nodes_by_type"].get("topic", 0) == 0, stats
+    assert stats["nodes_by_type"].get("topic_cluster", 0) == 0, stats
+    assert stats["edges_by_type"].get("has_topic", 0) == 0, stats
+    assert stats["edges_by_type"].get("has_topic_cluster", 0) == 0, stats
     assert stats["nodes_by_type"].get("obligation_pattern", 0) > 1000, stats
-    assert stats["edges_by_type"].get("has_topic", 0) > 1000, stats
     assert stats["edges_by_type"].get("has_obligation_pattern", 0) > 1000, stats
     assert stats["edge_methods"].get("regex_named_reference", 0) > 100, stats
     assert stats["edge_methods"].get("rollup_child_edge", 0) > 10000, stats
@@ -86,7 +88,7 @@ def main() -> None:
         "nodes": stats["nodes"],
         "edges": stats["edges"],
         "similar_to": stats["edges_by_type"].get("similar_to", 0),
-        "topics": stats["nodes_by_type"].get("topic", 0),
+        "topics_retired": stats["nodes_by_type"].get("topic", 0) == 0 and stats["nodes_by_type"].get("topic_cluster", 0) == 0,
         "obligation_patterns": stats["nodes_by_type"].get("obligation_pattern", 0),
         "regex_named_references": stats["edge_methods"].get("regex_named_reference", 0),
         "rolled_up_edges": stats["edge_methods"].get("rollup_child_edge", 0),

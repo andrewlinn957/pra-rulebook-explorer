@@ -15,12 +15,12 @@ test('graph view uses ForceGraph2D rather than Cytoscape', () => {
   assert.ok(!pkg.dependencies.cytoscape);
 });
 
-test('ForceGraph data preserves parent child document and parallel edge metadata', () => {
+test('ForceGraph data preserves parent child document and collapsed parallel edge metadata', () => {
   assert.match(source, /function forceGraphData\(graph,selected\)/);
   assert.match(source, /const role=relativeNodeRole\(node,selected\?\.id,graph\)/);
   assert.match(source, /role,layoutLane:forceNodeLayoutLane/);
   assert.match(source, /badge:documentBadge\(node\)/);
-  assert.match(source, /parallelCurveDistance\(parallelCounts,key,parallelIndex\)/);
+  assert.match(source, /collapseParallelEdges\(visibleEdges\)\.map/);
   assert.match(source, /edgeDirectionLabel\(edge,selected\?\.id\)/);
 });
 
@@ -43,11 +43,12 @@ test('dense ForceGraph views show smaller labels instead of hiding ordinary node
   assert.match(source, /drawCanvasLabel\(ctx,label,node\.x,node\.y\+radius\+9\/globalScale,denseSmallLabel\?7/);
 });
 
-test('ForceGraph uses visible directional arrows and separate parallel links', () => {
+test('ForceGraph uses visible directional arrows and collapsed parallel links', () => {
   assert.match(source, /linkDirectionalArrowLength=\{e=>e\.edge_type==='contains'\?0:10\.5\}/);
   assert.match(source, /linkDirectionalArrowRelPos=\{e=>e\.edge_type==='contains'\?1:\.72\}/);
   assert.match(source, /linkDirectionalArrowColor=\{e=>edgeDirectionColour\(e,selected\?\.id\)\}/);
   assert.match(source, /linkCanvasObject=\{\(edge,ctx,globalScale\)=>drawGraphLink\(edge,ctx,globalScale,selected\)\}/);
+  assert.match(source, /function collapseParallelEdges\(edges\)/);
 });
 
 test('busy graph nodes receive extra collision spacing', () => {
@@ -61,8 +62,11 @@ test('selected-node graph layout biases relationship groups into compass lanes',
   assert.match(source, /layoutLane:forceNodeLayoutLane\(\{\.\.\.node,role\},selected\?\.id,graph\.edges\|\|\[\]\)/);
   assert.match(source, /fg\.d3Force\('x',forceX\(node=>forceNodeTargetX\(node\)\)\.strength\(node=>forceNodeAxisStrength\(node\)\)\)/);
   assert.match(source, /fg\.d3Force\('y',forceY\(node=>forceNodeTargetY\(node\)\)\.strength\(node=>forceNodeAxisStrength\(node\)\)\)/);
-  assert.match(source, /if\(node\.role==='parent' \|\| \['defined_term','glossary','crr_terms_list'\]\.includes\(node\.node_type\)\) return 'north'/);
+  assert.match(source, /if\(\['defined_term','glossary','crr_terms_list'\]\.includes\(node\.node_type\)\) return 'northEast'/);
+  assert.match(source, /if\(node\.role==='parent'\) return 'north'/);
   assert.match(source, /if\(node\.role==='child'\) return 'south'/);
+  assert.match(source, /if\(node\.layoutLane==='northEast'\) return 260/);
+  assert.match(source, /if\(node\.layoutLane==='northEast'\) return -220/);
   assert.match(source, /if\(edge\.edge_type==='references' && edge\.to_node_id===selectedId\) return 'west'/);
   assert.match(source, /if\(edge\.edge_type==='references' && edge\.from_node_id===selectedId\) return 'east'/);
   assert.match(source, /if\(edge\.from_node_id===selectedId && isPurpleAnalysisNode\(node\)\) return 'east'/);
@@ -79,12 +83,29 @@ test('legend exposes clickable node and edge type filters', () => {
 
 test('graph focus uses the selected-node framing when selection changes', () => {
   assert.match(source, /function frameNode\(fg,node,duration=360\)/);
+  assert.match(source, /fg\.zoom\(1\.35,duration\)/);
   assert.match(source, /frameNode\(fg,node,420\)/);
   assert.match(source, /function focusNode\(n\)[\s\S]*frameNode\(fg,node\)/);
 });
 
-test('graph legend is compact and sits below the graph', () => {
-  assert.match(styles, /\.legend\{[^}]*left:50%[^}]*bottom:18px[^}]*transform:translateX\(-50%\)[^}]*grid-template-columns:1fr[^}]*width:min\(340px,calc\(100% - 96px\)\)[^}]*max-height:92px/);
+test('graph canvas measures its visible column so inspector space is excluded from centring', () => {
+  assert.match(source, /const \[graphSize,setGraphSize\]=useState\(\{width:0,height:0\}\)/);
+  assert.match(source, /new ResizeObserver\(\(\[entry\]\)=>/);
+  assert.match(source, /width=\{graphSize\.width\}/);
+  assert.match(source, /height=\{graphSize\.height\}/);
+});
+
+test('graph legend is compact and sits at the bottom left of the graph', () => {
+  assert.match(styles, /\.legend\{[^}]*left:18px[^}]*bottom:18px[^}]*top:auto[^}]*transform:none[^}]*grid-template-columns:repeat\(2,max-content\)[^}]*gap:2px 8px[^}]*width:max-content[^}]*max-width:calc\(100% - 96px\)[^}]*max-height:132px/);
+  assert.match(styles, /\.legend button,\.legend div\{[^}]*gap:3px[^}]*font-size:8\.5px/);
+  assert.match(styles, /\.legend button em\{[^}]*margin-left:3px/);
+});
+
+test('parallel edges between the same two nodes collapse into one link with a count badge', () => {
+  assert.match(source, /function collapseParallelEdges\(edges\)/);
+  assert.match(source, /parallelCount/);
+  assert.match(source, /drawParallelEdgeCount\(edge,ctx,globalScale\)/);
+  assert.match(source, /if\(edge\.parallelCount>1\) drawParallelEdgeCount/);
 });
 
 test('narrow desktop layout reserves space for the open inspector instead of drawing graph underneath it', () => {

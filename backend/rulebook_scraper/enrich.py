@@ -325,31 +325,15 @@ RULE_REF_RE = re.compile(r"(?<![\w/])(?P<num>\d{1,3}\.\d{1,3}[A-Z]?(?:\([a-z0-9i
 ARTICLE_REF_RE = re.compile(r"\bArticles?\s+(?P<refs>\d+[a-z]?(?:\s*\([a-z0-9]+\))?(?:\s*,\s*(?:and\s+)?\d+[a-z]?(?:\s*\([a-z0-9]+\))?)*(?:\s*,?\s*and\s+\d+[a-z]?(?:\s*\([a-z0-9]+\))?)?)", re.I)
 MODAL_RE = re.compile(r"\b(?P<subject>[A-Z][A-Za-z0-9 ,()\-/]{0,80}?)\s+(?P<modal>must|shall|should|may|is required to|are required to)\s+(?P<action>[a-z][a-z\-]+)(?P<object>[^.;:]{0,140})", re.I)
 
-TOPICS = {
-    "capital": ["own funds", "capital", "capital requirement", "scr", "mrel", "leverage ratio", "buffer"],
-    "liquidity": ["liquidity", "liquidity coverage ratio", "liquidity coverage requirement", "lcr", "nsfr", "funding", "liquid assets", "liquidity buffer", "cash flow"],
-    "governance": ["governance", "senior management", "management body", "committee", "accountability"],
-    "operational resilience": ["operational resilience", "important business service", "impact tolerance", "disruption"],
-    "outsourcing": ["outsourcing", "third party", "service provider", "material outsourcing"],
-    "remuneration": ["remuneration", "bonus", "variable remuneration", "malus", "clawback"],
-    "credit risk": ["credit risk", "exposure", "irb", "standardised approach", "default"],
-    "market risk": ["market risk", "trading book", "position risk", "foreign exchange"],
-    "insurance solvency": ["solvency ii", "technical provisions", "matching adjustment", "risk margin", "insurance"],
-    "reporting disclosure": ["report", "reporting", "disclosure", "submit", "notification", "notify"],
-    "resolution": ["resolution", "recovery plan", "resolvability", "bail-in", "stabilisation"],
-    "depositor protection": ["depositor protection", "fscs", "eligible deposit", "single customer view"],
-}
-
 
 def derive_phase4_edges_and_nodes(conn: sqlite3.Connection) -> dict[str, int]:
-    """Add richer explainable NLP-ish enrichment: regex references, topics, obligations."""
+    """Add richer explainable NLP-ish enrichment: regex references and obligations."""
     nodes: list[Node] = []
     edges: list[Edge] = []
     edges.extend(_regex_rule_reference_edges(conn))
-    topic_nodes, topic_edges = _topic_edges(conn)
     obligation_nodes, obligation_edges = _obligation_pattern_edges(conn)
-    nodes.extend(topic_nodes); nodes.extend(obligation_nodes)
-    edges.extend(topic_edges); edges.extend(obligation_edges)
+    nodes.extend(obligation_nodes)
+    edges.extend(obligation_edges)
     upsert_nodes(conn, nodes)
     upsert_edges(conn, edges)
     conn.commit()
@@ -399,7 +383,20 @@ def _regex_rule_reference_edges(conn: sqlite3.Connection) -> list[Edge]:
             out.append(Edge(edge_id(source_id, target[0], "references", f"regex:{num}"), source_id, target[0], "references", "regex_reference", 0.82, evidence, source_url, {"reference": num, "target_title": target[1], "scope": "same_part"}))
 
         for m in ARTICLE_REF_RE.finditer(text):
+            evidence = _window(text, m.start(), m.end())
             for article in _article_refs(m.group("refs")):
+                if _is_uk_crr_article_context(evidence):
+                    target_id, target_title, target_url = _ensure_uk_crr_article_node(conn, article)
+                    key = (source_id, target_id, f"uk_crr_article:{article}")
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    out.append(Edge(
+                        edge_id(source_id, target_id, "references", f"regex_uk_crr_article:{article}"),
+                        source_id, target_id, "references", "regex_uk_crr_article_reference", 0.90, evidence, source_url,
+                        {"reference": f"Article {article}", "target_title": target_title, "scope": "uk_crr", "target_url": target_url},
+                    ))
+                    continue
                 target = by_part_article.get((source_part, article))
                 if not target or target[0] == source_id:
                     continue
@@ -407,7 +404,6 @@ def _regex_rule_reference_edges(conn: sqlite3.Connection) -> list[Edge]:
                 if key in seen:
                     continue
                 seen.add(key)
-                evidence = _window(text, m.start(), m.end())
                 out.append(Edge(edge_id(source_id, target[0], "references", f"regex_article:{article}"), source_id, target[0], "references", "regex_article_reference", 0.86, evidence, source_url, {"reference": f"Article {article}", "target_title": target[1], "scope": "same_part_article"}))
 
         for part_title, pattern in named_patterns:
@@ -439,6 +435,31 @@ def _norm_article(value: str) -> str:
     return match.group(1).lower() if match else ""
 
 
+def _is_liquidity_crr_part(value: str) -> bool:
+    return _norm_part(value or "") in {"liquidity coverage ratio (crr)", "liquidity (crr)"}
+
+
+def _is_uk_crr_article_context(value: str) -> bool:
+    return bool(re.search(r"\b(?:of\s+the\s+|of\s+)?(?:UK\s+)?CRR\b|\b(?:UK\s+)?CRR\s+Article\b", value or "", re.I))
+
+
+def _ensure_uk_crr_article_node(conn: sqlite3.Connection, article: str) -> tuple[str, str, str]:
+    article = (article or "").lower()
+    node_id_value = f"external:uk-crr:article:{article}"
+    title = f"UK CRR Article {article.upper() if article.isalpha() else article}"
+    url = f"https://www.legislation.gov.uk/eur/2013/575/article/{article}"
+    metadata = {"source": "UK CRR", "external_reference": True, "article": article}
+    conn.execute(
+        """
+        INSERT INTO node(id,node_type,stable_key,title,text,url,metadata_json)
+        VALUES (?,?,?,?,?,?,?)
+        ON CONFLICT(id) DO UPDATE SET title=excluded.title,url=excluded.url,metadata_json=excluded.metadata_json
+        """,
+        (node_id_value, "external_reference", node_id_value, title, "", url, json.dumps(metadata, ensure_ascii=False)),
+    )
+    return node_id_value, title, url
+
+
 def _article_refs(value: str) -> list[str]:
     return [m.group(1).lower() for m in re.finditer(r"\b(\d+[a-z]?)(?:\s*\([a-z0-9]+\))?", value or "", re.I)]
 
@@ -460,26 +481,6 @@ def _named_part_reference_patterns(part_titles: set[str]) -> list[tuple[str, re.
         escaped = re.escape(part).replace(r"\ ", r"\s+").replace(r"\-", r"[-–—]")
         patterns.append((part, re.compile(rf"(?<![A-Za-z0-9]){escaped}\s+(?P<num>\d{{1,3}}\.\d{{1,3}}[A-Z]?(?:\([a-z0-9ivx]+\))?)(?![\w/])", re.I)))
     return patterns
-
-
-def _topic_edges(conn: sqlite3.Connection) -> tuple[list[Node], list[Edge]]:
-    topic_nodes = [Node(id=edge_id("topic", name, "node")[:16], node_type="topic", stable_key=f"topic:{name}", title=name.title(), text=", ".join(keywords), metadata={"keywords": keywords}) for name, keywords in TOPICS.items()]
-    topic_id = {n.title.lower(): n.id for n in topic_nodes}
-    rows = conn.execute("SELECT id,node_type,title,text,url FROM node WHERE node_type IN ('rule','chapter','guidance_paragraph','guidance_document','part')").fetchall()
-    edges: list[Edge] = []
-    for node_id, node_type, title, text, url in rows:
-        hay = f"{title} {text}".lower()
-        for topic, keywords in TOPICS.items():
-            hits = [kw for kw in keywords if kw in hay]
-            if not hits:
-                continue
-            confidence = min(0.95, 0.45 + 0.12 * len(hits))
-            title_lower = (title or '').lower()
-            title_hits = [kw for kw in hits if kw in title_lower]
-            if title_hits:
-                confidence = max(confidence, min(0.95, 0.72 + 0.08 * len(title_hits)))
-            edges.append(Edge(edge_id(node_id, topic_id[topic], "has_topic"), node_id, topic_id[topic], "has_topic", "keyword_topic", confidence, "; ".join(hits[:6]), url, {"topic": topic, "matched_keywords": hits, "node_type": node_type}))
-    return topic_nodes, edges
 
 
 def _obligation_pattern_edges(conn: sqlite3.Connection) -> tuple[list[Node], list[Edge]]:
@@ -512,7 +513,7 @@ def _window(text: str, start: int, end: int, pad: int = 90) -> str:
     return re.sub(r"\s+", " ", (text or "")[max(0, start-pad):min(len(text or ""), end+pad)]).strip()
 
 ROLLUP_EDGE_TYPES = {
-    'references', 'uses_defined_term', 'defines', 'has_topic', 'has_obligation_pattern',
+    'references', 'uses_defined_term', 'defines', 'has_obligation_pattern',
     'similar_to', 'shares_defined_term', 'shares_defined_term_with_guidance', 'resolves_to_part'
 }
 CONTAINER_NODE_TYPES = {'part', 'chapter', 'guidance_document', 'guidance_section'}

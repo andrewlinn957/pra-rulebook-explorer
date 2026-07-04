@@ -1,16 +1,8 @@
 from __future__ import annotations
 
-import json
 import re
 import sqlite3
-from collections import Counter, defaultdict
-from itertools import combinations
-from typing import Any
-
-import numpy as np
-from sklearn.cluster import MiniBatchKMeans
-from sklearn.feature_extraction.text import TfidfVectorizer
-
+from collections import defaultdict
 from .models import Edge, Node
 from .parse import edge_id
 from .store import upsert_edges, upsert_nodes
@@ -28,17 +20,15 @@ STOP_ACTIONS = {"be", "have", "ensure", "make", "take", "provide", "include", "a
 
 
 def derive_advanced_topics_and_obligations(conn: sqlite3.Connection, *, n_topics: int = 36, min_cluster_size: int = 8, max_nodes: int = 12000) -> dict[str, int]:
-    # Topic clusters are derived afresh from current embeddings. Their labels can
-    # legitimately change when titles/text change, so remove the old derived
-    # cluster layer before upserting the new one.
-    conn.execute("DELETE FROM edge WHERE source_method='embedding_topic_cluster'")
+    # Topic matching has been retired because it produced low-value graph noise.
+    # Keep clearing the old derived layer, but only generate structured obligations.
+    conn.execute("DELETE FROM edge WHERE source_method='embedding_topic_cluster' OR edge_type='has_topic_cluster'")
     conn.execute("DELETE FROM node WHERE node_type='topic_cluster'")
     nodes: list[Node] = []
     edges: list[Edge] = []
-    topic_nodes, topic_edges = _embedding_topic_clusters(conn, n_topics=n_topics, min_cluster_size=min_cluster_size, max_nodes=max_nodes)
     obligation_nodes, obligation_edges = _structured_obligations(conn)
-    nodes.extend(topic_nodes); nodes.extend(obligation_nodes)
-    edges.extend(topic_edges); edges.extend(obligation_edges)
+    nodes.extend(obligation_nodes)
+    edges.extend(obligation_edges)
     upsert_nodes(conn, nodes)
     upsert_edges(conn, edges)
     conn.commit()
@@ -49,66 +39,6 @@ def derive_advanced_topics_and_obligations(conn: sqlite3.Connection, *, n_topics
         counts[e.edge_type] += 1
         counts[f"method:{e.source_method}"] += 1
     return dict(counts)
-
-
-def _embedding_topic_clusters(conn: sqlite3.Connection, *, n_topics: int, min_cluster_size: int, max_nodes: int) -> tuple[list[Node], list[Edge]]:
-    rows = conn.execute(
-        """
-        SELECT n.id,n.node_type,n.title,n.text,n.url,n.metadata_json,emb.vector_json
-        FROM embedding emb JOIN node n ON n.id=emb.node_id
-        WHERE n.node_type IN ('rule','guidance_paragraph') AND LENGTH(COALESCE(n.text,'')) > 50
-        LIMIT ?
-        """,
-        (max_nodes,),
-    ).fetchall()
-    if len(rows) < n_topics * min_cluster_size:
-        return [], []
-    vectors = np.array([json.loads(r["vector_json"]) for r in rows], dtype="float32")
-    norms = np.linalg.norm(vectors, axis=1, keepdims=True)
-    norms[norms == 0] = 1
-    vectors = vectors / norms
-    kmeans = MiniBatchKMeans(n_clusters=n_topics, random_state=42, batch_size=1024, n_init="auto")
-    labels = kmeans.fit_predict(vectors)
-    by_label: dict[int, list[int]] = defaultdict(list)
-    for i, label in enumerate(labels):
-        by_label[int(label)].append(i)
-
-    texts = [f"{r['title']} {r['text']}"[:4000] for r in rows]
-    tfidf = TfidfVectorizer(max_features=20000, min_df=2, max_df=0.75, stop_words="english", ngram_range=(1, 2))
-    matrix = tfidf.fit_transform(texts)
-    terms = np.array(tfidf.get_feature_names_out())
-
-    topic_nodes: list[Node] = []
-    topic_edges: list[Edge] = []
-    for label, idxs in sorted(by_label.items()):
-        if len(idxs) < min_cluster_size:
-            continue
-        centroid = kmeans.cluster_centers_[label]
-        cluster_vectors = vectors[idxs]
-        sims = cluster_vectors @ centroid / (np.linalg.norm(centroid) or 1)
-        top_local = np.argsort(-sims)[:8]
-        representative_idxs = [idxs[i] for i in top_local]
-        term_scores = np.asarray(matrix[idxs].mean(axis=0)).ravel()
-        top_terms = [t for t in terms[np.argsort(-term_scores)[:8]] if len(t) > 2]
-        label_text = _topic_label(top_terms, rows[representative_idxs[0]]["title"])
-        node_id = edge_id("topic_cluster", str(label), label_text)[:16]
-        topic_nodes.append(Node(
-            id=node_id,
-            node_type="topic_cluster",
-            stable_key=f"topic_cluster:{label}:{label_text.lower()}",
-            title=label_text,
-            text="; ".join(top_terms),
-            metadata={"cluster": label, "size": len(idxs), "top_terms": top_terms, "representative_titles": [rows[i]["title"] for i in representative_idxs[:5]]},
-        ))
-        for i in idxs:
-            score = float(vectors[i] @ centroid / (np.linalg.norm(centroid) or 1))
-            topic_edges.append(Edge(
-                edge_id(rows[i]["id"], node_id, "has_topic_cluster"), rows[i]["id"], node_id,
-                "has_topic_cluster", "embedding_topic_cluster", max(0.35, min(0.98, score)),
-                "; ".join(top_terms[:5]), rows[i]["url"],
-                {"cluster": label, "topic_label": label_text, "top_terms": top_terms, "node_type": rows[i]["node_type"]},
-            ))
-    return topic_nodes, topic_edges
 
 
 def _structured_obligations(conn: sqlite3.Connection) -> tuple[list[Node], list[Edge]]:
@@ -164,11 +94,6 @@ def _parse_obligation(match: re.Match, sentence: str) -> dict[str, str] | None:
         return None
     return {"subject": subject[:120], "modal": modal, "action": action, "object": obj, "condition": condition, "sentence": _clean(sentence)[:500]}
 
-
-def _topic_label(top_terms: list[str], fallback: str) -> str:
-    if top_terms:
-        return " / ".join(t.title() for t in top_terms[:3])[:90]
-    return fallback[:90]
 
 
 def _clean(value: str) -> str:

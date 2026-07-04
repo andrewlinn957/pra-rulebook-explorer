@@ -8,10 +8,10 @@ import { displayNodeTitle, documentBadge, relativeNodeRole, edgeDirectionGlyph, 
 import './styles.css';
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/pra-rulebook-api';
-const TYPES = ['contains','references','uses_defined_term','defines','shares_defined_term','has_topic','has_obligation_pattern','has_structured_obligation','shares_obligation_pattern','amends','has_permission'];
+const TYPES = ['contains','references','uses_defined_term','defines','shares_defined_term','has_obligation_pattern','has_structured_obligation','shares_obligation_pattern','amends','has_permission'];
 const PROVISION_TYPES = ['rule','chapter','guidance_section','guidance_paragraph'];
-const NODE_TYPES = [...PROVISION_TYPES,'part','rulebook','defined_term','glossary','crr_terms_list','guidance_document','topic','topic_cluster','obligation_pattern','obligation_statement','legal_instrument','permission','external_reference','rule_reference'];
-const DEFAULT_TYPES = new Set(['contains','references','has_topic']);
+const NODE_TYPES = [...PROVISION_TYPES,'part','rulebook','defined_term','glossary','crr_terms_list','guidance_document','obligation_pattern','obligation_statement','legal_instrument','permission','external_reference','rule_reference'];
+const DEFAULT_TYPES = new Set(['contains','references']);
 const REPRESENTATIONS = {
   combined: { label:'Combined', hint:'Legal structure plus rolled-up references, terms, obligations and permissions.', types:[...DEFAULT_TYPES], depth:1, explicitOnly:false },
   hierarchy: { label:'Legal hierarchy', hint:'Parts, articles, chapters, rules and paragraphs only.', types:['contains'], depth:2, explicitOnly:false },
@@ -20,11 +20,11 @@ const REPRESENTATIONS = {
   obligations: { label:'Obligations', hint:'Detected obligation statements, obligation patterns, and provisions with similar obligation patterns.', types:['has_obligation_pattern','has_structured_obligation','shares_obligation_pattern'], depth:1, explicitOnly:false },
 };
 const EXPLICIT = new Set(['site_structure','html_link','html_anchor_resolved','html_glossary_link','glossary_source','crr_terms_source','legal_instrument_listing','regex_reference','regex_named_reference','llm_extracted_reference','resolved_part_reference','fca_waivers_list']);
-const RELATION_LABELS = { contains:'contains / child', references:'Cross-references', uses_defined_term:'Definitions used', defines:'Definitions provided', shares_defined_term:'Shared defined terms', has_topic:'Provisions containing this topic', has_obligation_pattern:'Obligation themes', shares_obligation_pattern:'Similar obligations', has_structured_obligation:'Extracted obligations', amends:'Amendments', has_permission:'Firms with permissions' };
-const EVIDENCE_LABELS = { references:'Cross-references', uses_defined_term:'Definitions used by this provision', defines:'Definitions provided here', shares_defined_term:'Provisions sharing defined terms', has_topic:'Provisions containing the same topic', has_obligation_pattern:'Obligation themes found here', shares_obligation_pattern:'Provisions with similar obligations', has_structured_obligation:'Extracted obligation statements', amends:'Legal instruments amending this material', has_permission:'Firms with active permissions' };
+const RELATION_LABELS = { contains:'contains / child', references:'Cross-references', uses_defined_term:'Definitions used', defines:'Definitions provided', shares_defined_term:'Shared defined terms', has_obligation_pattern:'Obligation themes', shares_obligation_pattern:'Similar obligations', has_structured_obligation:'Extracted obligations', amends:'Amendments', has_permission:'Firms with permissions' };
+const EVIDENCE_LABELS = { references:'Cross-references', uses_defined_term:'Definitions used by this provision', defines:'Definitions provided here', shares_defined_term:'Provisions sharing defined terms', has_obligation_pattern:'Obligation themes found here', shares_obligation_pattern:'Provisions with similar obligations', has_structured_obligation:'Extracted obligation statements', amends:'Legal instruments amending this material', has_permission:'Firms with active permissions' };
 const ORIGIN_FILTERS = { all:'All links', explicit:'Direct links', inferred:'Inferred / derived links' };
-const EDGE_COLOURS = { contains:'#94a3b8', references:'#2563eb', uses_defined_term:'#d97706', defines:'#ca8a04', shares_defined_term:'#0f766e', has_topic:'#7c3aed', has_obligation_pattern:'#db2777', shares_obligation_pattern:'#ea580c', has_structured_obligation:'#be123c', amends:'#dc2626', has_permission:'#8b5cf6' };
-const MATERIAL_COLOURS = { rule:'#2563eb', supervisory_statement:'#16a34a', statement_of_policy:'#0f766e', definition:'#b45309', permission:'#8b5cf6', external_reference:'#64748b', legal_instrument:'#b91c1c', topic:'#7c3aed', obligation_pattern:'#db2777', obligation_statement:'#be123c', analysis:'#9333ea', rulebook:'#6d28d9' };
+const EDGE_COLOURS = { contains:'#94a3b8', references:'#2563eb', uses_defined_term:'#d97706', defines:'#ca8a04', shares_defined_term:'#0f766e', has_obligation_pattern:'#db2777', shares_obligation_pattern:'#ea580c', has_structured_obligation:'#be123c', amends:'#dc2626', has_permission:'#8b5cf6' };
+const MATERIAL_COLOURS = { rule:'#2563eb', supervisory_statement:'#16a34a', statement_of_policy:'#0f766e', definition:'#b45309', permission:'#8b5cf6', external_reference:'#64748b', legal_instrument:'#b91c1c', obligation_pattern:'#db2777', obligation_statement:'#be123c', analysis:'#9333ea', rulebook:'#6d28d9' };
 const CLUSTER_COLOURS = ['#4f7cff','#d28b24','#58a978','#d35cff','#cc5c5c','#35b6b4','#d7ff64','#a78bfa','#fb7185','#60a5fa','#f59e0b','#34d399'];
 const MATERIAL_FILTERS = ['rule','supervisory_statement','statement_of_policy','definition','permission','legal_instrument','external_reference'];
 const RELATIONSHIP_ORDER = TYPES;
@@ -162,7 +162,7 @@ function App(){
       definition:['defined_term','glossary','crr_terms_list'],
       supervisory_statement:['guidance_document','guidance_section','guidance_paragraph'],
       statement_of_policy:['guidance_document','guidance_section','guidance_paragraph'],
-      analysis:['topic','topic_cluster','obligation_pattern','obligation_statement'],
+      analysis:['obligation_pattern','obligation_statement'],
       permission:['permission'],
       legal_instrument:['legal_instrument'],
       external_reference:['external_reference','rule_reference'],
@@ -564,12 +564,30 @@ function Graph({graph,selected,detail,nodeTypes,relationshipTypes,relationshipFi
   const lastClickRef=useRef({id:null,time:0});
   const [hover,setHover]=useState(null);
   const [hoverEdge,setHoverEdge]=useState(null);
+  const [graphSize,setGraphSize]=useState({width:0,height:0});
   const data=useMemo(()=>forceGraphData(graph,selected),[graph,selected?.id]);
   const graphDensity=forceGraphDensity(data);
 
   useEffect(()=>{
+    const el=wrapRef.current;
+    if(!el || typeof ResizeObserver==='undefined') return;
+    const setSize=(width,height)=>setGraphSize(prev=>{
+      const next={width:Math.max(1,Math.floor(width||0)),height:Math.max(1,Math.floor(height||0))};
+      return prev.width===next.width&&prev.height===next.height?prev:next;
+    });
+    const rect=el.getBoundingClientRect();
+    setSize(rect.width,rect.height);
+    const ro=new ResizeObserver(([entry])=>{
+      const box=entry.contentRect;
+      setSize(box.width,box.height);
+    });
+    ro.observe(el);
+    return ()=>ro.disconnect();
+  },[]);
+
+  useEffect(()=>{
     const fg=fgRef.current;
-    if(!fg) return;
+    if(!fg || !graphSize.width || !graphSize.height) return;
     fg.d3Force('collide',forceCollide(node=>forceNodeCollisionRadius(node)).strength(.88));
     fg.d3Force('x',forceX(node=>forceNodeTargetX(node)).strength(node=>forceNodeAxisStrength(node)));
     fg.d3Force('y',forceY(node=>forceNodeTargetY(node)).strength(node=>forceNodeAxisStrength(node)));
@@ -578,20 +596,20 @@ function Graph({graph,selected,detail,nodeTypes,relationshipTypes,relationshipFi
     const id=detail?.id||selected?.id;
     const node=id?data.nodes.find(n=>n.id===id):null;
     setTimeout(()=>node?frameNode(fg,node,420):fg.zoomToFit(420,70),260);
-  },[data,detail?.id,selected?.id]);
+  },[data,detail?.id,selected?.id,graphSize.width,graphSize.height]);
 
   useEffect(()=>{
     const fg=fgRef.current;
-    if(!fg) return;
+    if(!fg || !graphSize.width || !graphSize.height) return;
     const id=detail?.id||selected?.id;
     if(!id) return;
     const node=data.nodes.find(n=>n.id===id);
     if(node) frameNode(fg,node,420);
-  },[detail?.id,selected?.id,data]);
+  },[detail?.id,selected?.id,data,graphSize.width,graphSize.height]);
 
   function frameNode(fg,node,duration=360){
     fg.centerAt(node.x||0,node.y||0,duration);
-    fg.zoom(1.75,duration);
+    fg.zoom(1.35,duration);
   }
   function zoom(mult){
     const fg=fgRef.current; if(!fg) return;
@@ -614,6 +632,8 @@ function Graph({graph,selected,detail,nodeTypes,relationshipTypes,relationshipFi
     <ForceGraph2D
       ref={fgRef}
       graphData={data}
+      width={graphSize.width}
+      height={graphSize.height}
       backgroundColor="rgba(0,0,0,0)"
       nodeRelSize={1}
       nodeId="id"
@@ -652,14 +672,8 @@ function forceGraphData(graph,selected){
     return {...node,raw:node,id:node.id,role,layoutLane:forceNodeLayoutLane({...node,role},selected?.id,graph.edges||[]),badge:documentBadge(node),colour:nodeFill(node,graph),size:forceNodeSize(node,graph,selected),degree:node.degree||node.metadata?.weighted_degree||1};
   });
   const ids=new Set(nodes.map(n=>n.id));
-  const parallelCounts=countParallelEdges(graph.edges||[]);
-  const seen=new Map();
-  const links=(graph.edges||[]).filter(edge=>ids.has(edge.from_node_id)&&ids.has(edge.to_node_id)).map((edge,i)=>{
-    const key=parallelEdgeKey(edge);
-    const parallelIndex=seen.get(key)||0;
-    seen.set(key,parallelIndex+1);
-    return {...edge,id:edge.id||`${edge.from_node_id}-${edge.to_node_id}-${edge.edge_type}-${parallelIndex}-${i}`,source:edge.from_node_id,target:edge.to_node_id,direction:edgeDirectionLabel(edge,selected?.id),curveDistance:parallelCurveDistance(parallelCounts,key,parallelIndex)};
-  });
+  const visibleEdges=(graph.edges||[]).filter(edge=>ids.has(edge.from_node_id)&&ids.has(edge.to_node_id));
+  const links=collapseParallelEdges(visibleEdges).map((edge,i)=>({...edge,id:edge.id||`${edge.from_node_id}-${edge.to_node_id}-${edge.edge_type}-${i}`,source:edge.from_node_id,target:edge.to_node_id,direction:edgeDirectionLabel(edge,selected?.id),curveDistance:0}));
   return {nodes,links};
 }
 function forceNodeSize(node,graph,selected){
@@ -674,7 +688,8 @@ function forceNodeCollisionRadius(node){
 }
 function forceNodeLayoutLane(node,selectedId,edges){
   if(!selectedId || node.id===selectedId) return 'centre';
-  if(node.role==='parent' || ['defined_term','glossary','crr_terms_list'].includes(node.node_type)) return 'north';
+  if(['defined_term','glossary','crr_terms_list'].includes(node.node_type)) return 'northEast';
+  if(node.role==='parent') return 'north';
   if(node.role==='child') return 'south';
   if(node.node_type==='part' || node.node_type==='rulebook') return 'north';
   const incident=(edges||[]).filter(edge=>edge.from_node_id===node.id||edge.to_node_id===node.id);
@@ -686,21 +701,23 @@ function forceNodeLayoutLane(node,selectedId,edges){
   return 'related';
 }
 function isPurpleAnalysisNode(node){
-  return ['topic','topic_cluster','obligation_pattern','obligation_statement'].includes(node.node_type);
+  return ['obligation_pattern','obligation_statement'].includes(node.node_type);
 }
 function forceNodeTargetX(node){
   if(node.layoutLane==='west') return -280;
   if(node.layoutLane==='east') return 280;
+  if(node.layoutLane==='northEast') return 260;
   return 0;
 }
 function forceNodeTargetY(node){
   if(node.layoutLane==='north') return -220;
+  if(node.layoutLane==='northEast') return -220;
   if(node.layoutLane==='south') return 240;
   return 0;
 }
 function forceNodeAxisStrength(node){
   if(node.layoutLane==='centre') return .22;
-  if(['north','south','west','east'].includes(node.layoutLane)) return .105;
+  if(['north','northEast','south','west','east'].includes(node.layoutLane)) return .105;
   return .018;
 }
 function drawGraphNode(node,ctx,globalScale,selected,graphDensity){
@@ -754,8 +771,24 @@ function drawGraphLink(edge,ctx,globalScale,selected){
   if(edge.edge_type==='contains') return;
   const sx=edge.source.x, sy=edge.source.y, tx=edge.target.x, ty=edge.target.y;
   if(!Number.isFinite(sx+sy+tx+ty)) return;
-  const label='';
-  if(label) drawCanvasLabel(ctx,label,(sx+tx)/2,(sy+ty)/2,8,globalScale,false);
+  if(edge.parallelCount>1) drawParallelEdgeCount(edge,ctx,globalScale);
+}
+function drawParallelEdgeCount(edge,ctx,globalScale){
+  const sx=edge.source.x, sy=edge.source.y, tx=edge.target.x, ty=edge.target.y;
+  const x=(sx+tx)/2;
+  const y=(sy+ty)/2;
+  const label=String(edge.parallelCount);
+  const size=Math.max(9,11/globalScale);
+  ctx.save();
+  ctx.font=`800 ${size}px Inter, system-ui, sans-serif`;
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  const width=Math.max(18/globalScale,ctx.measureText(label).width+10/globalScale);
+  const height=Math.max(16/globalScale,size+6/globalScale);
+  ctx.fillStyle='rgba(36,87,214,.96)';
+  roundedRectPath(ctx,x-width/2,y-height/2,width,height,height/2); ctx.fill();
+  ctx.strokeStyle='rgba(255,255,255,.92)'; ctx.lineWidth=1.5/globalScale; ctx.stroke();
+  ctx.fillStyle='#fff'; ctx.fillText(label,x,y+.5/globalScale);
+  ctx.restore();
 }
 function drawCanvasLabel(ctx,text,x,y,fontSize,globalScale,strong=false,minFontSize=8){
   const size=Math.max(minFontSize,fontSize/globalScale);
@@ -771,11 +804,21 @@ function drawCanvasLabel(ctx,text,x,y,fontSize,globalScale,strong=false,minFontS
 function roundedRectPath(ctx,x,y,w,h,r){
   ctx.beginPath(); ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.quadraticCurveTo(x+w,y,x+w,y+r); ctx.lineTo(x+w,y+h-r); ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h); ctx.lineTo(x+r,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-r); ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y); ctx.closePath();
 }
-function parallelCurveDistance(parallelCounts,key,index=0){
-  const count=parallelCounts.get(key)||1;
-  if(count<=1) return 0;
-  const centre=(count-1)/2;
-  return (index-centre)*0.18;
+function collapseParallelEdges(edges){
+  const grouped=new Map();
+  for(const edge of edges||[]){
+    const key=parallelEdgeKey(edge);
+    if(!grouped.has(key)) grouped.set(key,{...edge,parallelCount:1,parallelEdges:[edge],confidence:edge.confidence||0});
+    else{
+      const current=grouped.get(key);
+      current.parallelCount+=1;
+      current.parallelEdges.push(edge);
+      current.confidence=Math.max(current.confidence||0,edge.confidence||0);
+      current.evidence_text=current.evidence_text||edge.evidence_text;
+      current.metadata={...(current.metadata||{}),parallel_edge_ids:current.parallelEdges.map(e=>e.id).filter(Boolean)};
+    }
+  }
+  return [...grouped.values()];
 }
 
 
@@ -789,18 +832,10 @@ function Legend({active,relationshipTypes,relationshipFilters,availableEdgeTypes
   </div>;
 }
 
-function countParallelEdges(edges){
-  const counts=new Map();
-  for(const edge of edges||[]){
-    const key=parallelEdgeKey(edge);
-    counts.set(key,(counts.get(key)||0)+1);
-  }
-  return counts;
-}
 function parallelEdgeKey(edge){
   const a=edge.from_node_id||edge.source;
   const b=edge.to_node_id||edge.target;
-  return `${a}→${b}`;
+  return `${a}→${b}→${edge.edge_type||''}`;
 }
 
 function Explore({node,edges,graph,onChoose}){
@@ -835,7 +870,7 @@ function Evidence({node,edges,graph,onChoose}){
           <div className="edge-list">{items.slice(0,40).map(e=>{const other=byId.get(e.from_node_id===node.id?e.to_node_id:e.from_node_id);return <button key={e.id} className={`edge-direction-${edgeDirectionLabel(e,node.id)}`} onClick={()=>other&&onChoose(other)}><span><b className="edge-arrow">{edgeDirectionGlyph(e,node.id)}</b>{edgeSummary(e,node.id)}</span><strong><NodeTitle node={other}/></strong>{edgeContext(e,other)&&<small>{edgeContext(e,other)}</small>}{e.evidence_text&&<small>{truncate(e.evidence_text,160)}</small>}</button>})}</div>
           {items.length>40&&<p className="muted">Showing first 40 of {items.length} visible links. Increase the graph cap to load more.</p>}
         </Collapsible>)
-      : <Collapsible title="Visible connections" count="0 links" open><p className="muted">No reference, definition, topic or obligation links are visible for this node under the current settings.</p></Collapsible>}
+      : <Collapsible title="Visible connections" count="0 links" open><p className="muted">No reference, definition or obligation links are visible for this node under the current settings.</p></Collapsible>}
   </section>;
 }
 function NodeTitle({node}){
@@ -847,7 +882,7 @@ function Collapsible({title,count,open=false,children}){
   return <details className="collapse-card" open={open}><summary><span>{title}</span>{count&&<em>{count}</em>}</summary><div className="collapse-body">{children}</div></details>;
 }
 function groupEdges(edges){
-  const priority=['has_permission','references','uses_defined_term','defines','shares_defined_term','has_topic','has_obligation_pattern','shares_obligation_pattern','has_structured_obligation','amends'];
+  const priority=['has_permission','references','uses_defined_term','defines','shares_defined_term','has_obligation_pattern','shares_obligation_pattern','has_structured_obligation','amends'];
   const buckets=new Map();
   for(const e of edges) buckets.set(e.edge_type,[...(buckets.get(e.edge_type)||[]),e]);
   return [...buckets.entries()].sort((a,b)=>{
@@ -899,7 +934,7 @@ function spreadNodes(input,graph){
 function r(n,graph){
   if(n.visual?.radius) return n.visual.radius;
   if(graph?.level==='part') return Math.min(34,8+Math.sqrt(Math.max(1,n.degree||n.metadata?.weighted_degree||1))*1.15);
-  return Math.min(25,(n.node_type==='part'?14:n.node_type==='topic'?13:n.node_type==='defined_term'?11:9)+Math.sqrt(n.degree||1));
+  return Math.min(25,(n.node_type==='part'?14:n.node_type==='defined_term'?11:9)+Math.sqrt(n.degree||1));
 }
 function showNodeLabel(n,view,graph,selected){
   if(selected?.id===n.id) return true;
@@ -946,7 +981,6 @@ function provenanceLabel(method){
     rollup_resolved_part_reference:'contained in sub-provision',
     derived_term_overlap:'shared defined term',
     derived_obligation_overlap:'similar obligation wording',
-    keyword_topic:'topic match',
     regex_obligation:'obligation wording',
     structured_obligation_parser:'extracted obligation',
     regex_reference:'detected reference',
@@ -968,7 +1002,8 @@ function provenanceLabel(method){
 function edgeSummary(e,currentId){
   const confidence=`${Math.round((e.confidence||0)*100)}%`;
   const direction=currentId?`${edgeDirectionLabel(e,currentId)} · `:'';
-  return `${direction}${relationLabel(e.edge_type)} · ${provenanceLabel(e.source_method)} · ${confidence}`;
+  const count=e.parallelCount>1?`${e.parallelCount} references · `:'';
+  return `${direction}${count}${relationLabel(e.edge_type)} · ${provenanceLabel(e.source_method)} · ${confidence}`;
 }
 function edgeTerm(e){
   return e.metadata?.term_title || e.evidence_text || e.metadata?.reference || e.metadata?.target_title || '';
@@ -976,7 +1011,8 @@ function edgeTerm(e){
 function edgeTooltip(e,currentId){
   const term=edgeTerm(e);
   const direction=currentId?`${edgeDirectionLabel(e,currentId)} `:'';
-  return term ? `${direction}${relationLabel(e.edge_type)}: ${term}` : edgeSummary(e,currentId);
+  const count=e.parallelCount>1?`${e.parallelCount} references · `:'';
+  return term ? `${direction}${count}${relationLabel(e.edge_type)}: ${term}` : edgeSummary(e,currentId);
 }
 function edgeNodeTitle(node,e,current){
   return displayNodeTitle(node);
@@ -1019,14 +1055,14 @@ function materialType(n){
   if(type==='legal_instrument') return 'legal_instrument';
   if(type==='permission') return 'permission';
   if(type==='external_reference' || type==='rule_reference') return 'external_reference';
-  if(['topic','topic_cluster','obligation_pattern','obligation_statement'].includes(type)) return type;
+  if(['obligation_pattern','obligation_statement'].includes(type)) return type;
   if(['guidance_document','guidance_section','guidance_paragraph'].includes(type)){
     if(doc.includes('statement_of_policy') || url.includes('/statements-of-policy/')) return 'statement_of_policy';
     return 'supervisory_statement';
   }
   return type||'external_reference';
 }
-function materialLabel(v){return ({rule:'Rulebook part / rule',supervisory_statement:'Supervisory statement',statement_of_policy:'Statement of policy',definition:'Definition',permission:'Firm permission',external_reference:'External reference',legal_instrument:'Legal instrument',topic:'Topic assignment',topic_cluster:'Semantic topic cluster',obligation_pattern:'Obligation pattern',obligation_statement:'Structured obligation',analysis:'Topic / obligation marker'}[v]||String(v||'').replaceAll('_',' '))}
+function materialLabel(v){return ({rule:'Rulebook part / rule',supervisory_statement:'Supervisory statement',statement_of_policy:'Statement of policy',definition:'Definition',permission:'Firm permission',external_reference:'External reference',legal_instrument:'Legal instrument',obligation_pattern:'Obligation pattern',obligation_statement:'Structured obligation',analysis:'Obligation marker'}[v]||String(v||'').replaceAll('_',' '))}
 function displayColour(v){return MATERIAL_COLOURS[materialType(v)]||'#64748b'}
 function label(v){return materialLabel(materialType(v))}
 function truncate(s='',n=120){return s&&s.length>n?s.slice(0,n-1)+'…':s}

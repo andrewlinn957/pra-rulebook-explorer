@@ -17,23 +17,31 @@ function representationTypes(key) {
   return [...match[1].matchAll(/'([^']+)'/g)].map(([, value]) => value);
 }
 
-test('default graph shows only hierarchy, cross-reference and topic edges', () => {
-  assert.deepEqual(literalSetItems('DEFAULT_TYPES'), ['contains', 'references', 'has_topic']);
+test('default graph shows only hierarchy and cross-reference edges', () => {
+  assert.deepEqual(literalSetItems('DEFAULT_TYPES'), ['contains', 'references']);
 });
 
-test('combined representation uses the default edge set', () => {
-  assert.deepEqual(representationTypes('combined'), ['contains', 'references', 'has_topic']);
+test('combined representation uses the default edge set without topic matching', () => {
+  assert.deepEqual(representationTypes('combined'), ['contains', 'references']);
+});
+
+test('topic matching is not exposed in the graph UI', () => {
+  assert.doesNotMatch(source, /'has_topic'/);
+  assert.doesNotMatch(source, /'topic'/);
+  assert.doesNotMatch(source, /'topic_cluster'/);
+  assert.doesNotMatch(source, /keyword_topic/);
 });
 
 test('definitions representation still lets users opt into shared defined term edges', () => {
   assert.ok(representationTypes('definitions').includes('shares_defined_term'));
 });
 
-test('edge tooltips remain available without inline edge labels', () => {
+test('edge tooltips remain available while only parallel-link count badges render inline', () => {
   assert.match(source, /onLinkHover=\{edge=>setHoverEdge\(edge\|\|null\)\}/);
   assert.match(source, /edgeTooltip\(hoverEdge,selected\?\.id\)/);
   assert.match(source, /function drawGraphLink\(edge,ctx,globalScale,selected\)/);
-  assert.match(source, /const label=''/);
+  assert.match(source, /if\(edge\.parallelCount>1\) drawParallelEdgeCount/);
+  assert.doesNotMatch(source, /drawCanvasLabel\(ctx,label,\(sx\+tx\)\/2,\(sy\+ty\)\/2/);
 });
 
 test('non-hierarchy graph edges show directional arrows', () => {

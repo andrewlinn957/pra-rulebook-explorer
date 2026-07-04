@@ -35,9 +35,9 @@ def add_edge(conn, edge_id, edge_type='references', method='regex_reference', ev
 
 def test_deletes_exact_duplicate_edges_only():
     conn = make_conn()
-    add_edge(conn, 'one', edge_type='has_topic', method='keyword_topic', evidence='capital')
-    add_edge(conn, 'two', edge_type='has_topic', method='keyword_topic', evidence='capital')
-    add_edge(conn, 'three', edge_type='has_topic', method='keyword_topic', evidence='liquidity')
+    add_edge(conn, 'one', edge_type='has_obligation_pattern', method='regex_obligation', evidence='must notify PRA')
+    add_edge(conn, 'two', edge_type='has_obligation_pattern', method='regex_obligation', evidence='must notify PRA')
+    add_edge(conn, 'three', edge_type='has_obligation_pattern', method='regex_obligation', evidence='must submit return')
 
     assert count_exact_duplicates(conn) == 1
     assert delete_exact_duplicates(conn) == 1

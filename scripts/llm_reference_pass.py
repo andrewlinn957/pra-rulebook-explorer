@@ -127,6 +127,21 @@ def norm(value: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
 
 
+def crr_article_reference(value: str) -> tuple[str, str] | None:
+    match = re.search(r"\bArticle\s+(\d+[A-Z]?)(?:\s*\(\s*([0-9A-Za-z]+)\s*\))?", value or "", re.I)
+    if not match:
+        return None
+    return match.group(1), match.group(2) or ""
+
+
+def is_bare_crr_context(value: str) -> bool:
+    return norm(value or "") in {"crr", "the crr", "uk crr", "the uk crr"}
+
+
+def is_liquidity_crr_part(value: str) -> bool:
+    return norm(value or "") in {"liquidity coverage ratio crr", "liquidity crr"}
+
+
 def edge_id(*parts: str) -> str:
     return hashlib.sha1("|".join(parts).encode("utf-8")).hexdigest()[:16]
 
@@ -355,10 +370,33 @@ class Resolver:
         meta = json.loads(row["metadata_json"] or "{}")
         return {"title": row["title"], "node_type": row["node_type"], **meta}
 
+    def ensure_uk_crr_article_node(self, article: str, paragraph: str = "") -> dict[str, Any]:
+        suffix = f":{paragraph.lower()}" if paragraph else ""
+        node_id = f"external:uk-crr:article:{article.lower()}{suffix}"
+        title = f"UK CRR Article {article}{f'({paragraph})' if paragraph else ''}"
+        url = f"https://www.legislation.gov.uk/eur/2013/575/article/{article.lower()}"
+        row = self.conn.execute("SELECT id,node_type,stable_key,title,text,url,metadata_json FROM node WHERE id=?", (node_id,)).fetchone()
+        if row:
+            node = dict(row)
+        else:
+            metadata = {"source": "UK CRR", "external_reference": True, "article": article, "paragraph": paragraph}
+            self.conn.execute(
+                "INSERT INTO node(id,node_type,stable_key,title,text,url,metadata_json) VALUES (?,?,?,?,?,?,?)",
+                (node_id, "external_reference", node_id, title, "", url, json.dumps(metadata, ensure_ascii=False)),
+            )
+            node = {"id": node_id, "node_type": "external_reference", "stable_key": node_id, "title": title, "text": "", "url": url, "metadata_json": json.dumps(metadata, ensure_ascii=False)}
+        node["meta"] = json.loads(node.get("metadata_json") or "{}")
+        node["norm_title"] = norm(node.get("title") or "")
+        if not any(n["id"] == node_id for n in self.nodes):
+            self.nodes.append(node)
+            self.by_norm_title[node["norm_title"]].append(node)
+        return node
+
     def resolve(self, source_id: str, ref: dict[str, Any]) -> tuple[dict[str, Any] | None, str, float]:
         text = str(ref.get("reference_text") or "")
         ident = str(ref.get("target_title_or_identifier") or "")
         doc = str(ref.get("target_part_or_document") or "")
+        evidence = str(ref.get("evidence_quote") or "")
         kind = str(ref.get("target_kind") or "")
         ctx = self.source_context(source_id)
         candidates: list[tuple[dict[str, Any], str, float]] = []
@@ -374,6 +412,14 @@ class Resolver:
 
         target_kind_norm = norm(kind)
         wants_specific_provision = target_kind_norm in {"rule", "chapter", "section", "article", "annex", "table", "template"}
+
+        # A bare CRR article reference points to the assimilated UK CRR on legislation.gov.uk,
+        # not to one of the PRA Rulebook CRR rewrite Parts. Keep explicit liquidity Part
+        # references internal, because those Parts restate/modify CRR provisions for liquidity.
+        article_ref = crr_article_reference(" ".join([text, ident, evidence]))
+        bare_crr = is_bare_crr_context(doc) or bool(re.search(r"\b(?:of\s+the\s+|of\s+)?(?:UK\s+)?CRR\b", " ".join([text, ident, evidence]), re.I))
+        if article_ref and bare_crr and not is_liquidity_crr_part(doc):
+            return self.ensure_uk_crr_article_node(*article_ref), "uk_crr_external_article", 0.99
 
         # Exact Part / guidance document titles. Only use the containing document
         # as the target when the extracted reference is itself document/Part-level;
