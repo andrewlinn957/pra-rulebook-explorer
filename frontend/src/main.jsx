@@ -334,7 +334,10 @@ function ReportingGraphView({onFeedback}){
 function ReportingRail({roots,selectedReturn,detail,graph,onOpen,onDrill,onBackToOverview}){
   if(!selectedReturn) return <aside className="reporting-rail">
     <h3>Returns</h3>
-    <div className="reporting-return-list">{roots.map(n=><button key={n.id} className={detail?.id===n.id?'active':''} onClick={()=>onDrill(n)}><strong>{n.title}</strong><small>Open return drilldown</small></button>)}</div>
+    <div className="reporting-return-groups">{groupReportingReturns(roots).map(group=><section className="reporting-return-group" key={group.key}>
+      <h4>{group.label}<span>{group.returns.length}</span></h4>
+      <div className="reporting-return-list">{group.returns.map(n=><button key={n.id} className={detail?.id===n.id?'active':''} onClick={()=>onDrill(n)}><strong>{n.title}</strong><small>Open return drilldown</small></button>)}</div>
+    </section>)}</div>
   </aside>;
   const root=graph.nodes.find(n=>n.node_type==='DataItem')||roots[0];
   const neighbours=reportingNeighbours(detail||root,graph);
@@ -352,6 +355,51 @@ function ReportingRail({roots,selectedReturn,detail,graph,onOpen,onDrill,onBackT
       <div className="reporting-sample-list">{sampleDatapoints.map((text,i)=><button type="button" key={`${text}-${i}`} onClick={()=>{}}><strong>{text.split('|')[0]?.trim()||`Row ${i+1}`}</strong><small>{text.includes('|')?text.split('|').slice(1).join('|').trim():text}</small></button>)}</div>
     </>}
   </aside>;
+}
+
+function groupReportingReturns(roots){
+  const groups=new Map();
+  for(const node of roots||[]){
+    const estate=reportingEstateForReturn(node);
+    if(!groups.has(estate.key)) groups.set(estate.key,{...estate,returns:[]});
+    groups.get(estate.key).returns.push(node);
+  }
+  return [...groups.values()]
+    .sort((a,b)=>a.order-b.order||a.label.localeCompare(b.label))
+    .map(g=>({...g,returns:g.returns.sort(compareReportingReturns)}));
+}
+function reportingEstateForReturn(node){
+  const code=reportingReturnCode(node);
+  if(/^COR\d+/.test(code)||/^COREP(?:-|$)/.test(code)) return {key:'corep',label:'COREP returns',order:10};
+  if(/^PRA\d+/.test(code)) return {key:'pra',label:'PRA returns',order:20};
+  if(/^FSA\d+/.test(code)) return {key:'fsa',label:'FSA returns',order:30};
+  if(/^FINREP(?:-|$)/.test(code)) return {key:'finrep',label:'FINREP returns',order:40};
+  if(/^LVR\d+/.test(code)) return {key:'lvr',label:'Leverage ratio returns',order:50};
+  if(/^MLAR(?:-|$)/.test(code)) return {key:'mlar',label:'MLAR returns',order:60};
+  if(/^RFB\d+/.test(code)) return {key:'rfb',label:'Ring-fencing returns',order:70};
+  if(/^REP\d+/.test(code)) return {key:'rep',label:'REP returns',order:80};
+  if(/^IDY\d+/.test(code)) return {key:'idy',label:'Identity returns',order:90};
+  if(/PILLAR3|DISCLOSURE/.test(code)) return {key:'pillar3',label:'Pillar 3 disclosure',order:100};
+  if(/TAXONOMY|DPM|XBRL/.test(code)) return {key:'taxonomy',label:'Taxonomy and XBRL',order:110};
+  return {key:'other',label:'Other reporting',order:999};
+}
+function reportingReturnCode(node){
+  return String(node?.metadata?.data_item_code||node?.title||node?.id||'').replace(/^data_item:/,'').toUpperCase();
+}
+function compareReportingReturns(a,b){
+  const ac=reportingReturnCode(a), bc=reportingReturnCode(b);
+  return compareReturnCode(ac,bc)||displayNodeTitle(a).localeCompare(displayNodeTitle(b));
+}
+function compareReturnCode(a,b){
+  const ap=returnCodeParts(a), bp=returnCodeParts(b);
+  const prefix=ap.prefix.localeCompare(bp.prefix);
+  if(prefix) return prefix;
+  if(ap.number!==bp.number) return ap.number-bp.number;
+  return ap.suffix.localeCompare(bp.suffix,undefined,{numeric:true,sensitivity:'base'});
+}
+function returnCodeParts(code){
+  const m=String(code||'').match(/^([A-Z]+)(\d+)?(.*)$/);
+  return {prefix:m?.[1]||String(code||''),number:m?.[2]?Number(m[2]):Number.MAX_SAFE_INTEGER,suffix:m?.[3]||''};
 }
 
 function reportingNeighbours(node,graph){

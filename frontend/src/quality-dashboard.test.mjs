@@ -60,6 +60,16 @@ test('reporting drilldown rail is contextual rather than useless summary counts'
   assert.match(source, /Sample datapoints/);
 });
 
+test('reporting overview rail groups returns by reporting estate', () => {
+  assert.match(source, /function groupReportingReturns\(roots\)/);
+  assert.match(source, /function reportingEstateForReturn\(node\)/);
+  assert.match(source, /COREP returns/);
+  assert.match(source, /PRA returns/);
+  assert.match(source, /function compareReturnCode\(a,b\)/);
+  assert.match(source, /className="reporting-return-groups"/);
+  assert.match(styles, /\.reporting-return-group h4/);
+});
+
 test('reporting graph keeps return as selected graph root while inspecting child nodes', () => {
   assert.match(source, /const reportingRoot=useMemo/);
   assert.match(source, /selected=\{reportingRoot\} detail=\{detail\}/);
