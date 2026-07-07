@@ -25,6 +25,13 @@ test('quality redesign styles make issue cards and evidence drawers first-class'
   assert.match(styles, /\.quality-evidence-drawer/);
 });
 
+test('reporting tab uses compact side panels around the graph', () => {
+  assert.match(styles, /\.reporting-layout\{[^}]*grid-template-columns:248px minmax\(0,1fr\) 320px/);
+  assert.match(styles, /\.reporting-toolbar\{[^}]*padding:8px 10px/);
+  assert.match(styles, /\.reporting-rail\{[^}]*padding:8px/);
+  assert.match(styles, /\.reporting-detail-pane \.mini-metrics\{[^}]*grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
+});
+
 test('unresolved link review captures actionable findings', () => {
   assert.match(source, /Review finding/);
   assert.match(source, /function UnresolvedLinkReview/);
