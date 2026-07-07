@@ -293,7 +293,9 @@ function ReportingGraphView({onFeedback}){
   }
   function submit(e){ e?.preventDefault(); loadReportingGraph(query,''); }
   function returnCode(node){ return node?.metadata?.data_item_code || String(node?.title||node?.id||'').replace(/^data_item:/,''); }
-  function openReturn(node){ if(node?.node_type==='DataItem') loadReportingGraph('', returnCode(node)); else setDetail(node); }
+  function inspectReportingNode(node){ setDetail(node); }
+  function drillReportingNode(node){ if(node?.node_type==='DataItem') loadReportingGraph('', returnCode(node)); else setDetail(node); }
+  function openReturn(node){ drillReportingNode(node); }
   function showAllReturns(){ setQuery(''); loadReportingGraph('', ''); }
   function toggleEdge(t){ const next=new Set(edgeTypes); next.has(t)?next.delete(t):next.add(t); setEdgeTypes(next); }
   function toggleNode(t){ const next=new Set(nodeTypes); next.has(t)?next.delete(t):next.add(t); setNodeTypes(next); }
@@ -312,11 +314,11 @@ function ReportingGraphView({onFeedback}){
       <aside className="reporting-rail">
         <div className="reporting-stats"><div><span>Returns</span><strong>{fmt(roots.length)}</strong></div><div><span>Nodes</span><strong>{fmt(activeGraph.nodes.length)}</strong></div><div><span>Links</span><strong>{fmt(activeGraph.edges.length)}</strong></div></div>
         <h3>Returns</h3>
-        <div className="reporting-return-list">{roots.map(n=><button key={n.id} className={detail?.id===n.id?'active':''} onClick={()=>openReturn(n)}><strong>{n.title}</strong><small>{selectedReturn?'Showing linked reporting artefacts':'Click to show templates, instructions and references'}</small></button>)}</div>
+        <div className="reporting-return-list">{roots.map(n=><button key={n.id} className={detail?.id===n.id?'active':''} onClick={()=>openReturn(n)}><strong>{n.title}</strong><small>{selectedReturn?'Showing linked reporting artefacts':'Open return drilldown'}</small></button>)}</div>
       </aside>
       <main className="reporting-canvas">
-        <div className="canvas-meta reporting-meta"><strong>{selectedReturn?`Reporting graph: ${selectedReturn}`:submitted?`Returns matching: ${submitted}`:'Reporting returns overview'}</strong><span>{activeGraph.nodes.length} shown · {activeGraph.edges.length} visible links · {selectedReturn?(includeDatapoints?'datapoints summarised':'datapoints hidden'):'click a return to expand'}</span></div>
-        <Graph graph={activeGraph} selected={detail} detail={detail} nodeTypes={nodeTypes} relationshipTypes={edgeTypes} relationshipFilters={visibleEdgeTypes} availableEdgeTypes={graph.available_edge_types||{}} onToggleNodeType={toggleNode} onToggleRelationship={toggleEdge} onSelect={openReturn} onOpen={openReturn} onFeedback={onFeedback}/>
+        <div className="canvas-meta reporting-meta"><strong>{selectedReturn?`Reporting graph: ${selectedReturn}`:submitted?`Returns matching: ${submitted}`:'Reporting returns overview'}</strong><span>{activeGraph.nodes.length} shown · {activeGraph.edges.length} visible links · {selectedReturn?(includeDatapoints?'datapoints summarised':'datapoints hidden'):'click to inspect · double-click to drill'}</span></div>
+        <Graph graph={activeGraph} selected={detail} detail={detail} nodeTypes={nodeTypes} relationshipTypes={edgeTypes} relationshipFilters={visibleEdgeTypes} availableEdgeTypes={graph.available_edge_types||{}} onToggleNodeType={toggleNode} onToggleRelationship={toggleEdge} onSelect={inspectReportingNode} onOpen={drillReportingNode} onFeedback={onFeedback}/>
       </main>
       <aside className="reporting-inspector"><ReportingInspector node={detail} edges={selectedEdges} graph={activeGraph}/></aside>
     </div>
@@ -332,9 +334,86 @@ function ReportingInspector({node,edges,graph}){
     <h2>{displayNodeTitle(node)}</h2>
     {node.text&&<p className="text">{truncate(node.text,1200)}</p>}
     <div className="mini-metrics"><div><b>{fmt(edges.length)}</b><span>visible links</span></div><div><b>{fmt(node.degree||1)}</b><span>local degree</span></div><div><b>{node.metadata?.reporting_domain||'—'}</b><span>domain</span></div></div>
-    {Object.keys(node.metadata||{}).length>0&&<Collapsible title="Metadata" open={false}><QualityTable rows={Object.entries(node.metadata).filter(([,v])=>v!==''&&v!=null).map(([key,value])=>({key,value:typeof value==='object'?JSON.stringify(value):String(value)})).slice(0,40)} cols={['key','value']}/></Collapsible>}
+    <ReportingMetadata node={node} edges={edges} graph={graph}/>
     {grouped.map(([type,rows],i)=><Collapsible key={type} title={relationLabel(type)} count={`${rows.length} links`} open={i<3}><div className="edge-list">{rows.slice(0,60).map(e=>{const other=neighbours.get(e.from_node_id===node.id?e.to_node_id:e.from_node_id);return <button key={e.id} type="button"><span>{edgeDirectionGlyph(e,node.id)} {edgeDirectionLabel(e,node.id)} · {provenanceLabel(e.source_method)}</span><strong>{displayNodeTitle(other||{})}</strong>{e.evidence_text&&<small>{truncate(e.evidence_text,160)}</small>}</button>})}</div></Collapsible>)}
   </div>;
+}
+
+function ReportingMetadata({node,edges,graph}){
+  const rows=reportingMetadataRows(node);
+  const links=reportingOriginalLinks(node,edges,graph);
+  return <>
+    <Collapsible title="Metadata" count={`${rows.length} fields`} open>
+      <dl className="metadata-list">{rows.map(row=><div key={row.key}><dt>{row.label}</dt><dd title={row.raw}>{row.value}</dd></div>)}</dl>
+    </Collapsible>
+    <Collapsible title="Original data" count={links.length?`${links.length} URLs`:'no URL'} open>
+      {links.length?<div className="source-link-list">{links.slice(0,14).map(link=><a key={`${link.url}-${link.label}`} href={link.url} target="_blank" rel="noopener noreferrer"><span>{link.label}</span><strong>{compactUrl(link.url)}</strong><em>Open original ↗</em></a>)}</div>:<p className="muted">No original source URL is attached to this node or its visible source-document links.</p>}
+    </Collapsible>
+  </>;
+}
+
+function reportingMetadataRows(node){
+  const meta=node?.metadata||{};
+  const fields=[
+    ['data_item_code','Data item code'],
+    ['reporting_domain','Reporting domain'],
+    ['reporting_role','Reporting role'],
+    ['submission_system','Submission system'],
+    ['file_type','File type'],
+    ['source_document_count','Source documents'],
+    ['source_table','Source table'],
+    ['source_pk','Source record key'],
+    ['checksum_sha256','File checksum'],
+    ['datapoint_count','Datapoints summarised'],
+    ['template_count','Templates'],
+    ['sample_labels','Sample datapoints'],
+    ['title','Source title'],
+  ];
+  const used=new Set();
+  const rows=[];
+  for(const [key,label] of fields){
+    if(meta[key]===undefined || meta[key]===null || meta[key]==='') continue;
+    used.add(key);
+    rows.push({key,label,value:formatReportingMetadataValue(key,meta[key]),raw:rawMetadataValue(meta[key])});
+  }
+  for(const [key,value] of Object.entries(meta)){
+    if(used.has(key) || value===undefined || value===null || value==='' || key==='url') continue;
+    rows.push({key,label:metricLabel(key),value:formatReportingMetadataValue(key,value),raw:rawMetadataValue(value)});
+  }
+  return rows.slice(0,36);
+}
+
+function formatReportingMetadataValue(key,value){
+  if(Array.isArray(value)){
+    if(key==='source_document_ids') return `${fmt(value.length)} source document${value.length===1?'':'s'}`;
+    return value.slice(0,5).join(', ')+(value.length>5?` + ${value.length-5} more`: '');
+  }
+  if(value && typeof value==='object') return JSON.stringify(value);
+  if(typeof value==='number') return fmt(value);
+  const text=String(value);
+  if(key==='checksum_sha256') return text.slice(0,12)+'…';
+  return text.length>140?text.slice(0,137)+'…':text;
+}
+
+function rawMetadataValue(value){
+  if(value && typeof value==='object') return JSON.stringify(value);
+  return String(value??'');
+}
+
+function reportingOriginalLinks(node,edges,graph){
+  const byId=new Map((graph?.nodes||[]).map(n=>[n.id,n]));
+  const links=[];
+  const add=(url,label)=>{ if(url && /^https?:\/\//i.test(String(url)) && !links.some(l=>l.url===url)) links.push({url:String(url),label:label||'Original source'}); };
+  add(node?.url,displayNodeTitle(node));
+  for(const key of ['url','source_url','original_url','document_url','target_url']) add(node?.metadata?.[key],displayNodeTitle(node));
+  for(const edge of edges||[]){
+    add(edge.source_url,relationLabel(edge.edge_type));
+    for(const key of ['url','source_url','original_url','document_url','target_url']) add(edge.metadata?.[key],relationLabel(edge.edge_type));
+    const other=byId.get(edge.from_node_id===node?.id?edge.to_node_id:edge.from_node_id);
+    add(other?.url,displayNodeTitle(other||{}));
+    for(const key of ['url','source_url','original_url','document_url','target_url']) add(other?.metadata?.[key],displayNodeTitle(other||{}));
+  }
+  return links;
 }
 
 function ValidationDashboard({data,busy}){
@@ -833,6 +912,7 @@ function Graph({graph,selected,detail,nodeTypes,relationshipTypes,relationshipFi
     {hover&&<div className="node-tip forcegraph-tip"><span>{materialLabel(materialType(hover))}</span><strong>{displayNodeTitle(hover)}</strong><small>{truncate(hover.text||hover.url||'',180)}</small><small>Click to inspect · double-click to open/drill · right-click for feedback</small></div>}
     {hoverEdge&&<div className="node-tip forcegraph-tip edge-tip"><span>{edgeTooltip(hoverEdge,selected?.id)}</span><strong>{relationLabel(hoverEdge.edge_type)}</strong><small>{truncate(edgeTerm(hoverEdge)||edgeSummary(hoverEdge,selected?.id),180)}</small></div>}
     <Legend active={nodeTypes} relationshipTypes={relationshipTypes} relationshipFilters={relationshipFilters} availableEdgeTypes={availableEdgeTypes} onToggle={onToggleNodeType} onToggleRelationship={onToggleRelationship} />
+    <div className="nav-help">Drag to pan · scroll to zoom · click to inspect · double-click to open/drill</div>
     <div className="zoom"><button title="Zoom in" onClick={()=>zoom(1.18)}>＋</button><button title="Zoom out" onClick={()=>zoom(.86)}>−</button><button title="Fit graph" onClick={fit}>⤢</button><button title="Focus selected" onClick={()=>focusNode(detail||selected)}>◎</button></div>
   </div>;
 }

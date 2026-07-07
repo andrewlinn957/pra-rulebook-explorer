@@ -32,6 +32,23 @@ test('reporting tab uses compact side panels around the graph', () => {
   assert.match(styles, /\.reporting-detail-pane \.mini-metrics\{[^}]*grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
 });
 
+test('reporting graph navigation and inspector match the main graph conventions', () => {
+  assert.match(source, /function inspectReportingNode\(node\)/);
+  assert.match(source, /function drillReportingNode\(node\)/);
+  assert.match(source, /onSelect=\{inspectReportingNode\} onOpen=\{drillReportingNode\}/);
+  assert.match(source, /Click to inspect · double-click to open\/drill/);
+  assert.match(source, /Drag to pan · scroll to zoom · click to inspect · double-click to open/);
+});
+
+test('reporting inspector opens with understandable metadata and original data links', () => {
+  assert.match(source, /function ReportingMetadata\(\{node,edges,graph\}\)/);
+  assert.match(source, /Original data/);
+  assert.match(source, /reportingMetadataRows\(node\)/);
+  assert.match(source, /reportingOriginalLinks\(node,edges,graph\)/);
+  assert.match(source, /Data item code/);
+  assert.match(source, /Open original/);
+});
+
 test('unresolved link review captures actionable findings', () => {
   assert.match(source, /Review finding/);
   assert.match(source, /function UnresolvedLinkReview/);
