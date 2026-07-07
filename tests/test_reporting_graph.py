@@ -50,7 +50,7 @@ class ReportingOverviewGraphTests(unittest.TestCase):
             (edge_id, src, tgt, edge_type, confidence, method),
         )
 
-    def test_overview_uses_data_items_as_parent_nodes_and_includes_main_children(self):
+    def test_landing_overview_shows_only_data_item_return_nodes(self):
         conn = self.make_conn()
         self.add_node(conn, "data_item:COR001", "DataItem", "COR001", '{"reporting_domain":"capital"}')
         self.add_node(conn, "template:COR001", "Template", "COR001 template")
@@ -62,7 +62,29 @@ class ReportingOverviewGraphTests(unittest.TestCase):
         self.add_edge(conn, "e3", "data_item:COR001", "source:COR001", "EVIDENCED_BY")
         self.add_edge(conn, "e4", "source:COR001", "provision:rr-1", "REFERENCES_RULE", "reporting_llm_reference", 0.8)
 
-        graph = reporting_overview_graph(conn, q="COR001")
+        graph = reporting_overview_graph(conn)
+
+        self.assertEqual([n["id"] for n in graph["nodes"]], ["data_item:COR001"])
+        self.assertEqual(graph["edges"], [])
+        self.assertEqual(graph["root_count"], 1)
+        self.assertEqual(graph["available_edge_types"], {})
+
+    def test_selected_return_includes_only_that_returns_children_and_references(self):
+        conn = self.make_conn()
+        self.add_node(conn, "data_item:COR001", "DataItem", "COR001", '{"reporting_domain":"capital"}')
+        self.add_node(conn, "data_item:PRA110", "DataItem", "PRA110", '{"reporting_domain":"liquidity"}')
+        self.add_node(conn, "template:COR001", "Template", "COR001 template")
+        self.add_node(conn, "template:PRA110", "Template", "PRA110 template")
+        self.add_node(conn, "instructions:COR001", "InstructionSet", "COR001 instructions")
+        self.add_node(conn, "source:COR001", "SourceDocument", "COR001 source PDF")
+        self.add_node(conn, "provision:rr-1", "Provision", "Regulatory Reporting 1.1")
+        self.add_edge(conn, "e1", "data_item:COR001", "template:COR001", "USES_TEMPLATE")
+        self.add_edge(conn, "e2", "data_item:PRA110", "template:PRA110", "USES_TEMPLATE")
+        self.add_edge(conn, "e3", "data_item:COR001", "instructions:COR001", "USES_INSTRUCTIONS")
+        self.add_edge(conn, "e4", "data_item:COR001", "source:COR001", "EVIDENCED_BY")
+        self.add_edge(conn, "e5", "source:COR001", "provision:rr-1", "REFERENCES_RULE", "reporting_llm_reference", 0.8)
+
+        graph = reporting_overview_graph(conn, selected_return="COR001")
 
         ids = {n["id"] for n in graph["nodes"]}
         self.assertIn("data_item:COR001", ids)
@@ -70,6 +92,8 @@ class ReportingOverviewGraphTests(unittest.TestCase):
         self.assertIn("instructions:COR001", ids)
         self.assertIn("source:COR001", ids)
         self.assertIn("provision:rr-1", ids)
+        self.assertNotIn("data_item:PRA110", ids)
+        self.assertNotIn("template:PRA110", ids)
         self.assertEqual(graph["root_count"], 1)
         self.assertEqual(graph["available_edge_types"]["USES_TEMPLATE"], 1)
         self.assertEqual(graph["available_edge_types"]["REFERENCES_RULE"], 1)
@@ -82,8 +106,8 @@ class ReportingOverviewGraphTests(unittest.TestCase):
         self.add_edge(conn, "e1", "data_item:PRA110", "template:PRA110", "USES_TEMPLATE")
         self.add_edge(conn, "e2", "template:PRA110", "datapoint:1", "HAS_DATAPOINT")
 
-        without = reporting_overview_graph(conn, q="PRA110")
-        with_dp = reporting_overview_graph(conn, q="PRA110", include_datapoints=True)
+        without = reporting_overview_graph(conn, selected_return="PRA110")
+        with_dp = reporting_overview_graph(conn, selected_return="PRA110", include_datapoints=True)
 
         self.assertNotIn("datapoint:1", {n["id"] for n in without["nodes"]})
         self.assertIn("datapoint_group:template:PRA110", {n["id"] for n in with_dp["nodes"]})

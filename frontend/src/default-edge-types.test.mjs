@@ -36,6 +36,19 @@ test('definitions representation still lets users opt into shared defined term e
   assert.ok(representationTypes('definitions').includes('shares_defined_term'));
 });
 
+test('reporting drilldown defaults to direct return artefact edges, not all cross-references', () => {
+  assert.deepEqual(literalSetItems('REPORTING_DEFAULT_EDGE_TYPES'), [
+    'USES_TEMPLATE',
+    'USES_INSTRUCTIONS',
+    'EVIDENCED_BY',
+    'LEGAL_BASIS',
+    'APPLIES_TO',
+    'HAS_SCOPE_RULE',
+    'MAY_BE_AFFECTED_BY_PERMISSION',
+    'SUMMARISES_DATAPOINTS',
+  ]);
+});
+
 test('edge tooltips remain available while only parallel-link count badges render inline', () => {
   assert.match(source, /onLinkHover=\{edge=>setHoverEdge\(edge\|\|null\)\}/);
   assert.match(source, /edgeTooltip\(hoverEdge,selected\?\.id\)/);

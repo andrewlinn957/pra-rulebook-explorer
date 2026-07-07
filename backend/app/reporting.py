@@ -43,6 +43,7 @@ def reporting_overview_graph(
     conn: sqlite3.Connection,
     *,
     q: str | None = None,
+    selected_return: str | None = None,
     limit: int = 80,
     child_limit: int = 900,
     include_datapoints: bool = False,
@@ -54,11 +55,11 @@ def reporting_overview_graph(
     the full datapoint explosion unless explicitly requested.
     """
     ensure_reporting_graph_indexes(conn)
-    roots = _reporting_root_data_items(conn, q=q, limit=limit)
+    roots = _reporting_root_data_items(conn, q=selected_return or q, limit=limit, exact=bool(selected_return))
     root_ids = [r["node_id"] for r in roots]
     nodes: dict[str, dict[str, Any]] = {r["node_id"]: _ui_reporting_node(r, role="return") for r in roots}
     edges: dict[str, dict[str, Any]] = {}
-    if root_ids:
+    if root_ids and selected_return:
         child_edges = _reporting_edges_for_sources(conn, root_ids, sorted(REPORTING_OVERVIEW_CHILD_EDGES), child_limit)
         _add_reporting_edges(conn, child_edges, nodes, edges)
 
@@ -90,13 +91,18 @@ def ensure_reporting_graph_indexes(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_graph_node_type_label ON graph_node(node_type, label)")
 
 
-def _reporting_root_data_items(conn: sqlite3.Connection, *, q: str | None, limit: int) -> list[dict[str, Any]]:
+def _reporting_root_data_items(conn: sqlite3.Connection, *, q: str | None, limit: int, exact: bool = False) -> list[dict[str, Any]]:
     params: list[Any] = []
     where = "WHERE n.node_type='DataItem'"
     if q:
-        where += " AND (n.node_id LIKE ? OR n.label LIKE ? OR n.properties_json LIKE ?)"
-        needle = f"%{q}%"
-        params.extend([needle, needle, needle])
+        if exact:
+            where += " AND (n.node_id=? OR n.node_id=? OR n.label=? OR n.source_pk=?)"
+            code = q.removeprefix("data_item:")
+            params.extend([q, f"data_item:{code}", code, q])
+        else:
+            where += " AND (n.node_id LIKE ? OR n.label LIKE ? OR n.properties_json LIKE ?)"
+            needle = f"%{q}%"
+            params.extend([needle, needle, needle])
     rows = conn.execute(
         f"""
         SELECT n.node_id,n.node_type,n.label,n.source_table,n.source_pk,n.properties_json,n.effective_from,n.effective_to,n.review_status,

@@ -30,6 +30,7 @@ const MATERIAL_FILTERS = ['rule','supervisory_statement','statement_of_policy','
 const RELATIONSHIP_ORDER = TYPES;
 const REPORTING_NODE_TYPES = ['DataItem','ReportingObligation','Template','InstructionSet','SourceDocument','Provision','ExternalReference','LegalInstrument','PolicyStatement','TemplateSet','DataPointGroup','DataPoint','TemplateRow','TemplateColumn','Concept','ScopeRule','FirmType','Permission','ValidationRule'];
 const REPORTING_EDGE_TYPES = ['USES_TEMPLATE','USES_INSTRUCTIONS','EVIDENCED_BY','LEGAL_BASIS','APPLIES_TO','HAS_SCOPE_RULE','MAY_BE_AFFECTED_BY_PERMISSION','REFERENCES_RULE','REFERENCES_SOURCE','REFERENCES_EXTERNAL','REFERENCES_RETURN','REFERENCES_TEMPLATE','SUMMARISES_DATAPOINTS','HAS_DATAPOINT','REPORTS_CONCEPT'];
+const REPORTING_DEFAULT_EDGE_TYPES = new Set(['USES_TEMPLATE','USES_INSTRUCTIONS','EVIDENCED_BY','LEGAL_BASIS','APPLIES_TO','HAS_SCOPE_RULE','MAY_BE_AFFECTED_BY_PERMISSION','SUMMARISES_DATAPOINTS']);
 
 async function fetchJson(url,options){
   const res=await fetch(url,options);
@@ -263,8 +264,9 @@ function NodeFeedbackModal({node,text,setText,saving,onClose,onSubmit}){
 function ReportingGraphView({onFeedback}){
   const [query,setQuery]=useState('');
   const [submitted,setSubmitted]=useState('');
+  const [selectedReturn,setSelectedReturn]=useState('');
   const [includeDatapoints,setIncludeDatapoints]=useState(false);
-  const [edgeTypes,setEdgeTypes]=useState(new Set(REPORTING_EDGE_TYPES.filter(t=>t!=='HAS_DATAPOINT'&&t!=='REPORTS_CONCEPT')));
+  const [edgeTypes,setEdgeTypes]=useState(new Set(REPORTING_DEFAULT_EDGE_TYPES));
   const [nodeTypes,setNodeTypes]=useState(new Set(REPORTING_NODE_TYPES.filter(t=>t!=='DataPoint'&&t!=='TemplateRow'&&t!=='TemplateColumn')));
   const [graph,setGraph]=useState({nodes:[],edges:[],available_edge_types:{}});
   const [detail,setDetail]=useState(null);
@@ -272,22 +274,27 @@ function ReportingGraphView({onFeedback}){
   const [error,setError]=useState('');
   const activeGraph=useMemo(()=>filterGraph(graph,nodeTypes,edgeTypes,'all',detail?.id,true),[graph,nodeTypes,edgeTypes,detail?.id]);
   const selectedEdges=useMemo(()=>activeGraph.edges.filter(e=>detail&&(e.from_node_id===detail.id||e.to_node_id===detail.id)),[activeGraph,detail]);
-  useEffect(()=>{ loadReportingGraph(''); },[includeDatapoints]);
+  useEffect(()=>{ loadReportingGraph(selectedReturn?'':submitted, selectedReturn); },[includeDatapoints]);
 
-  async function loadReportingGraph(q=submitted){
+  async function loadReportingGraph(q=submitted, returnCode=''){
     setBusy(true); setError('');
     try{
       const p=new URLSearchParams({limit:'80',child_limit:includeDatapoints?'1400':'900',include_datapoints:String(includeDatapoints)});
-      if(q.trim()) p.set('q',q.trim());
+      if(returnCode) p.set('selected_return',returnCode);
+      else if(q.trim()) p.set('q',q.trim());
       const data=await fetchJson(API_BASE+`/reporting/graph/overview?${p}`);
       setGraph(data);
-      setSubmitted(q.trim());
-      const first=data.nodes?.find(n=>n.node_type==='DataItem')||data.nodes?.[0]||null;
+      setSubmitted(returnCode||q.trim());
+      setSelectedReturn(returnCode);
+      const first=returnCode ? (data.nodes?.find(n=>n.node_type==='DataItem')||data.nodes?.[0]||null) : null;
       setDetail(first);
     }catch(err){ setError(err.message||String(err)); }
     finally{ setBusy(false); }
   }
-  function submit(e){ e?.preventDefault(); loadReportingGraph(query); }
+  function submit(e){ e?.preventDefault(); loadReportingGraph(query,''); }
+  function returnCode(node){ return node?.metadata?.data_item_code || String(node?.title||node?.id||'').replace(/^data_item:/,''); }
+  function openReturn(node){ if(node?.node_type==='DataItem') loadReportingGraph('', returnCode(node)); else setDetail(node); }
+  function showAllReturns(){ setQuery(''); loadReportingGraph('', ''); }
   function toggleEdge(t){ const next=new Set(edgeTypes); next.has(t)?next.delete(t):next.add(t); setEdgeTypes(next); }
   function toggleNode(t){ const next=new Set(nodeTypes); next.has(t)?next.delete(t):next.add(t); setNodeTypes(next); }
   const roots=graph.nodes.filter(n=>n.node_type==='DataItem');
@@ -295,20 +302,21 @@ function ReportingGraphView({onFeedback}){
 
   return <section className="reporting-view">
     <div className="reporting-toolbar">
-      <div><span className="eyebrow">Reporting estate</span><h2>Returns, templates, instructions and cross-references</h2></div>
+      <div><span className="eyebrow">Reporting estate</span><h2>{selectedReturn?'Return drilldown':'Returns overview'}</h2></div>
       <form onSubmit={submit}><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Filter returns, e.g. COR011, PRA110, liquidity…"/><button>{busy?'Loading…':'Load'}</button></form>
       <label className="check"><input type="checkbox" checked={includeDatapoints} onChange={e=>setIncludeDatapoints(e.target.checked)}/> Summarise datapoints</label>
+      {selectedReturn&&<button className="ghost" onClick={showAllReturns}>Show all returns</button>}
     </div>
     {error&&<div className="error">{error}</div>}
     <div className="reporting-layout">
       <aside className="reporting-rail">
         <div className="reporting-stats"><div><span>Returns</span><strong>{fmt(roots.length)}</strong></div><div><span>Nodes</span><strong>{fmt(activeGraph.nodes.length)}</strong></div><div><span>Links</span><strong>{fmt(activeGraph.edges.length)}</strong></div></div>
         <h3>Returns</h3>
-        <div className="reporting-return-list">{roots.map(n=><button key={n.id} className={detail?.id===n.id?'active':''} onClick={()=>setDetail(n)}><strong>{n.title}</strong><small>{n.text||n.metadata?.reporting_domain||'Reporting return'}</small></button>)}</div>
+        <div className="reporting-return-list">{roots.map(n=><button key={n.id} className={detail?.id===n.id?'active':''} onClick={()=>openReturn(n)}><strong>{n.title}</strong><small>{selectedReturn?'Showing linked reporting artefacts':'Click to show templates, instructions and references'}</small></button>)}</div>
       </aside>
       <main className="reporting-canvas">
-        <div className="canvas-meta reporting-meta"><strong>{submitted?`Reporting graph: ${submitted}`:'Reporting estate graph'}</strong><span>{activeGraph.nodes.length} shown · {activeGraph.edges.length} visible links · {includeDatapoints?'datapoints summarised':'datapoints hidden'}</span></div>
-        <Graph graph={activeGraph} selected={detail} detail={detail} nodeTypes={nodeTypes} relationshipTypes={edgeTypes} relationshipFilters={visibleEdgeTypes} availableEdgeTypes={graph.available_edge_types||{}} onToggleNodeType={toggleNode} onToggleRelationship={toggleEdge} onSelect={setDetail} onOpen={setDetail} onFeedback={onFeedback}/>
+        <div className="canvas-meta reporting-meta"><strong>{selectedReturn?`Reporting graph: ${selectedReturn}`:submitted?`Returns matching: ${submitted}`:'Reporting returns overview'}</strong><span>{activeGraph.nodes.length} shown · {activeGraph.edges.length} visible links · {selectedReturn?(includeDatapoints?'datapoints summarised':'datapoints hidden'):'click a return to expand'}</span></div>
+        <Graph graph={activeGraph} selected={detail} detail={detail} nodeTypes={nodeTypes} relationshipTypes={edgeTypes} relationshipFilters={visibleEdgeTypes} availableEdgeTypes={graph.available_edge_types||{}} onToggleNodeType={toggleNode} onToggleRelationship={toggleEdge} onSelect={openReturn} onOpen={openReturn} onFeedback={onFeedback}/>
       </main>
       <aside className="reporting-inspector"><ReportingInspector node={detail} edges={selectedEdges} graph={activeGraph}/></aside>
     </div>

@@ -353,6 +353,7 @@ def api_reporting_relationship_evidence(edge_id: str) -> dict:
 @app.get("/reporting/graph/overview")
 def api_reporting_graph_overview(
     q: str | None = None,
+    selected_return: str | None = None,
     limit: int = 80,
     child_limit: int = 900,
     include_datapoints: bool = False,
@@ -361,6 +362,7 @@ def api_reporting_graph_overview(
     return reporting_overview_graph(
         conn,
         q=q,
+        selected_return=selected_return,
         limit=_limit(limit, 200),
         child_limit=_limit(child_limit, 2000),
         include_datapoints=include_datapoints,

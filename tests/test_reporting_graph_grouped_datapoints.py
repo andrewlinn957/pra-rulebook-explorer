@@ -48,7 +48,7 @@ class ReportingGroupedDatapointGraphTests(unittest.TestCase):
         conn.execute("INSERT INTO graph_edge(edge_id,source_node_id,target_node_id,edge_type,confidence,extraction_method) VALUES ('e2','template:C72','datapoint:1','HAS_DATAPOINT',1,'manifest')")
         conn.execute("INSERT INTO graph_edge(edge_id,source_node_id,target_node_id,edge_type,confidence,extraction_method) VALUES ('e3','template:C72','datapoint:2','HAS_DATAPOINT',1,'manifest')")
 
-        graph = reporting_overview_graph(conn, q="COR011", include_datapoints=True)
+        graph = reporting_overview_graph(conn, selected_return="COR011", include_datapoints=True)
 
         node_types = {n["node_type"] for n in graph["nodes"]}
         grouped = [n for n in graph["nodes"] if n["node_type"] == "DataPointGroup"]
