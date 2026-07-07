@@ -53,6 +53,7 @@ def reporting_overview_graph(
     main reporting artefacts and source-document cross-references, but avoids
     the full datapoint explosion unless explicitly requested.
     """
+    ensure_reporting_graph_indexes(conn)
     roots = _reporting_root_data_items(conn, q=q, limit=limit)
     root_ids = [r["node_id"] for r in roots]
     nodes: dict[str, dict[str, Any]] = {r["node_id"]: _ui_reporting_node(r, role="return") for r in roots}
@@ -82,6 +83,12 @@ def reporting_overview_graph(
         "edges": list(edges.values()),
         "available_edge_types": available,
     }
+
+
+def ensure_reporting_graph_indexes(conn: sqlite3.Connection) -> None:
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_graph_edge_source_type ON graph_edge(source_node_id, edge_type)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_graph_edge_target_type ON graph_edge(target_node_id, edge_type)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_graph_node_type_label ON graph_node(node_type, label)")
 
 
 def _reporting_root_data_items(conn: sqlite3.Connection, *, q: str | None, limit: int) -> list[dict[str, Any]]:
