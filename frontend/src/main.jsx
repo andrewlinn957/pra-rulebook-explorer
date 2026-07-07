@@ -33,8 +33,17 @@ const REPORTING_EDGE_TYPES = ['USES_TEMPLATE','USES_INSTRUCTIONS','EVIDENCED_BY'
 
 async function fetchJson(url,options){
   const res=await fetch(url,options);
-  if(!res.ok) throw new Error(await res.text());
+  if(!res.ok) throw new Error(await responseErrorText(res));
   return res.json();
+}
+
+async function responseErrorText(res){
+  const text=await res.text();
+  try{
+    const payload=JSON.parse(text);
+    if(payload?.detail) return Array.isArray(payload.detail)?payload.detail.map(d=>d.msg||JSON.stringify(d)).join('; '):String(payload.detail);
+  }catch{}
+  return text || `Request failed with status ${res.status}`;
 }
 
 function App(){
@@ -172,7 +181,7 @@ function App(){
     setFeedbackSaving(true); setError('');
     try{
       const res=await fetch(API_BASE+'/feedback/node',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({node:feedbackNode,feedback:feedbackText.trim(),page_url:window.location.href})});
-      if(!res.ok) throw new Error(await res.text());
+      if(!res.ok) throw new Error(await responseErrorText(res));
       setFeedbackNode(null); setFeedbackText('');
     }catch(err){ setError(err.message||String(err)); }
     finally{ setFeedbackSaving(false); }

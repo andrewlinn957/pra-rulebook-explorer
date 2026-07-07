@@ -82,7 +82,12 @@ def api_feedback_queue() -> dict:
 
 @app.post("/feedback/node")
 async def api_node_feedback(request: Request) -> dict:
-    payload = await request.json()
+    try:
+        payload = await request.json()
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Request body must be valid JSON") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Request body must be a JSON object")
     node = payload.get("node") or {}
     feedback = str(payload.get("feedback", ""))
     page_url = str(payload.get("page_url", ""))

@@ -4,7 +4,18 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from fastapi.testclient import TestClient
+
 from backend.app.feedback import create_feedback, list_feedback, process_feedback_queue
+from backend.app.main import app
+
+
+class NodeFeedbackApiTests(unittest.TestCase):
+    def test_malformed_feedback_request_returns_400_not_500(self):
+        client = TestClient(app)
+        response = client.post("/feedback/node", content="", headers={"Content-Type": "application/json"})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("JSON", response.text)
 
 
 class NodeFeedbackTests(unittest.TestCase):
