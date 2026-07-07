@@ -66,6 +66,18 @@ test('reporting graph keeps return as selected graph root while inspecting child
   assert.match(source, /function reportingMaterialFilters\(graph\)/);
 });
 
+test('reporting graph distinguishes templates instructions and XBRL sources visually', () => {
+  assert.match(source, /function reportingVisualKind\(node\)/);
+  assert.match(source, /visual==='template'/);
+  assert.match(source, /visual==='instruction'/);
+  assert.match(source, /visual==='xbrl_source'/);
+  assert.match(source, /function isXbrlSourceDocument\(n\)/);
+  assert.match(source, /reporting_xbrl_source:'XBRL source'/);
+  assert.match(styles, /\.legend i\.legend-node\.template/);
+  assert.match(styles, /\.legend i\.legend-node\.instruction/);
+  assert.match(styles, /\.legend i\.legend-node\.xbrl-source/);
+});
+
 test('unresolved link review captures actionable findings', () => {
   assert.match(source, /Review finding/);
   assert.match(source, /function UnresolvedLinkReview/);

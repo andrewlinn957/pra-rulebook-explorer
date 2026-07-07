@@ -24,7 +24,7 @@ const RELATION_LABELS = { contains:'contains / child', references:'Cross-referen
 const EVIDENCE_LABELS = { references:'Cross-references', uses_defined_term:'Definitions used by this provision', defines:'Definitions provided here', shares_defined_term:'Provisions sharing defined terms', has_obligation_pattern:'Obligation themes found here', shares_obligation_pattern:'Provisions with similar obligations', has_structured_obligation:'Extracted obligation statements', amends:'Legal instruments amending this material', has_permission:'Firms with active permissions' };
 const ORIGIN_FILTERS = { all:'All links', explicit:'Direct links', inferred:'Inferred / derived links' };
 const EDGE_COLOURS = { contains:'#94a3b8', references:'#2563eb', uses_defined_term:'#d97706', defines:'#ca8a04', shares_defined_term:'#0f766e', has_obligation_pattern:'#db2777', shares_obligation_pattern:'#ea580c', has_structured_obligation:'#be123c', amends:'#dc2626', has_permission:'#8b5cf6', USES_TEMPLATE:'#2563eb', USES_INSTRUCTIONS:'#0f766e', EVIDENCED_BY:'#7c3aed', LEGAL_BASIS:'#dc2626', APPLIES_TO:'#0891b2', HAS_SCOPE_RULE:'#0d9488', MAY_BE_AFFECTED_BY_PERMISSION:'#8b5cf6', REFERENCES_RULE:'#be123c', REFERENCES_SOURCE:'#9333ea', REFERENCES_EXTERNAL:'#64748b', REFERENCES_RETURN:'#ea580c', REFERENCES_TEMPLATE:'#4f46e5', SUMMARISES_DATAPOINTS:'#475569', HAS_DATAPOINT:'#94a3b8', REPORTS_CONCEPT:'#0f766e' };
-const MATERIAL_COLOURS = { rule:'#2563eb', supervisory_statement:'#16a34a', statement_of_policy:'#0f766e', definition:'#b45309', permission:'#8b5cf6', external_reference:'#64748b', legal_instrument:'#b91c1c', obligation_pattern:'#db2777', obligation_statement:'#be123c', analysis:'#9333ea', rulebook:'#6d28d9', reporting_return:'#2457d6', reporting_template:'#0f766e', reporting_instruction:'#d97706', reporting_source:'#7c3aed', reporting_datapoint:'#64748b', reporting_provision:'#be123c', reporting_concept:'#0891b2' };
+const MATERIAL_COLOURS = { rule:'#2563eb', supervisory_statement:'#16a34a', statement_of_policy:'#0f766e', definition:'#b45309', permission:'#8b5cf6', external_reference:'#64748b', legal_instrument:'#b91c1c', obligation_pattern:'#db2777', obligation_statement:'#be123c', analysis:'#9333ea', rulebook:'#6d28d9', reporting_return:'#2457d6', reporting_template:'#0f766e', reporting_instruction:'#d97706', reporting_source:'#7c3aed', reporting_xbrl_source:'#6d28d9', reporting_datapoint:'#64748b', reporting_provision:'#be123c', reporting_concept:'#0891b2' };
 const CLUSTER_COLOURS = ['#4f7cff','#d28b24','#58a978','#d35cff','#cc5c5c','#35b6b4','#d7ff64','#a78bfa','#fb7185','#60a5fa','#f59e0b','#34d399'];
 const MATERIAL_FILTERS = ['rule','supervisory_statement','statement_of_policy','definition','permission','legal_instrument','external_reference'];
 const RELATIONSHIP_ORDER = TYPES;
@@ -203,6 +203,7 @@ function App(){
       reporting_template:['Template','TemplateSet'],
       reporting_instruction:['InstructionSet'],
       reporting_source:['SourceDocument'],
+      reporting_xbrl_source:['SourceDocument','TemplateSet'],
       reporting_datapoint:['DataPointGroup','DataPoint','TemplateRow','TemplateColumn'],
       reporting_provision:['Provision'],
       reporting_concept:['Concept','ScopeRule','FirmType','Metric','CalculationRule','ValidationRule'],
@@ -378,6 +379,7 @@ function reportingNodeTypeGroup(t){
     reporting_template:['Template','TemplateSet'],
     reporting_instruction:['InstructionSet'],
     reporting_source:['SourceDocument'],
+    reporting_xbrl_source:['SourceDocument','TemplateSet'],
     reporting_datapoint:['DataPointGroup','DataPoint','TemplateRow','TemplateColumn'],
     reporting_provision:['Provision'],
     reporting_concept:['Concept','ScopeRule','FirmType','Metric','CalculationRule','ValidationRule'],
@@ -388,7 +390,7 @@ function reportingNodeTypeGroup(t){
 }
 
 function reportingMaterialFilters(graph){
-  const order=['reporting_return','reporting_template','reporting_instruction','reporting_source','reporting_datapoint','reporting_provision','reporting_concept','legal_instrument','permission','external_reference'];
+  const order=['reporting_return','reporting_template','reporting_instruction','reporting_xbrl_source','reporting_source','reporting_datapoint','reporting_provision','reporting_concept','legal_instrument','permission','external_reference'];
   const present=new Set((graph.nodes||[]).map(n=>materialType(n)));
   return order.filter(t=>present.has(t));
 }
@@ -1061,24 +1063,63 @@ function drawGraphNode(node,ctx,globalScale,selected,graphDensity){
   const radius=node.size||10;
   const badge=node.badge;
   const role=node.role;
+  const visual=reportingVisualKind(raw);
   const selectedNode=raw.id===selected?.id;
   ctx.save();
   ctx.beginPath();
-  if(badge){ roundedRectPath(ctx,node.x-radius*1.45,node.y-radius*.85,radius*2.9,radius*1.7,5); }
+  if(visual==='template'){ reportingTemplatePath(ctx,node.x,node.y,radius); }
+  else if(visual==='instruction'){ hexPath(ctx,node.x,node.y,radius*1.18); }
+  else if(visual==='xbrl_source'){ sourceCylinderPath(ctx,node.x,node.y,radius); }
+  else if(badge){ roundedRectPath(ctx,node.x-radius*1.45,node.y-radius*.85,radius*2.9,radius*1.7,5); }
   else if(role==='parent'){ ctx.rect(node.x-radius,node.y-radius,radius*2,radius*2); }
   else if(role==='child'){ ctx.moveTo(node.x,node.y-radius*1.2); ctx.lineTo(node.x+radius*1.15,node.y); ctx.lineTo(node.x,node.y+radius*1.2); ctx.lineTo(node.x-radius*1.15,node.y); ctx.closePath(); }
   else { ctx.arc(node.x,node.y,radius,0,Math.PI*2); }
-  ctx.fillStyle=badge?.kind==='pdf'?'#b91c1c':badge?.kind==='spreadsheet'?'#047857':role==='parent'?'#fff1f2':node.colour||nodeFill(raw,{});
+  ctx.fillStyle=visual==='template'?'#dcfce7':visual==='instruction'?'#fef3c7':visual==='xbrl_source'?'#ede9fe':badge?.kind==='pdf'?'#b91c1c':badge?.kind==='spreadsheet'?'#047857':role==='parent'?'#fff1f2':node.colour||nodeFill(raw,{});
   ctx.fill();
-  ctx.lineWidth=selectedNode?4:role==='parent'?3:2;
-  ctx.setLineDash(role==='parent'||role==='child'?[4,3]:[]);
-  ctx.strokeStyle=selectedNode?'#2457d6':role==='parent'?'#be123c':role==='child'?'#2563eb':'#ffffff';
+  ctx.lineWidth=selectedNode?4:visual?3:role==='parent'?3:2;
+  ctx.setLineDash(!visual&&(role==='parent'||role==='child')?[4,3]:[]);
+  ctx.strokeStyle=selectedNode?'#2457d6':visual==='template'?'#047857':visual==='instruction'?'#d97706':visual==='xbrl_source'?'#6d28d9':role==='parent'?'#be123c':role==='child'?'#2563eb':'#ffffff';
   ctx.stroke();
   ctx.setLineDash([]);
+  drawReportingNodeGlyph(ctx,visual,node.x,node.y,radius,globalScale);
   const importantNode=isImportantForceNode(node);
   const denseSmallLabel=graphDensity==='dense' && !importantNode;
   const label=forceGraphNodeLabel(node,selected,globalScale,graphDensity);
   if(label){ drawCanvasLabel(ctx,label,node.x,node.y+radius+9/globalScale,denseSmallLabel?7:(selectedNode?12:10),globalScale,selectedNode,denseSmallLabel?6.25:8); }
+  ctx.restore();
+}
+
+function reportingVisualKind(node){
+  const type=materialType(node);
+  if(type==='reporting_template') return 'template';
+  if(type==='reporting_instruction') return 'instruction';
+  if(type==='reporting_xbrl_source') return 'xbrl_source';
+  return '';
+}
+function reportingTemplatePath(ctx,x,y,r){
+  roundedRectPath(ctx,x-r*1.25,y-r*.95,r*2.5,r*1.9,4);
+  ctx.moveTo(x+r*.45,y-r*.95); ctx.lineTo(x+r*1.25,y-r*.2); ctx.lineTo(x+r*.45,y-r*.2); ctx.closePath();
+}
+function hexPath(ctx,x,y,r){
+  for(let i=0;i<6;i++){ const a=Math.PI/6+i*Math.PI/3; const px=x+Math.cos(a)*r, py=y+Math.sin(a)*r; i?ctx.lineTo(px,py):ctx.moveTo(px,py); }
+  ctx.closePath();
+}
+function sourceCylinderPath(ctx,x,y,r){
+  roundedRectPath(ctx,x-r*1.12,y-r*.9,r*2.24,r*1.8,r*.5);
+}
+function drawReportingNodeGlyph(ctx,visual,x,y,r,globalScale){
+  if(!visual) return;
+  ctx.save();
+  ctx.lineWidth=Math.max(1,1.35/globalScale);
+  ctx.strokeStyle=visual==='template'?'#047857':visual==='instruction'?'#92400e':'#5b21b6';
+  ctx.fillStyle=ctx.strokeStyle;
+  if(visual==='template'){
+    for(const dy of [-.25,.08,.41]){ ctx.beginPath(); ctx.moveTo(x-r*.55,y+r*dy); ctx.lineTo(x+r*.35,y+r*dy); ctx.stroke(); }
+  }else if(visual==='instruction'){
+    ctx.beginPath(); ctx.arc(x,y-r*.18,r*.12,0,Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.moveTo(x,y+r*.02); ctx.lineTo(x,y+r*.52); ctx.stroke();
+  }else if(visual==='xbrl_source'){
+    ctx.beginPath(); ctx.ellipse(x,y-r*.42,r*.55,r*.18,0,0,Math.PI*2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x-r*.55,y-r*.42); ctx.lineTo(x-r*.55,y+r*.38); ctx.moveTo(x+r*.55,y-r*.42); ctx.lineTo(x+r*.55,y+r*.38); ctx.stroke(); ctx.beginPath(); ctx.ellipse(x,y+r*.38,r*.55,r*.18,0,0,Math.PI); ctx.stroke();
+  }
   ctx.restore();
 }
 function forceGraphNodeLabel(node,selected,globalScale,graphDensity){
@@ -1162,10 +1203,18 @@ function collapseParallelEdges(edges){
 function Legend({active,materialFilters=MATERIAL_FILTERS,relationshipTypes,relationshipFilters,availableEdgeTypes,onToggle,onToggleRelationship}){
   return <div className="legend" aria-label="Graph filters">
     <div className="legend-title">Node types</div>
-    {materialFilters.map(t=><button type="button" key={t} className={materialFilterOn(t,active)?'on':'off'} onClick={()=>onToggle(t)} title={`Toggle ${materialLabel(t)}`}><i style={{background:displayColour(t)}} />{materialLabel(t)}</button>)}
+    {materialFilters.map(t=><button type="button" key={t} className={materialFilterOn(t,active)?'on':'off'} onClick={()=>onToggle(t)} title={`Toggle ${materialLabel(t)}`}><i className={`legend-node ${legendNodeIcon(t)}`} style={{background:displayColour(t),borderColor:displayColour(t)}} />{materialLabel(t)}</button>)}
     <div className="legend-title">Edge types</div>
     {relationshipFilters.map(t=><button type="button" key={t} className={relationshipTypes?.has(t)?'on':'off'} onClick={()=>onToggleRelationship(t)} title={`Toggle ${relationLabel(t)}`}><i className={`line ${t==='contains'?'dash':''}`} style={{borderColor:edgeColour(t)}} />{relationLabel(t)}<em>{availableEdgeTypes?.[t]??''}</em></button>)}
   </div>;
+}
+
+function legendNodeIcon(t){
+  if(t==='reporting_template') return 'template';
+  if(t==='reporting_instruction') return 'instruction';
+  if(t==='reporting_xbrl_source') return 'xbrl-source';
+  if(t==='reporting_return') return 'return';
+  return '';
 }
 
 function parallelEdgeKey(edge){
@@ -1385,8 +1434,9 @@ function materialType(n){
   const doc=(meta.document_type||'').toLowerCase();
   if(type==='DataItem') return 'reporting_return';
   if(type==='Template') return 'reporting_template';
+  if(type==='TemplateSet') return 'reporting_xbrl_source';
   if(type==='InstructionSet') return 'reporting_instruction';
-  if(type==='SourceDocument') return 'reporting_source';
+  if(type==='SourceDocument') return isXbrlSourceDocument(n)?'reporting_xbrl_source':'reporting_source';
   if(type==='DataPointGroup' || type==='DataPoint' || type==='TemplateRow' || type==='TemplateColumn') return 'reporting_datapoint';
   if(type==='Provision') return 'reporting_provision';
   if(['Concept','ValidationRule','ScopeRule','FirmType','Metric','CalculationRule'].includes(type)) return 'reporting_concept';
@@ -1405,7 +1455,12 @@ function materialType(n){
   }
   return type||'external_reference';
 }
-function materialLabel(v){return ({rule:'Rulebook part / rule',supervisory_statement:'Supervisory statement',statement_of_policy:'Statement of policy',definition:'Definition',permission:'Firm permission',external_reference:'External reference',legal_instrument:'Legal instrument',obligation_pattern:'Obligation pattern',obligation_statement:'Structured obligation',analysis:'Obligation marker',reporting_return:'Reporting return',reporting_template:'Template',reporting_instruction:'Instructions',reporting_source:'Source document',reporting_datapoint:'Datapoints',reporting_provision:'Referenced provision',reporting_concept:'Reporting concept',DataItem:'Reporting return',Template:'Template',InstructionSet:'Instructions',SourceDocument:'Source document',DataPointGroup:'Datapoint summary',DataPoint:'Datapoint',Provision:'Referenced provision'}[v]||String(v||'').replaceAll('_',' '))}
+function isXbrlSourceDocument(n){
+  const md=(typeof n==='string'?{}:n?.metadata)||{};
+  const hay=[n?.title,n?.text,n?.url,md.source_url,md.source_local_path,md.source_title,md.file_type,md.source_file_type,md.source_table,md.source_pk].filter(Boolean).join(' ').toLowerCase();
+  return /\b(xbrl|taxonomy|dpm|annotated templates|template package|reporting package)\b/.test(hay) || /\.(zip|xbrl|xml|xsd)(#|$)/.test(hay);
+}
+function materialLabel(v){return ({rule:'Rulebook part / rule',supervisory_statement:'Supervisory statement',statement_of_policy:'Statement of policy',definition:'Definition',permission:'Firm permission',external_reference:'External reference',legal_instrument:'Legal instrument',obligation_pattern:'Obligation pattern',obligation_statement:'Structured obligation',analysis:'Obligation marker',reporting_return:'Reporting return',reporting_template:'Reporting template',reporting_instruction:'Reporting instructions',reporting_source:'Source document',reporting_xbrl_source:'XBRL source',reporting_datapoint:'Datapoints',reporting_provision:'Referenced provision',reporting_concept:'Reporting concept',DataItem:'Reporting return',Template:'Reporting template',TemplateSet:'XBRL source',InstructionSet:'Reporting instructions',SourceDocument:'Source document',DataPointGroup:'Datapoint summary',DataPoint:'Datapoint',Provision:'Referenced provision'}[v]||String(v||'').replaceAll('_',' '))}
 function displayColour(v){return MATERIAL_COLOURS[materialType(v)]||'#64748b'}
 function label(v){return materialLabel(materialType(v))}
 function truncate(s='',n=120){return s&&s.length>n?s.slice(0,n-1)+'…':s}
