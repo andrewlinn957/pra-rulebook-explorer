@@ -118,7 +118,7 @@ def _reporting_root_data_items(conn: sqlite3.Connection, *, q: str | None, limit
         """,
         [*params, limit],
     ).fetchall()
-    return [_graph_node(row) for row in rows]
+    return _enrich_reporting_nodes(conn, [_graph_node(row) for row in rows])
 
 
 def _reporting_edges_for_sources(conn: sqlite3.Connection, source_ids: list[str], edge_types: list[str], limit: int) -> list[dict[str, Any]]:
@@ -163,7 +163,7 @@ def _get_graph_nodes(conn: sqlite3.Connection, node_ids: list[str]) -> list[dict
         """,
         node_ids,
     ).fetchall()
-    return [_graph_node(row) for row in rows]
+    return _enrich_reporting_nodes(conn, [_graph_node(row) for row in rows])
 
 
 def _add_grouped_datapoints(conn: sqlite3.Connection, template_ids: list[str], nodes: dict[str, dict[str, Any]], edges: dict[str, dict[str, Any]]) -> None:
@@ -232,6 +232,69 @@ def _sample_datapoint_labels(conn: sqlite3.Connection, template_id: str, *, limi
     return [row["label"] for row in rows]
 
 
+def _enrich_reporting_nodes(conn: sqlite3.Connection, nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Attach canonical reporting source metadata to graph nodes.
+
+    The graph_node table is deliberately generic and some imported reporting
+    nodes have empty properties_json. Source template URLs live in the canonical
+    template/source_document tables, so the reporting API must join them back in
+    before building the UI graph.
+    """
+    if not nodes:
+        return nodes
+    template_ids = sorted({(n.get("source_pk") or n.get("node_id")) for n in nodes if n.get("node_type") == "Template"})
+    source_ids = sorted({(n.get("source_pk") or n.get("node_id")) for n in nodes if n.get("node_type") == "SourceDocument"})
+
+    template_meta: dict[str, dict[str, Any]] = {}
+    if template_ids:
+        try:
+            rows = conn.execute(
+                f"""
+                SELECT t.template_id,t.template_code,t.title,t.annex,t.source_id,
+                       sd.title AS source_title,sd.url AS source_url,sd.local_path AS source_local_path,
+                       sd.file_type AS source_file_type,sd.parent_url AS source_parent_url,
+                       sd.source_status,sd.downloaded_at,sd.publication_date
+                FROM template t
+                LEFT JOIN source_document sd ON sd.source_id=t.source_id
+                WHERE t.template_id IN ({','.join('?' for _ in template_ids)})
+                """,
+                template_ids,
+            ).fetchall()
+        except sqlite3.OperationalError:
+            rows = []
+        for row in rows:
+            d = dict(row)
+            template_meta[d["template_id"]] = {k: v for k, v in d.items() if v is not None}
+
+    source_meta: dict[str, dict[str, Any]] = {}
+    if source_ids:
+        try:
+            rows = conn.execute(
+                f"""
+                SELECT source_id,title AS source_title,url AS source_url,local_path AS source_local_path,
+                       file_type AS source_file_type,parent_url AS source_parent_url,
+                       source_status,downloaded_at,publication_date
+                FROM source_document
+                WHERE source_id IN ({','.join('?' for _ in source_ids)})
+                """,
+                source_ids,
+            ).fetchall()
+        except sqlite3.OperationalError:
+            rows = []
+        for row in rows:
+            d = dict(row)
+            source_meta[d["source_id"]] = {k: v for k, v in d.items() if v is not None}
+
+    for node in nodes:
+        props = dict(node.get("properties") or {})
+        if node.get("node_type") == "Template":
+            props = template_meta.get(node.get("source_pk") or node.get("node_id"), {}) | props
+        elif node.get("node_type") == "SourceDocument":
+            props = source_meta.get(node.get("source_pk") or node.get("node_id"), {}) | props
+        node["properties"] = props
+    return nodes
+
+
 def _ui_reporting_node(node: dict[str, Any], *, role: str | None = None) -> dict[str, Any]:
     props = node.get("properties") or {}
     text_parts = [props.get("title"), props.get("reporting_domain"), props.get("submission_system")]
@@ -241,7 +304,7 @@ def _ui_reporting_node(node: dict[str, Any], *, role: str | None = None) -> dict
         "stable_key": node.get("source_pk") or node["node_id"],
         "title": node.get("label") or node["node_id"],
         "text": " · ".join(str(p) for p in text_parts if p),
-        "url": props.get("url") or props.get("source_url") or "",
+        "url": props.get("url") or props.get("source_url") or props.get("source_parent_url") or "",
         "metadata": props | {
             "source_table": node.get("source_table"),
             "source_pk": node.get("source_pk"),
@@ -571,7 +634,10 @@ def reporting_neighbourhood(conn: sqlite3.Connection, node_id_or_code: str, *, d
 
 def get_graph_node(conn: sqlite3.Connection, node_id: str) -> dict[str, Any] | None:
     row = conn.execute("SELECT node_id,node_type,label,source_table,source_pk,properties_json,effective_from,effective_to,review_status FROM graph_node WHERE node_id=?", (node_id,)).fetchone()
-    return _graph_node(row) if row else None
+    if not row:
+        return None
+    nodes = _enrich_reporting_nodes(conn, [_graph_node(row)])
+    return nodes[0] if nodes else None
 
 
 def _data_item_id(code: str) -> str:
@@ -633,7 +699,9 @@ def _adjacent_nodes(conn: sqlite3.Connection, node_id: str, *, edge_types: list[
         """,
         [node_id, *edge_types, limit],
     ).fetchall()
-    return [_graph_node(row) | {"via_edge": {"edge_id": row["edge_id"], "edge_type": row["edge_type"], "confidence": row["confidence"]}} for row in rows]
+    nodes = _enrich_reporting_nodes(conn, [_graph_node(row) for row in rows])
+    by_id = {node["node_id"]: node for node in nodes}
+    return [by_id[row["node_id"]] | {"via_edge": {"edge_id": row["edge_id"], "edge_type": row["edge_type"], "confidence": row["confidence"]}} for row in rows if row["node_id"] in by_id]
 
 
 def _template_datapoints(conn: sqlite3.Connection, template_node_id: str, *, limit: int) -> list[dict[str, Any]]:

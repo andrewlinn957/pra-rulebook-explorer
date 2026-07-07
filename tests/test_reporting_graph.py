@@ -34,6 +34,30 @@ class ReportingOverviewGraphTests(unittest.TestCase):
               effective_from TEXT,
               effective_to TEXT
             );
+            CREATE TABLE template (
+              template_id TEXT PRIMARY KEY,
+              template_code TEXT NOT NULL,
+              title TEXT,
+              annex TEXT,
+              source_id TEXT,
+              effective_from TEXT,
+              effective_to TEXT
+            );
+            CREATE TABLE source_document (
+              source_id TEXT PRIMARY KEY,
+              title TEXT,
+              url TEXT NOT NULL,
+              local_path TEXT,
+              file_type TEXT,
+              checksum_sha256 TEXT,
+              downloaded_at TEXT,
+              publication_date TEXT,
+              effective_from TEXT,
+              effective_to TEXT,
+              parent_url TEXT,
+              source_status TEXT DEFAULT 'downloaded',
+              notes TEXT
+            );
             """
         )
         return conn
@@ -112,6 +136,35 @@ class ReportingOverviewGraphTests(unittest.TestCase):
         self.assertNotIn("datapoint:1", {n["id"] for n in without["nodes"]})
         self.assertIn("datapoint_group:template:PRA110", {n["id"] for n in with_dp["nodes"]})
         self.assertNotIn("datapoint:1", {n["id"] for n in with_dp["nodes"]})
+
+    def test_selected_return_template_nodes_include_source_template_links(self):
+        conn = self.make_conn()
+        self.add_node(conn, "data_item:COR011", "DataItem", "COR011")
+        self.add_node(conn, "template:C75.01", "Template", "C75.01 Collateral swaps")
+        conn.execute(
+            "INSERT INTO source_document(source_id,title,url,local_path,file_type,parent_url) VALUES (?,?,?,?,?,?)",
+            (
+                "source:corep-liquidity",
+                "Annex XXIV",
+                "https://www.bankofengland.co.uk/-/media/boe/files/prudential-regulation/regulatory-reporting/banking/corep-liquidity.xlsx",
+                "backend/data/raw/reporting-sources/cor011-lcr-final/files/corep-liquidity.xlsx",
+                "xlsx",
+                "https://www.bankofengland.co.uk/prudential-regulation/regulatory-reporting/regulatory-reporting-banking-sector/banks-building-societies-and-investment-firms",
+            ),
+        )
+        conn.execute(
+            "INSERT INTO template(template_id,template_code,title,annex,source_id) VALUES (?,?,?,?,?)",
+            ("template:C75.01", "C75.01", "Collateral swaps", "Annex XXIV", "source:corep-liquidity"),
+        )
+        self.add_edge(conn, "e1", "data_item:COR011", "template:C75.01", "USES_TEMPLATE")
+
+        graph = reporting_overview_graph(conn, selected_return="COR011")
+
+        template = next(n for n in graph["nodes"] if n["id"] == "template:C75.01")
+        self.assertEqual(template["url"], "https://www.bankofengland.co.uk/-/media/boe/files/prudential-regulation/regulatory-reporting/banking/corep-liquidity.xlsx")
+        self.assertEqual(template["metadata"]["source_url"], template["url"])
+        self.assertEqual(template["metadata"]["source_file_type"], "xlsx")
+        self.assertEqual(template["metadata"]["source_local_path"], "backend/data/raw/reporting-sources/cor011-lcr-final/files/corep-liquidity.xlsx")
 
 
 if __name__ == "__main__":

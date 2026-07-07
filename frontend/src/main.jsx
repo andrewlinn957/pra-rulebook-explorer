@@ -472,7 +472,7 @@ function reportingUsefulLinks(node,edges,graph){
   const links=[];
   const addUrl=(url,label,kind='Source document')=>{ if(url && /^https?:\/\//i.test(String(url)) && !links.some(l=>l.url===url)) links.push({url:String(url),label:label||'Original source',kind}); };
   const addItem=(label,kind,detail='')=>{ if(label && !links.some(l=>!l.url&&l.label===label&&l.kind===kind)) links.push({label,kind,detail}); };
-  addUrl(node?.url,displayNodeTitle(node),materialLabel(materialType(node)));
+  addUrl(node?.url,reportingSourceLinkLabel(node),materialLabel(materialType(node)));
   for(const key of ['url','source_url','original_url','document_url','target_url']) addUrl(node?.metadata?.[key],displayNodeTitle(node),metricLabel(key));
   if(node?.node_type==='DataPointGroup') addItem(`${fmt(node.metadata?.datapoint_count||0)} datapoints`, 'Datapoint summary', (node.metadata?.sample_datapoints||[]).slice(0,3).join(' · '));
   for(const edge of edges||[]){
@@ -480,11 +480,25 @@ function reportingUsefulLinks(node,edges,graph){
     for(const key of ['url','source_url','original_url','document_url','target_url']) addUrl(edge.metadata?.[key],relationLabel(edge.edge_type),metricLabel(key));
     const other=byId.get(edge.from_node_id===node?.id?edge.to_node_id:edge.from_node_id);
     if(!other) continue;
-    addUrl(other.url,displayNodeTitle(other),materialLabel(materialType(other)));
+    addUrl(other.url,reportingSourceLinkLabel(other),materialLabel(materialType(other)));
     for(const key of ['url','source_url','original_url','document_url','target_url']) addUrl(other.metadata?.[key],displayNodeTitle(other),metricLabel(key));
     if(['Template','TemplateSet','InstructionSet','SourceDocument','DataPointGroup'].includes(other.node_type)) addItem(displayNodeTitle(other), materialLabel(materialType(other)), edge.edge_type==='SUMMARISES_DATAPOINTS'?`${fmt(other.metadata?.datapoint_count||0)} datapoints`:relationLabel(edge.edge_type));
   }
   return links;
+}
+
+function reportingSourceLinkLabel(node){
+  const md=node?.metadata||{};
+  const title=md.source_title || md.annex || displayNodeTitle(node);
+  const file=sourceFileName(md.source_local_path || md.source_url || node?.url);
+  if(file && title && !String(title).includes(file)) return `${title} · ${file}`;
+  return title || file || displayNodeTitle(node);
+}
+
+function sourceFileName(value){
+  if(!value) return '';
+  const raw=String(value).split('#').pop() || String(value);
+  try{ return decodeURIComponent(raw.split('/').pop()||''); }catch{return raw.split('/').pop()||'';}
 }
 
 function ValidationDashboard({data,busy}){

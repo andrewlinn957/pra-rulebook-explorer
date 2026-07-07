@@ -47,6 +47,8 @@ test('reporting inspector opens with understandable metadata and original data l
   assert.match(source, /reportingUsefulLinks\(node,edges,graph\)/);
   assert.match(source, /Data item code/);
   assert.match(source, /Open source/);
+  assert.match(source, /function reportingSourceLinkLabel\(node\)/);
+  assert.match(source, /function sourceFileName\(value\)/);
   assert.doesNotMatch(source, /local degree/);
 });
 
