@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import ForceGraph2D from 'react-force-graph-2d';
 import { forceCollide, forceX, forceY } from 'd3-force';
-import { isInsuranceNode } from './graphFilters.js';
+import { filterGraph, isInsuranceNode } from './graphFilters.js';
 import { buildUnresolvedActionQueues } from './unresolvedWorkflow.js';
 import { displayNodeTitle, documentBadge, relativeNodeRole, edgeDirectionGlyph, edgeDirectionLabel } from './graphPresentation.js';
 import './styles.css';
@@ -1053,12 +1053,6 @@ function groupEdges(edges){
     return (ai<0?99:ai)-(bi<0?99:bi) || b[1].length-a[1].length || a[0].localeCompare(b[0]);
   });
 }
-function filterGraph(graph,nodeTypes,relationshipTypes,originFilter,selectedId,showInsurance=true){
-  const keepNodes=(graph.nodes||[]).filter(n=>(nodeTypes.has(n.node_type)||n.id===selectedId) && (showInsurance || n.id===selectedId || !isInsuranceNode(n)));
-  const keepIds=new Set(keepNodes.map(n=>n.id));
-  return {...graph,nodes:keepNodes,edges:(graph.edges||[]).filter(e=>keepIds.has(e.from_node_id)&&keepIds.has(e.to_node_id)&&(!relationshipTypes?.size||relationshipTypes.has(e.edge_type))&&originMatches(e,originFilter))};
-}
-
 function graphBounds(nodes){
   if(!nodes.length) return {minX:0,minY:0,maxX:1200,maxY:820,width:1200,height:820};
   let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
