@@ -17,6 +17,7 @@ from .reporting import (
     list_templates,
     relationship_evidence,
     reporting_neighbourhood,
+    reporting_overview_graph,
     reporting_stats,
     return_detail,
     return_references,
@@ -342,6 +343,23 @@ def api_reporting_relationship_evidence(edge_id: str) -> dict:
     if not result:
         raise HTTPException(status_code=404, detail="Reporting relationship not found")
     return result
+
+
+@app.get("/reporting/graph/overview")
+def api_reporting_graph_overview(
+    q: str | None = None,
+    limit: int = 80,
+    child_limit: int = 900,
+    include_datapoints: bool = False,
+) -> dict:
+    conn = connect(DB_PATH)
+    return reporting_overview_graph(
+        conn,
+        q=q,
+        limit=_limit(limit, 200),
+        child_limit=_limit(child_limit, 2000),
+        include_datapoints=include_datapoints,
+    )
 
 
 @app.get("/reporting/graph/neighbourhood/{node_id:path}")

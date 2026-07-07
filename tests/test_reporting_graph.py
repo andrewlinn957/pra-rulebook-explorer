@@ -1,0 +1,93 @@
+import sqlite3
+import unittest
+
+from backend.app.reporting import reporting_overview_graph
+
+
+class ReportingOverviewGraphTests(unittest.TestCase):
+    def make_conn(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        conn.executescript(
+            """
+            CREATE TABLE graph_node (
+              node_id TEXT PRIMARY KEY,
+              node_type TEXT,
+              label TEXT,
+              source_table TEXT,
+              source_pk TEXT,
+              properties_json TEXT DEFAULT '{}',
+              effective_from TEXT,
+              effective_to TEXT,
+              review_status TEXT
+            );
+            CREATE TABLE graph_edge (
+              edge_id TEXT PRIMARY KEY,
+              source_node_id TEXT,
+              target_node_id TEXT,
+              edge_type TEXT,
+              properties_json TEXT DEFAULT '{}',
+              evidence_span_id TEXT,
+              confidence REAL,
+              extraction_method TEXT,
+              review_status TEXT,
+              effective_from TEXT,
+              effective_to TEXT
+            );
+            """
+        )
+        return conn
+
+    def add_node(self, conn, node_id, node_type, label, props="{}"):
+        conn.execute(
+            "INSERT INTO graph_node(node_id,node_type,label,source_table,source_pk,properties_json) VALUES (?,?,?,?,?,?)",
+            (node_id, node_type, label, node_type.lower(), node_id, props),
+        )
+
+    def add_edge(self, conn, edge_id, src, tgt, edge_type, method="manifest", confidence=1):
+        conn.execute(
+            "INSERT INTO graph_edge(edge_id,source_node_id,target_node_id,edge_type,confidence,extraction_method) VALUES (?,?,?,?,?,?)",
+            (edge_id, src, tgt, edge_type, confidence, method),
+        )
+
+    def test_overview_uses_data_items_as_parent_nodes_and_includes_main_children(self):
+        conn = self.make_conn()
+        self.add_node(conn, "data_item:COR001", "DataItem", "COR001", '{"reporting_domain":"capital"}')
+        self.add_node(conn, "template:COR001", "Template", "COR001 template")
+        self.add_node(conn, "instructions:COR001", "InstructionSet", "COR001 instructions")
+        self.add_node(conn, "source:COR001", "SourceDocument", "COR001 source PDF")
+        self.add_node(conn, "provision:rr-1", "Provision", "Regulatory Reporting 1.1")
+        self.add_edge(conn, "e1", "data_item:COR001", "template:COR001", "USES_TEMPLATE")
+        self.add_edge(conn, "e2", "data_item:COR001", "instructions:COR001", "USES_INSTRUCTIONS")
+        self.add_edge(conn, "e3", "data_item:COR001", "source:COR001", "EVIDENCED_BY")
+        self.add_edge(conn, "e4", "source:COR001", "provision:rr-1", "REFERENCES_RULE", "reporting_llm_reference", 0.8)
+
+        graph = reporting_overview_graph(conn, q="COR001")
+
+        ids = {n["id"] for n in graph["nodes"]}
+        self.assertIn("data_item:COR001", ids)
+        self.assertIn("template:COR001", ids)
+        self.assertIn("instructions:COR001", ids)
+        self.assertIn("source:COR001", ids)
+        self.assertIn("provision:rr-1", ids)
+        self.assertEqual(graph["root_count"], 1)
+        self.assertEqual(graph["available_edge_types"]["USES_TEMPLATE"], 1)
+        self.assertEqual(graph["available_edge_types"]["REFERENCES_RULE"], 1)
+
+    def test_overview_excludes_datapoints_by_default_but_can_include_them(self):
+        conn = self.make_conn()
+        self.add_node(conn, "data_item:PRA110", "DataItem", "PRA110")
+        self.add_node(conn, "template:PRA110", "Template", "PRA110 template")
+        self.add_node(conn, "datapoint:1", "DataPoint", "Row 1 column 1")
+        self.add_edge(conn, "e1", "data_item:PRA110", "template:PRA110", "USES_TEMPLATE")
+        self.add_edge(conn, "e2", "template:PRA110", "datapoint:1", "HAS_DATAPOINT")
+
+        without = reporting_overview_graph(conn, q="PRA110")
+        with_dp = reporting_overview_graph(conn, q="PRA110", include_datapoints=True)
+
+        self.assertNotIn("datapoint:1", {n["id"] for n in without["nodes"]})
+        self.assertIn("datapoint:1", {n["id"] for n in with_dp["nodes"]})
+
+
+if __name__ == "__main__":
+    unittest.main()

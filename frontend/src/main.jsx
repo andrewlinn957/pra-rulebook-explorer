@@ -20,14 +20,16 @@ const REPRESENTATIONS = {
   obligations: { label:'Obligations', hint:'Detected obligation statements, obligation patterns, and provisions with similar obligation patterns.', types:['has_obligation_pattern','has_structured_obligation','shares_obligation_pattern'], depth:1, explicitOnly:false },
 };
 const EXPLICIT = new Set(['site_structure','html_link','html_anchor_resolved','html_glossary_link','glossary_source','crr_terms_source','legal_instrument_listing','regex_reference','regex_named_reference','llm_extracted_reference','resolved_part_reference','fca_waivers_list']);
-const RELATION_LABELS = { contains:'contains / child', references:'Cross-references', uses_defined_term:'Definitions used', defines:'Definitions provided', shares_defined_term:'Shared defined terms', has_obligation_pattern:'Obligation themes', shares_obligation_pattern:'Similar obligations', has_structured_obligation:'Extracted obligations', amends:'Amendments', has_permission:'Firms with permissions' };
+const RELATION_LABELS = { contains:'contains / child', references:'Cross-references', uses_defined_term:'Definitions used', defines:'Definitions provided', shares_defined_term:'Shared defined terms', has_obligation_pattern:'Obligation themes', shares_obligation_pattern:'Similar obligations', has_structured_obligation:'Extracted obligations', amends:'Amendments', has_permission:'Firms with permissions', USES_TEMPLATE:'Uses template', USES_INSTRUCTIONS:'Uses instructions', EVIDENCED_BY:'Evidenced by', LEGAL_BASIS:'Legal basis', APPLIES_TO:'Applies to', HAS_SCOPE_RULE:'Scope rule', MAY_BE_AFFECTED_BY_PERMISSION:'Affected by permission', REFERENCES_RULE:'References rule', REFERENCES_SOURCE:'References source', REFERENCES_EXTERNAL:'References external', REFERENCES_RETURN:'References return', REFERENCES_TEMPLATE:'References template', HAS_DATAPOINT:'Has datapoint', REPORTS_CONCEPT:'Reports concept' };
 const EVIDENCE_LABELS = { references:'Cross-references', uses_defined_term:'Definitions used by this provision', defines:'Definitions provided here', shares_defined_term:'Provisions sharing defined terms', has_obligation_pattern:'Obligation themes found here', shares_obligation_pattern:'Provisions with similar obligations', has_structured_obligation:'Extracted obligation statements', amends:'Legal instruments amending this material', has_permission:'Firms with active permissions' };
 const ORIGIN_FILTERS = { all:'All links', explicit:'Direct links', inferred:'Inferred / derived links' };
-const EDGE_COLOURS = { contains:'#94a3b8', references:'#2563eb', uses_defined_term:'#d97706', defines:'#ca8a04', shares_defined_term:'#0f766e', has_obligation_pattern:'#db2777', shares_obligation_pattern:'#ea580c', has_structured_obligation:'#be123c', amends:'#dc2626', has_permission:'#8b5cf6' };
-const MATERIAL_COLOURS = { rule:'#2563eb', supervisory_statement:'#16a34a', statement_of_policy:'#0f766e', definition:'#b45309', permission:'#8b5cf6', external_reference:'#64748b', legal_instrument:'#b91c1c', obligation_pattern:'#db2777', obligation_statement:'#be123c', analysis:'#9333ea', rulebook:'#6d28d9' };
+const EDGE_COLOURS = { contains:'#94a3b8', references:'#2563eb', uses_defined_term:'#d97706', defines:'#ca8a04', shares_defined_term:'#0f766e', has_obligation_pattern:'#db2777', shares_obligation_pattern:'#ea580c', has_structured_obligation:'#be123c', amends:'#dc2626', has_permission:'#8b5cf6', USES_TEMPLATE:'#2563eb', USES_INSTRUCTIONS:'#0f766e', EVIDENCED_BY:'#7c3aed', LEGAL_BASIS:'#dc2626', APPLIES_TO:'#0891b2', HAS_SCOPE_RULE:'#0d9488', MAY_BE_AFFECTED_BY_PERMISSION:'#8b5cf6', REFERENCES_RULE:'#be123c', REFERENCES_SOURCE:'#9333ea', REFERENCES_EXTERNAL:'#64748b', REFERENCES_RETURN:'#ea580c', REFERENCES_TEMPLATE:'#4f46e5', HAS_DATAPOINT:'#94a3b8', REPORTS_CONCEPT:'#0f766e' };
+const MATERIAL_COLOURS = { rule:'#2563eb', supervisory_statement:'#16a34a', statement_of_policy:'#0f766e', definition:'#b45309', permission:'#8b5cf6', external_reference:'#64748b', legal_instrument:'#b91c1c', obligation_pattern:'#db2777', obligation_statement:'#be123c', analysis:'#9333ea', rulebook:'#6d28d9', reporting_return:'#2457d6', reporting_template:'#0f766e', reporting_instruction:'#d97706', reporting_source:'#7c3aed', reporting_datapoint:'#64748b', reporting_provision:'#be123c', reporting_concept:'#0891b2' };
 const CLUSTER_COLOURS = ['#4f7cff','#d28b24','#58a978','#d35cff','#cc5c5c','#35b6b4','#d7ff64','#a78bfa','#fb7185','#60a5fa','#f59e0b','#34d399'];
 const MATERIAL_FILTERS = ['rule','supervisory_statement','statement_of_policy','definition','permission','legal_instrument','external_reference'];
 const RELATIONSHIP_ORDER = TYPES;
+const REPORTING_NODE_TYPES = ['DataItem','ReportingObligation','Template','InstructionSet','SourceDocument','Provision','ExternalReference','LegalInstrument','PolicyStatement','TemplateSet','DataPoint','TemplateRow','TemplateColumn','Concept','ScopeRule','FirmType','Permission','ValidationRule'];
+const REPORTING_EDGE_TYPES = ['USES_TEMPLATE','USES_INSTRUCTIONS','EVIDENCED_BY','LEGAL_BASIS','APPLIES_TO','HAS_SCOPE_RULE','MAY_BE_AFFECTED_BY_PERMISSION','REFERENCES_RULE','REFERENCES_SOURCE','REFERENCES_EXTERNAL','REFERENCES_RETURN','REFERENCES_TEMPLATE','HAS_DATAPOINT','REPORTS_CONCEPT'];
 
 async function fetchJson(url,options){
   const res=await fetch(url,options);
@@ -194,7 +196,7 @@ function App(){
     setNodeTypes(next);
   }
 
-  return <div className={`${graphExpanded?'shell graph-expanded':'shell'} ${panelOpen?'panel-open':'panel-closed'} ${view==='quality'?'quality-view':''}`}>
+  return <div className={`${graphExpanded?'shell graph-expanded':'shell'} ${panelOpen?'panel-open':'panel-closed'} ${view==='quality'?'quality-view':''} ${view==='reporting'?'reporting-view-mode':''}`}>
     <header className="topbar">
       <a className="home" href="/">‹</a>
       <form className="command" onSubmit={search}>
@@ -202,6 +204,7 @@ function App(){
       </form>
       <div className="top-actions">
         <button className={view==='graph'?'mode on':'mode'} onClick={()=>setView('graph')}>Graph</button>
+        <button className={view==='reporting'?'mode on':'mode'} onClick={()=>{setView('reporting');setPanelOpen(false);}}>Reporting</button>
         <button className={view==='quality'?'mode on':'mode'} onClick={showQuality}>Quality</button>
         <button onClick={()=>setPanelOpen(!panelOpen)} title="Toggle side panel">◧</button>
         <details className="settings"><summary title="Display settings">⚙</summary><div className="settings-pop">
@@ -224,7 +227,7 @@ function App(){
     </aside>
 
     <main className="canvas">
-      {view==='quality'?<ValidationDashboard data={validation} busy={busy}/>:<>
+      {view==='quality'?<ValidationDashboard data={validation} busy={busy}/>:view==='reporting'?<ReportingGraphView onFeedback={n=>{setFeedbackNode(n);setFeedbackText('');}}/>:<>
         <div className="canvas-meta"><strong>{selected?.title||'Select a node'}</strong><span>{activeRep.label} · {visibleGraph.nodes.length} shown · {visibleGraph.edges.length} visible links · {Object.values(graph.available_edge_types||{}).reduce((a,b)=>a+b,0)} direct links available</span><button className="expand-graph" onClick={()=>setGraphExpanded(v=>!v)}>{graphExpanded?'Collapse graph':'Expand graph'}</button></div>
         <Graph graph={visibleGraph} selected={selected} detail={detail} nodeTypes={nodeTypes} relationshipTypes={types} relationshipFilters={relationshipFilters} availableEdgeTypes={graph.available_edge_types||{}} onToggleNodeType={toggleNodeType} onToggleRelationship={toggleType} onSelect={n=>{setDetail(n);setPanelOpen(true);}} onOpen={n=>choose(n,{drill:true})} onFeedback={n=>{setFeedbackNode(n);setFeedbackText('');}}/>
       </>}
@@ -245,6 +248,75 @@ function NodeFeedbackModal({node,text,setText,saving,onClose,onSubmit}){
       <label className="feedback-editor">What should Declan fix or investigate?<textarea value={text} onChange={e=>setText(e.target.value)} placeholder="Example: this node should link to SS3/18, but the reference is missing." autoFocus/></label>
       <div className="modal-actions"><button type="button" onClick={onClose}>Cancel</button><button type="submit" disabled={saving||!text.trim()}>{saving?'Saving…':'Add to feedback queue'}</button></div>
     </form>
+  </div>;
+}
+
+function ReportingGraphView({onFeedback}){
+  const [query,setQuery]=useState('');
+  const [submitted,setSubmitted]=useState('');
+  const [includeDatapoints,setIncludeDatapoints]=useState(false);
+  const [edgeTypes,setEdgeTypes]=useState(new Set(REPORTING_EDGE_TYPES.filter(t=>t!=='HAS_DATAPOINT'&&t!=='REPORTS_CONCEPT')));
+  const [nodeTypes,setNodeTypes]=useState(new Set(REPORTING_NODE_TYPES.filter(t=>t!=='DataPoint'&&t!=='TemplateRow'&&t!=='TemplateColumn')));
+  const [graph,setGraph]=useState({nodes:[],edges:[],available_edge_types:{}});
+  const [detail,setDetail]=useState(null);
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState('');
+  const activeGraph=useMemo(()=>filterGraph(graph,nodeTypes,edgeTypes,'all',detail?.id,true),[graph,nodeTypes,edgeTypes,detail?.id]);
+  const selectedEdges=useMemo(()=>activeGraph.edges.filter(e=>detail&&(e.from_node_id===detail.id||e.to_node_id===detail.id)),[activeGraph,detail]);
+  useEffect(()=>{ loadReportingGraph(''); },[includeDatapoints]);
+
+  async function loadReportingGraph(q=submitted){
+    setBusy(true); setError('');
+    try{
+      const p=new URLSearchParams({limit:'80',child_limit:includeDatapoints?'1400':'900',include_datapoints:String(includeDatapoints)});
+      if(q.trim()) p.set('q',q.trim());
+      const data=await fetchJson(API_BASE+`/reporting/graph/overview?${p}`);
+      setGraph(data);
+      setSubmitted(q.trim());
+      const first=data.nodes?.find(n=>n.node_type==='DataItem')||data.nodes?.[0]||null;
+      setDetail(first);
+    }catch(err){ setError(err.message||String(err)); }
+    finally{ setBusy(false); }
+  }
+  function submit(e){ e?.preventDefault(); loadReportingGraph(query); }
+  function toggleEdge(t){ const next=new Set(edgeTypes); next.has(t)?next.delete(t):next.add(t); setEdgeTypes(next); }
+  function toggleNode(t){ const next=new Set(nodeTypes); next.has(t)?next.delete(t):next.add(t); setNodeTypes(next); }
+  const roots=graph.nodes.filter(n=>n.node_type==='DataItem');
+  const visibleEdgeTypes=REPORTING_EDGE_TYPES.filter(t=>(graph.available_edge_types?.[t]||0)>0 || edgeTypes.has(t));
+
+  return <section className="reporting-view">
+    <div className="reporting-toolbar">
+      <div><span className="eyebrow">Reporting estate</span><h2>Returns, templates, instructions and cross-references</h2></div>
+      <form onSubmit={submit}><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Filter returns, e.g. COR011, PRA110, liquidity…"/><button>{busy?'Loading…':'Load'}</button></form>
+      <label className="check"><input type="checkbox" checked={includeDatapoints} onChange={e=>setIncludeDatapoints(e.target.checked)}/> Include datapoints</label>
+    </div>
+    {error&&<div className="error">{error}</div>}
+    <div className="reporting-layout">
+      <aside className="reporting-rail">
+        <div className="reporting-stats"><div><span>Returns</span><strong>{fmt(roots.length)}</strong></div><div><span>Nodes</span><strong>{fmt(activeGraph.nodes.length)}</strong></div><div><span>Links</span><strong>{fmt(activeGraph.edges.length)}</strong></div></div>
+        <h3>Returns</h3>
+        <div className="reporting-return-list">{roots.map(n=><button key={n.id} className={detail?.id===n.id?'active':''} onClick={()=>setDetail(n)}><strong>{n.title}</strong><small>{n.text||n.metadata?.reporting_domain||'Reporting return'}</small></button>)}</div>
+      </aside>
+      <main className="reporting-canvas">
+        <div className="canvas-meta reporting-meta"><strong>{submitted?`Reporting graph: ${submitted}`:'Reporting estate graph'}</strong><span>{activeGraph.nodes.length} shown · {activeGraph.edges.length} visible links · {includeDatapoints?'datapoints on':'datapoints off'}</span></div>
+        <Graph graph={activeGraph} selected={detail} detail={detail} nodeTypes={nodeTypes} relationshipTypes={edgeTypes} relationshipFilters={visibleEdgeTypes} availableEdgeTypes={graph.available_edge_types||{}} onToggleNodeType={toggleNode} onToggleRelationship={toggleEdge} onSelect={setDetail} onOpen={setDetail} onFeedback={onFeedback}/>
+      </main>
+      <aside className="reporting-inspector"><ReportingInspector node={detail} edges={selectedEdges} graph={activeGraph}/></aside>
+    </div>
+  </section>;
+}
+
+function ReportingInspector({node,edges,graph}){
+  if(!node) return <div className="pane"><p className="muted">Select a reporting node.</p></div>;
+  const neighbours=new Map(graph.nodes.map(n=>[n.id,n]));
+  const grouped=groupEdges(edges);
+  return <div className="pane explore-pane reporting-detail-pane">
+    <span className="kind">{materialLabel(materialType(node))}</span>
+    <h2>{displayNodeTitle(node)}</h2>
+    {node.text&&<p className="text">{truncate(node.text,1200)}</p>}
+    <div className="mini-metrics"><div><b>{fmt(edges.length)}</b><span>visible links</span></div><div><b>{fmt(node.degree||1)}</b><span>local degree</span></div><div><b>{node.metadata?.reporting_domain||'—'}</b><span>domain</span></div></div>
+    {Object.keys(node.metadata||{}).length>0&&<Collapsible title="Metadata" open={false}><QualityTable rows={Object.entries(node.metadata).filter(([,v])=>v!==''&&v!=null).map(([key,value])=>({key,value:typeof value==='object'?JSON.stringify(value):String(value)})).slice(0,40)} cols={['key','value']}/></Collapsible>}
+    {grouped.map(([type,rows],i)=><Collapsible key={type} title={relationLabel(type)} count={`${rows.length} links`} open={i<3}><div className="edge-list">{rows.slice(0,60).map(e=>{const other=neighbours.get(e.from_node_id===node.id?e.to_node_id:e.from_node_id);return <button key={e.id} type="button"><span>{edgeDirectionGlyph(e,node.id)} {edgeDirectionLabel(e,node.id)} · {provenanceLabel(e.source_method)}</span><strong>{displayNodeTitle(other||{})}</strong>{e.evidence_text&&<small>{truncate(e.evidence_text,160)}</small>}</button>})}</div></Collapsible>)}
   </div>;
 }
 
@@ -1051,7 +1123,7 @@ function edgeDirectionColour(e,currentId){
 }
 function relationLabel(v){return RELATION_LABELS[v]||String(v||'').replaceAll('_',' ')}
 function evidenceLabel(v){return EVIDENCE_LABELS[v]||relationLabel(v)}
-function isInferred(e){return !EXPLICIT.has(e.source_method)}
+function isInferred(e){return !EXPLICIT.has(e.source_method) && !String(e.source_method||'').startsWith('reporting') && !['manifest','pdf_text_extraction'].includes(e.source_method)}
 function originMatches(e,originFilter){
   if(originFilter==='explicit') return !isInferred(e);
   if(originFilter==='inferred') return isInferred(e);
@@ -1079,6 +1151,9 @@ function provenanceLabel(method){
     fca_waivers_list:'FCA waiver/permission list',
     site_structure:'document structure',
     inline_part_definition:'definition in rule text',
+    manifest:'reporting manifest',
+    reporting_llm_reference:'reporting reference extraction',
+    pdf_text_extraction:'PDF/text extraction',
   }[method]||String(method||'').replaceAll('_',' '));
 }
 function edgeSummary(e,currentId){
@@ -1132,6 +1207,16 @@ function materialType(n){
   const meta=(typeof n==='string'?{}:n?.metadata)||{};
   const url=(typeof n==='string'?'':n?.url||'').toLowerCase();
   const doc=(meta.document_type||'').toLowerCase();
+  if(type==='DataItem') return 'reporting_return';
+  if(type==='Template') return 'reporting_template';
+  if(type==='InstructionSet') return 'reporting_instruction';
+  if(type==='SourceDocument') return 'reporting_source';
+  if(type==='DataPoint' || type==='TemplateRow' || type==='TemplateColumn') return 'reporting_datapoint';
+  if(type==='Provision') return 'reporting_provision';
+  if(['Concept','ValidationRule','ScopeRule','FirmType','Metric','CalculationRule'].includes(type)) return 'reporting_concept';
+  if(['ExternalReference'].includes(type)) return 'external_reference';
+  if(['LegalInstrument'].includes(type)) return 'legal_instrument';
+  if(['Permission'].includes(type)) return 'permission';
   if(['rule','chapter','part','rulebook'].includes(type)) return 'rule';
   if(['defined_term','glossary','crr_terms_list'].includes(type)) return 'definition';
   if(type==='legal_instrument') return 'legal_instrument';
@@ -1144,7 +1229,7 @@ function materialType(n){
   }
   return type||'external_reference';
 }
-function materialLabel(v){return ({rule:'Rulebook part / rule',supervisory_statement:'Supervisory statement',statement_of_policy:'Statement of policy',definition:'Definition',permission:'Firm permission',external_reference:'External reference',legal_instrument:'Legal instrument',obligation_pattern:'Obligation pattern',obligation_statement:'Structured obligation',analysis:'Obligation marker'}[v]||String(v||'').replaceAll('_',' '))}
+function materialLabel(v){return ({rule:'Rulebook part / rule',supervisory_statement:'Supervisory statement',statement_of_policy:'Statement of policy',definition:'Definition',permission:'Firm permission',external_reference:'External reference',legal_instrument:'Legal instrument',obligation_pattern:'Obligation pattern',obligation_statement:'Structured obligation',analysis:'Obligation marker',reporting_return:'Reporting return',reporting_template:'Template',reporting_instruction:'Instructions',reporting_source:'Source document',reporting_datapoint:'Datapoint',reporting_provision:'Referenced provision',reporting_concept:'Reporting concept',DataItem:'Reporting return',Template:'Template',InstructionSet:'Instructions',SourceDocument:'Source document',DataPoint:'Datapoint',Provision:'Referenced provision'}[v]||String(v||'').replaceAll('_',' '))}
 function displayColour(v){return MATERIAL_COLOURS[materialType(v)]||'#64748b'}
 function label(v){return materialLabel(materialType(v))}
 function truncate(s='',n=120){return s&&s.length>n?s.slice(0,n-1)+'…':s}

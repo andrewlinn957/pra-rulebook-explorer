@@ -13,6 +13,18 @@ REPORTING_REFERENCE_EDGE_TYPES = {
     "REFERENCES_TEMPLATE",
 }
 
+REPORTING_OVERVIEW_CHILD_EDGES = {
+    "USES_TEMPLATE",
+    "USES_INSTRUCTIONS",
+    "EVIDENCED_BY",
+    "LEGAL_BASIS",
+    "APPLIES_TO",
+    "HAS_SCOPE_RULE",
+    "MAY_BE_AFFECTED_BY_PERMISSION",
+}
+
+REPORTING_OVERVIEW_REFERENCE_EDGES = REPORTING_REFERENCE_EDGE_TYPES | {"REFERENCES_TEMPLATE"}
+
 
 def reporting_stats(conn: sqlite3.Connection) -> dict[str, Any]:
     return {
@@ -24,6 +36,154 @@ def reporting_stats(conn: sqlite3.Connection) -> dict[str, Any]:
                 "SELECT resolver_method, COUNT(*) FROM reporting_llm_reference_resolution GROUP BY resolver_method ORDER BY resolver_method"
             ).fetchall()
         ),
+    }
+
+
+def reporting_overview_graph(
+    conn: sqlite3.Connection,
+    *,
+    q: str | None = None,
+    limit: int = 80,
+    child_limit: int = 900,
+    include_datapoints: bool = False,
+) -> dict[str, Any]:
+    """Build a reporting-first graph for the UI.
+
+    DataItem nodes are the top-level parents. The default graph includes their
+    main reporting artefacts and source-document cross-references, but avoids
+    the full datapoint explosion unless explicitly requested.
+    """
+    roots = _reporting_root_data_items(conn, q=q, limit=limit)
+    root_ids = [r["node_id"] for r in roots]
+    nodes: dict[str, dict[str, Any]] = {r["node_id"]: _ui_reporting_node(r, role="return") for r in roots}
+    edges: dict[str, dict[str, Any]] = {}
+    if root_ids:
+        child_edges = _reporting_edges_for_sources(conn, root_ids, sorted(REPORTING_OVERVIEW_CHILD_EDGES), child_limit)
+        _add_reporting_edges(conn, child_edges, nodes, edges)
+
+        source_ids = [e["target_node_id"] for e in child_edges if e["edge_type"] == "EVIDENCED_BY"]
+        if source_ids:
+            reference_edges = _reporting_edges_for_sources(conn, source_ids, sorted(REPORTING_OVERVIEW_REFERENCE_EDGES), child_limit)
+            _add_reporting_edges(conn, reference_edges, nodes, edges)
+
+        if include_datapoints:
+            template_ids = [e["target_node_id"] for e in child_edges if e["edge_type"] == "USES_TEMPLATE"]
+            if template_ids:
+                datapoint_edges = _reporting_edges_for_sources(conn, template_ids, ["HAS_DATAPOINT"], min(child_limit, 1200))
+                _add_reporting_edges(conn, datapoint_edges, nodes, edges)
+
+    available: dict[str, int] = {}
+    for edge in edges.values():
+        available[edge["edge_type"]] = available.get(edge["edge_type"], 0) + 1
+    return {
+        "level": "reporting_overview",
+        "root_count": len(roots),
+        "nodes": list(nodes.values()),
+        "edges": list(edges.values()),
+        "available_edge_types": available,
+    }
+
+
+def _reporting_root_data_items(conn: sqlite3.Connection, *, q: str | None, limit: int) -> list[dict[str, Any]]:
+    params: list[Any] = []
+    where = "WHERE n.node_type='DataItem'"
+    if q:
+        where += " AND (n.node_id LIKE ? OR n.label LIKE ? OR n.properties_json LIKE ?)"
+        needle = f"%{q}%"
+        params.extend([needle, needle, needle])
+    rows = conn.execute(
+        f"""
+        SELECT n.node_id,n.node_type,n.label,n.source_table,n.source_pk,n.properties_json,n.effective_from,n.effective_to,n.review_status,
+               COUNT(DISTINCT CASE WHEN e.edge_type='USES_TEMPLATE' THEN e.target_node_id END) AS template_count,
+               COUNT(DISTINCT CASE WHEN e.edge_type='USES_INSTRUCTIONS' THEN e.target_node_id END) AS instruction_count,
+               COUNT(DISTINCT CASE WHEN e.edge_type='EVIDENCED_BY' THEN e.target_node_id END) AS source_document_count
+        FROM graph_node n
+        LEFT JOIN graph_edge e ON e.source_node_id=n.node_id
+        {where}
+        GROUP BY n.node_id
+        ORDER BY n.label
+        LIMIT ?
+        """,
+        [*params, limit],
+    ).fetchall()
+    return [_graph_node(row) for row in rows]
+
+
+def _reporting_edges_for_sources(conn: sqlite3.Connection, source_ids: list[str], edge_types: list[str], limit: int) -> list[dict[str, Any]]:
+    if not source_ids:
+        return []
+    rows = conn.execute(
+        f"""
+        SELECT edge_id,source_node_id,target_node_id,edge_type,properties_json,evidence_span_id,confidence,extraction_method,review_status
+        FROM graph_edge
+        WHERE source_node_id IN ({','.join('?' for _ in source_ids)})
+          AND edge_type IN ({','.join('?' for _ in edge_types)})
+        ORDER BY CASE edge_type
+          WHEN 'USES_TEMPLATE' THEN 1 WHEN 'USES_INSTRUCTIONS' THEN 2 WHEN 'EVIDENCED_BY' THEN 3
+          WHEN 'LEGAL_BASIS' THEN 4 WHEN 'REFERENCES_RULE' THEN 5 WHEN 'REFERENCES_RETURN' THEN 6 ELSE 20 END,
+          confidence DESC, target_node_id
+        LIMIT ?
+        """,
+        [*source_ids, *edge_types, limit],
+    ).fetchall()
+    return [_graph_edge(row) for row in rows]
+
+
+def _add_reporting_edges(conn: sqlite3.Connection, rows: list[dict[str, Any]], nodes: dict[str, dict[str, Any]], edges: dict[str, dict[str, Any]]) -> None:
+    missing_ids = sorted({node_id for row in rows for node_id in (row["source_node_id"], row["target_node_id"]) if node_id not in nodes})
+    if missing_ids:
+        fetched = _get_graph_nodes(conn, missing_ids)
+        for node in fetched:
+            nodes[node["node_id"]] = _ui_reporting_node(node)
+    for row in rows:
+        if row["source_node_id"] in nodes and row["target_node_id"] in nodes:
+            edges[row["edge_id"]] = _ui_reporting_edge(row)
+
+
+def _get_graph_nodes(conn: sqlite3.Connection, node_ids: list[str]) -> list[dict[str, Any]]:
+    if not node_ids:
+        return []
+    rows = conn.execute(
+        f"""
+        SELECT node_id,node_type,label,source_table,source_pk,properties_json,effective_from,effective_to,review_status
+        FROM graph_node
+        WHERE node_id IN ({','.join('?' for _ in node_ids)})
+        """,
+        node_ids,
+    ).fetchall()
+    return [_graph_node(row) for row in rows]
+
+
+def _ui_reporting_node(node: dict[str, Any], *, role: str | None = None) -> dict[str, Any]:
+    props = node.get("properties") or {}
+    text_parts = [props.get("title"), props.get("reporting_domain"), props.get("submission_system")]
+    return {
+        "id": node["node_id"],
+        "node_type": node["node_type"],
+        "stable_key": node.get("source_pk") or node["node_id"],
+        "title": node.get("label") or node["node_id"],
+        "text": " · ".join(str(p) for p in text_parts if p),
+        "url": props.get("url") or props.get("source_url") or "",
+        "metadata": props | {
+            "source_table": node.get("source_table"),
+            "source_pk": node.get("source_pk"),
+            "reporting_role": role or node["node_type"],
+        },
+        "degree": int((node.get("template_count") or 0) + (node.get("instruction_count") or 0) + (node.get("source_document_count") or 0) or 1),
+    }
+
+
+def _ui_reporting_edge(edge: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": edge["edge_id"],
+        "from_node_id": edge["source_node_id"],
+        "to_node_id": edge["target_node_id"],
+        "edge_type": edge["edge_type"],
+        "source_method": edge.get("extraction_method") or "reporting_graph",
+        "confidence": edge.get("confidence") if edge.get("confidence") is not None else 1,
+        "evidence_text": (edge.get("properties") or {}).get("evidence_quote") or "",
+        "source_url": "",
+        "metadata": edge.get("properties") or {},
     }
 
 
