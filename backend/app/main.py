@@ -9,6 +9,7 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from .db import DEFAULT_DB, connect, get_node
+from .feedback import create_feedback, list_feedback, process_feedback_queue
 from .graph import betweenness, centrality, common_neighbours, communities, components, contents_tree, interesting, list_nodes, neighbourhood, search, semantic_map, shortest_path, stats
 from .reporting import (
     datapoint_detail,
@@ -71,6 +72,34 @@ def api_stats() -> dict:
 def api_validation_dashboard() -> dict:
     conn = connect(DB_PATH)
     return validation_dashboard(conn)
+
+
+@app.get("/feedback")
+def api_feedback_queue() -> dict:
+    return list_feedback(PROJECT_ROOT)
+
+
+@app.post("/feedback/node")
+async def api_node_feedback(request: Request) -> dict:
+    payload = await request.json()
+    node = payload.get("node") or {}
+    feedback = str(payload.get("feedback", ""))
+    page_url = str(payload.get("page_url", ""))
+    try:
+        item = create_feedback(PROJECT_ROOT, node=node, feedback=feedback, page_url=page_url)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "item": item}
+
+
+@app.post("/feedback/process")
+async def api_process_feedback_queue(request: Request) -> dict:
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    limit = _limit(int(payload.get("limit", 3)), 10)
+    return process_feedback_queue(PROJECT_ROOT, limit=limit)
 
 
 @app.post("/validation/suspect-403-review")

@@ -29,6 +29,12 @@ const CLUSTER_COLOURS = ['#4f7cff','#d28b24','#58a978','#d35cff','#cc5c5c','#35b
 const MATERIAL_FILTERS = ['rule','supervisory_statement','statement_of_policy','definition','permission','legal_instrument','external_reference'];
 const RELATIONSHIP_ORDER = TYPES;
 
+async function fetchJson(url,options){
+  const res=await fetch(url,options);
+  if(!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 function App(){
   const [q,setQ]=useState('');
   const [results,setResults]=useState([]);
@@ -53,6 +59,9 @@ function App(){
   const [graphExpanded,setGraphExpanded]=useState(false);
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
+  const [feedbackNode,setFeedbackNode]=useState(null);
+  const [feedbackText,setFeedbackText]=useState('');
+  const [feedbackSaving,setFeedbackSaving]=useState(false);
 
   const typesKey=useMemo(()=>[...types].sort().join('|'),[types]);
 
@@ -155,6 +164,18 @@ function App(){
   const relationshipFilters=useMemo(()=>availableRelationshipTypes(stats,graph),[stats,graph]);
   const visibleGraph=useMemo(()=>filterGraph(graph,nodeTypes,types,originFilter,selected?.id,showInsurance),[graph,nodeTypes,typesKey,originFilter,selected?.id,showInsurance]);
   const selectedEdges=useMemo(()=>visibleGraph.edges.filter(e=>detail&&(e.from_node_id===detail.id||e.to_node_id===detail.id)),[visibleGraph,detail]);
+  async function submitNodeFeedback(e){
+    e?.preventDefault();
+    if(!feedbackNode || !feedbackText.trim()) return;
+    setFeedbackSaving(true); setError('');
+    try{
+      const res=await fetch(API_BASE+'/feedback/node',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({node:feedbackNode,feedback:feedbackText.trim(),page_url:window.location.href})});
+      if(!res.ok) throw new Error(await res.text());
+      setFeedbackNode(null); setFeedbackText('');
+    }catch(err){ setError(err.message||String(err)); }
+    finally{ setFeedbackSaving(false); }
+  }
+
   function toggleNodeType(t){
     const next=new Set(nodeTypes);
     const groups={
@@ -205,13 +226,25 @@ function App(){
     <main className="canvas">
       {view==='quality'?<ValidationDashboard data={validation} busy={busy}/>:<>
         <div className="canvas-meta"><strong>{selected?.title||'Select a node'}</strong><span>{activeRep.label} · {visibleGraph.nodes.length} shown · {visibleGraph.edges.length} visible links · {Object.values(graph.available_edge_types||{}).reduce((a,b)=>a+b,0)} direct links available</span><button className="expand-graph" onClick={()=>setGraphExpanded(v=>!v)}>{graphExpanded?'Collapse graph':'Expand graph'}</button></div>
-        <Graph graph={visibleGraph} selected={selected} detail={detail} nodeTypes={nodeTypes} relationshipTypes={types} relationshipFilters={relationshipFilters} availableEdgeTypes={graph.available_edge_types||{}} onToggleNodeType={toggleNodeType} onToggleRelationship={toggleType} onSelect={n=>{setDetail(n);setPanelOpen(true);}} onOpen={n=>choose(n,{drill:true})}/>
+        <Graph graph={visibleGraph} selected={selected} detail={detail} nodeTypes={nodeTypes} relationshipTypes={types} relationshipFilters={relationshipFilters} availableEdgeTypes={graph.available_edge_types||{}} onToggleNodeType={toggleNodeType} onToggleRelationship={toggleType} onSelect={n=>{setDetail(n);setPanelOpen(true);}} onOpen={n=>choose(n,{drill:true})} onFeedback={n=>{setFeedbackNode(n);setFeedbackText('');}}/>
       </>}
     </main>
 
     <aside className={panelOpen?'inspector open':'inspector'}>
       <Explore node={detail} edges={selectedEdges} graph={graph} onChoose={choose}/>
     </aside>
+    {feedbackNode&&<NodeFeedbackModal node={feedbackNode} text={feedbackText} setText={setFeedbackText} saving={feedbackSaving} onClose={()=>setFeedbackNode(null)} onSubmit={submitNodeFeedback}/>}  
+  </div>;
+}
+
+function NodeFeedbackModal({node,text,setText,saving,onClose,onSubmit}){
+  return <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Provide feedback on this node">
+    <form className="node-feedback-modal" onSubmit={onSubmit}>
+      <div className="modal-head"><div><span className="eyebrow">Node feedback</span><h3>Provide feedback on this node</h3></div><button type="button" onClick={onClose} aria-label="Close">×</button></div>
+      <div className="feedback-node-summary"><span>{label(node.node_type)}</span><strong>{displayNodeTitle(node)}</strong>{node.url&&<a href={node.url} target="_blank" rel="noopener noreferrer">Open source</a>}</div>
+      <label className="feedback-editor">What should Declan fix or investigate?<textarea value={text} onChange={e=>setText(e.target.value)} placeholder="Example: this node should link to SS3/18, but the reference is missing." autoFocus/></label>
+      <div className="modal-actions"><button type="button" onClick={onClose}>Cancel</button><button type="submit" disabled={saving||!text.trim()}>{saving?'Saving…':'Add to feedback queue'}</button></div>
+    </form>
   </div>;
 }
 
@@ -234,7 +267,10 @@ function ValidationDashboard({data,busy}){
   const [reviewDraft,setReviewDraft]=useState('');
   const [auditState,setAuditState]=useState(()=>readAuditState());
   const [linkReviewChoices,setLinkReviewChoices]=useState({});
+  const [feedbackQueue,setFeedbackQueue]=useState({items:[],runs:[],counts:{}});
+  const [feedbackBusy,setFeedbackBusy]=useState(false);
 
+  useEffect(()=>{ loadFeedbackQueue(); },[]);
   useEffect(()=>{
     if(!issues.length) return;
     if(!activeId || !issues.some(i=>i.id===activeId)) setActiveId((attentionIssues[0]||issues[0]).id);
@@ -258,6 +294,19 @@ function ValidationDashboard({data,busy}){
       ? 'The core graph is usable, but some links need review before treating every relationship as authoritative.'
       : 'There are hard quality failures. Use the explorer for diagnosis, not final reliance, until these are fixed.';
 
+  async function loadFeedbackQueue(){
+    try{ setFeedbackQueue(await fetchJson(API_BASE+'/feedback')); }
+    catch{ /* feedback is helpful but should not block the quality dashboard */ }
+  }
+  async function processFeedbackQueue(){
+    setFeedbackBusy(true);
+    try{
+      const result=await fetchJson(API_BASE+'/feedback/process',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({limit:3})});
+      await loadFeedbackQueue();
+      setFeedbackQueue(prev=>({...prev,last_process:result}));
+    }catch(err){ setFeedbackQueue(prev=>({...prev,last_error:err.message||String(err)})); }
+    finally{ setFeedbackBusy(false); }
+  }
   function openIssue(issue){
     setActiveId(issue.id);
     setSampleQuery('');
@@ -282,6 +331,8 @@ function ValidationDashboard({data,busy}){
         <div><span>Accepted</span><strong>{fmt(acceptedCount)}</strong></div>
       </div>
     </div>
+
+    <NodeFeedbackWorkflow queue={feedbackQueue} busy={feedbackBusy} onRefresh={loadFeedbackQueue} onProcess={processFeedbackQueue}/>
 
     <div className="quality-layout-v2">
       <main className="quality-issues" aria-label="Quality issues">
@@ -336,6 +387,27 @@ function ValidationDashboard({data,busy}){
         </>}
       </aside>
     </div>
+  </section>;
+}
+
+function NodeFeedbackWorkflow({queue,busy,onRefresh,onProcess}){
+  const items=queue?.items||[];
+  const runs=queue?.runs||[];
+  const pending=items.filter(i=>['pending','failed'].includes(i.status));
+  const recent=items.slice(-6).reverse();
+  return <section className="feedback-workflow quality-panel-card">
+    <div className="section-heading">
+      <div><span className="eyebrow">Node feedback</span><h3>Manual Codex repair queue</h3></div>
+      <div className="quality-actions"><button type="button" onClick={onRefresh}>Refresh</button><button type="button" onClick={onProcess} disabled={busy||!pending.length}>{busy?'Running…':`Run queue (${pending.length})`}</button></div>
+    </div>
+    <p className="workflow-copy">Right-click a graph node and add feedback. This queue sends pending items to an OpenClaw/Codex run only when you trigger it here.</p>
+    {queue?.last_error&&<div className="error">{queue.last_error}</div>}
+    {queue?.last_process&&<div className="feedback-run-summary"><strong>Last trigger:</strong> processed {fmt(queue.last_process.processed)} item(s). {queue.last_process.runs?.[0]?.result&&<span>{truncate(queue.last_process.runs[0].result,220)}</span>}</div>}
+    <div className="feedback-mini-grid"><div><span>Pending</span><strong>{fmt(pending.length)}</strong></div><div><span>Completed</span><strong>{fmt(queue?.counts?.completed||0)}</strong></div><div><span>Failed</span><strong>{fmt(queue?.counts?.failed||0)}</strong></div></div>
+    <div className="feedback-queue-list">
+      {recent.length?recent.map(item=><article key={item.id} className={`feedback-queue-item ${item.status}`}><span>{item.status}</span><strong>{displayNodeTitle(item.node||{})}</strong><p>{truncate(item.feedback,180)}</p>{item.last_result&&<small>{truncate(item.last_result,220)}</small>}</article>):<p className="empty-note">No node feedback has been queued yet.</p>}
+    </div>
+    {runs.length>0&&<details className="feedback-runs"><summary>Recent Codex runs</summary>{runs.slice().reverse().map(run=><article key={run.id}><span>{run.status}</span><strong>{run.feedback_id}</strong><p>{truncate(run.result||'',300)}</p></article>)}</details>}
   </section>;
 }
 
@@ -558,12 +630,13 @@ function checkPlainEnglish(c){
 }
 function metricLabel(k){return ({exact_html_duplicate_groups:'Exact duplicate groups',paragraph_vs_html_id_key_pairs:'Paragraph/HTML-id duplicates',ambiguous_doc_paragraph_groups_not_auto_merged:'Repeated paragraph numbers kept separate',missing_source_method:'Missing method',missing_confidence:'Missing confidence',missing_source_url:'Missing source URL',missing_evidence_text:'Missing evidence text',missing_extraction_run_id:'Missing run id',missing_evidence_status:'Missing evidence status',hard_edges_missing_evidence_or_url:'Hard links missing evidence',self_loops:'Self-loops',near_self_loop_sample_rows:'Near-self-loop examples',near_self_loop_sample_capped:'More examples exist',placeholder_reference_nodes:'Placeholder references',live_placeholder_reference_nodes:'Live unresolved targets',all_placeholder_reference_nodes:'All placeholder targets',orphan_placeholder_reference_nodes:'Stale/orphan placeholder targets',external_reference:'External references',rule_reference:'Rule references',hard_explicit_edges:'Hard links',soft_inferred_edges:'Soft links',evidence_status_direct_text:'Direct text evidence',evidence_status_document_metadata:'Document metadata evidence',evidence_status_html_structure:'HTML structure evidence',evidence_status_inferred:'Inferred evidence',edge_type:'Link type',source_method:'How found',extraction_method:'Extraction method',review_status:'Review status',evidence_status:'Evidence kind',edges:'Links',avg_confidence:'Average confidence',min_confidence:'Lowest confidence',max_confidence:'Highest confidence',sample_id:'Sample ID',review_id:'Review ID',suspect_403_links:'403 links',affected_references:'Affected references',node_type:'Node type',node_id:'Node ID',label:'Label',source_table:'Source table',source_pk:'Source key',title:'Title',target_id:'Target ID',target_type:'Target type',target_title:'Unresolved target',target_url:'Target URL',source_type:'Source type',source_title:'Source provision',source_text:'Original provision text',source_container_title:'Container',original_source_method:'Original method',source_url:'Source URL',degree:'Total links',out_degree:'Outgoing links',in_degree:'Incoming links',url:'URL',normative_force:'Force',obligations:'Obligations',pct:'Share',data_items:'Data items',templates:'Templates',datapoints:'Datapoints',source_documents:'Source documents',reporting_reference_edges:'Reporting references',data_items_without_templates:'Data items without templates',data_items_without_source_documents:'Data items without source documents',templates_without_datapoints:'Templates without datapoints',obligations_without_data_item_node:'Obligations without data item',missing_evidence_span:'Missing evidence span',low_confidence_under_60pct:'Low confidence <60%',extracted_references:'Extracted references',unresolved_references:'Unresolved references',resolved_without_added_edge:'Resolved without link'}[k]||human(k))}
 
-function Graph({graph,selected,detail,nodeTypes,relationshipTypes,relationshipFilters,availableEdgeTypes,onToggleNodeType,onToggleRelationship,onSelect,onOpen}){
+function Graph({graph,selected,detail,nodeTypes,relationshipTypes,relationshipFilters,availableEdgeTypes,onToggleNodeType,onToggleRelationship,onSelect,onOpen,onFeedback}){
   const fgRef=useRef(null);
   const wrapRef=useRef(null);
   const lastClickRef=useRef({id:null,time:0});
   const [hover,setHover]=useState(null);
   const [hoverEdge,setHoverEdge]=useState(null);
+  const [contextMenu,setContextMenu]=useState(null);
   const [graphSize,setGraphSize]=useState({width:0,height:0});
   const data=useMemo(()=>forceGraphData(graph,selected),[graph,selected?.id]);
   const graphDensity=forceGraphDensity(data);
@@ -621,7 +694,13 @@ function Graph({graph,selected,detail,nodeTypes,relationshipTypes,relationshipFi
     const node=data.nodes.find(x=>x.id===n.id);
     if(node) frameNode(fg,node);
   }
+  function openContextMenu(node,event){
+    event?.preventDefault?.();
+    const raw=node.raw||node;
+    setContextMenu({node:raw,x:event?.clientX||window.innerWidth/2,y:event?.clientY||window.innerHeight/2});
+  }
   function clickNode(node){
+    setContextMenu(null);
     const now=Date.now();
     const last=lastClickRef.current;
     if(last.id===node.id && now-last.time<420){ lastClickRef.current={id:null,time:0}; onOpen(node.raw||node); }
@@ -653,13 +732,16 @@ function Graph({graph,selected,detail,nodeTypes,relationshipTypes,relationshipFi
       linkCanvasObject={(edge,ctx,globalScale)=>drawGraphLink(edge,ctx,globalScale,selected)}
       linkCanvasObjectMode={()=>'after'}
       onNodeClick={clickNode}
+      onNodeRightClick={openContextMenu}
+      onBackgroundClick={()=>setContextMenu(null)}
       onNodeHover={node=>setHover(node?.raw||node||null)}
       onLinkHover={edge=>setHoverEdge(edge||null)}
       cooldownTicks={140}
       d3VelocityDecay={0.32}
       warmupTicks={80}
     />
-    {hover&&<div className="node-tip forcegraph-tip"><span>{materialLabel(materialType(hover))}</span><strong>{displayNodeTitle(hover)}</strong><small>{truncate(hover.text||hover.url||'',180)}</small><small>Click to inspect · double-click to open/drill</small></div>}
+    {contextMenu&&<div className="node-context-menu" style={{left:contextMenu.x,top:contextMenu.y}}><button type="button" onClick={()=>{onFeedback?.(contextMenu.node);setContextMenu(null);}}>Provide feedback on this node</button><button type="button" onClick={()=>{onOpen(contextMenu.node);setContextMenu(null);}}>Open / drill into node</button></div>}
+    {hover&&<div className="node-tip forcegraph-tip"><span>{materialLabel(materialType(hover))}</span><strong>{displayNodeTitle(hover)}</strong><small>{truncate(hover.text||hover.url||'',180)}</small><small>Click to inspect · double-click to open/drill · right-click for feedback</small></div>}
     {hoverEdge&&<div className="node-tip forcegraph-tip edge-tip"><span>{edgeTooltip(hoverEdge,selected?.id)}</span><strong>{relationLabel(hoverEdge.edge_type)}</strong><small>{truncate(edgeTerm(hoverEdge)||edgeSummary(hoverEdge,selected?.id),180)}</small></div>}
     <Legend active={nodeTypes} relationshipTypes={relationshipTypes} relationshipFilters={relationshipFilters} availableEdgeTypes={availableEdgeTypes} onToggle={onToggleNodeType} onToggleRelationship={onToggleRelationship} />
     <div className="zoom"><button title="Zoom in" onClick={()=>zoom(1.18)}>＋</button><button title="Zoom out" onClick={()=>zoom(.86)}>−</button><button title="Fit graph" onClick={fit}>⤢</button><button title="Focus selected" onClick={()=>focusNode(detail||selected)}>◎</button></div>
