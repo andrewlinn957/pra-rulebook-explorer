@@ -74,7 +74,7 @@ test('selected-node graph layout biases relationship groups into compass lanes',
 });
 
 test('legend exposes clickable node and edge type filters', () => {
-  assert.match(source, /function Legend\(\{active,relationshipTypes,relationshipFilters,availableEdgeTypes,onToggle,onToggleRelationship\}\)/);
+  assert.match(source, /function Legend\(\{active,materialFilters=MATERIAL_FILTERS,relationshipTypes,relationshipFilters,availableEdgeTypes,onToggle,onToggleRelationship\}\)/);
   assert.match(source, /onClick=\{\(\)=>onToggle\(t\)\}/);
   assert.match(source, /onClick=\{\(\)=>onToggleRelationship\(t\)\}/);
   assert.match(source, /legend-title">Node types/);

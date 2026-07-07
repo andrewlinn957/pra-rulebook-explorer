@@ -29,7 +29,7 @@ test('reporting tab uses compact side panels around the graph', () => {
   assert.match(styles, /\.reporting-layout\{[^}]*grid-template-columns:248px minmax\(0,1fr\) 320px/);
   assert.match(styles, /\.reporting-toolbar\{[^}]*padding:8px 10px/);
   assert.match(styles, /\.reporting-rail\{[^}]*padding:8px/);
-  assert.match(styles, /\.reporting-detail-pane \.mini-metrics\{[^}]*grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
+  assert.match(styles, /\.reporting-nav-back\{/);
 });
 
 test('reporting graph navigation and inspector match the main graph conventions', () => {
@@ -42,11 +42,26 @@ test('reporting graph navigation and inspector match the main graph conventions'
 
 test('reporting inspector opens with understandable metadata and original data links', () => {
   assert.match(source, /function ReportingMetadata\(\{node,edges,graph\}\)/);
-  assert.match(source, /Original data/);
+  assert.match(source, /Useful links/);
   assert.match(source, /reportingMetadataRows\(node\)/);
-  assert.match(source, /reportingOriginalLinks\(node,edges,graph\)/);
+  assert.match(source, /reportingUsefulLinks\(node,edges,graph\)/);
   assert.match(source, /Data item code/);
-  assert.match(source, /Open original/);
+  assert.match(source, /Open source/);
+  assert.doesNotMatch(source, /local degree/);
+});
+
+test('reporting drilldown rail is contextual rather than useless summary counts', () => {
+  assert.doesNotMatch(source, /className="reporting-stats"/);
+  assert.match(source, /function ReportingRail\(\{roots,selectedReturn,detail,graph,onOpen,onDrill,onBackToOverview\}\)/);
+  assert.match(source, /Back to returns overview/);
+  assert.match(source, /Back to return/);
+  assert.match(source, /Sample datapoints/);
+});
+
+test('reporting graph keeps return as selected graph root while inspecting child nodes', () => {
+  assert.match(source, /const reportingRoot=useMemo/);
+  assert.match(source, /selected=\{reportingRoot\} detail=\{detail\}/);
+  assert.match(source, /function reportingMaterialFilters\(graph\)/);
 });
 
 test('unresolved link review captures actionable findings', () => {
