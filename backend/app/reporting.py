@@ -70,8 +70,7 @@ def reporting_overview_graph(
         if include_datapoints:
             template_ids = [e["target_node_id"] for e in child_edges if e["edge_type"] == "USES_TEMPLATE"]
             if template_ids:
-                datapoint_edges = _reporting_edges_for_sources(conn, template_ids, ["HAS_DATAPOINT"], min(child_limit, 1200))
-                _add_reporting_edges(conn, datapoint_edges, nodes, edges)
+                _add_grouped_datapoints(conn, template_ids, nodes, edges)
 
     available: dict[str, int] = {}
     for edge in edges.values():
@@ -159,6 +158,72 @@ def _get_graph_nodes(conn: sqlite3.Connection, node_ids: list[str]) -> list[dict
         node_ids,
     ).fetchall()
     return [_graph_node(row) for row in rows]
+
+
+def _add_grouped_datapoints(conn: sqlite3.Connection, template_ids: list[str], nodes: dict[str, dict[str, Any]], edges: dict[str, dict[str, Any]]) -> None:
+    if not template_ids:
+        return
+    rows = conn.execute(
+        f"""
+        SELECT e.source_node_id AS template_id,
+               COUNT(*) AS datapoint_count
+        FROM graph_edge e
+        WHERE e.source_node_id IN ({','.join('?' for _ in template_ids)})
+          AND e.edge_type='HAS_DATAPOINT'
+        GROUP BY e.source_node_id
+        """,
+        template_ids,
+    ).fetchall()
+    for row in rows:
+        count = int(row["datapoint_count"] or 0)
+        if count <= 0:
+            continue
+        template_id = row["template_id"]
+        group_id = f"datapoint_group:{template_id}"
+        labels = _sample_datapoint_labels(conn, template_id, limit=8)
+        nodes[group_id] = {
+            "id": group_id,
+            "node_type": "DataPointGroup",
+            "stable_key": group_id,
+            "title": f"{count:,} datapoints",
+            "text": f"Datapoints reported through {nodes.get(template_id, {}).get('title', template_id)}",
+            "url": "",
+            "metadata": {
+                "reporting_role": "datapoint_summary",
+                "template_id": template_id,
+                "datapoint_count": count,
+                "sample_datapoints": labels,
+            },
+            "degree": max(1, min(50, count)),
+        }
+        edge_id = f"summary:{template_id}:datapoints"
+        edges[edge_id] = {
+            "id": edge_id,
+            "from_node_id": template_id,
+            "to_node_id": group_id,
+            "edge_type": "SUMMARISES_DATAPOINTS",
+            "source_method": "reporting_datapoint_summary",
+            "confidence": 1,
+            "evidence_text": f"{count:,} datapoints grouped for screen readability",
+            "source_url": "",
+            "metadata": {"datapoint_count": count, "sample_datapoints": labels},
+        }
+
+
+def _sample_datapoint_labels(conn: sqlite3.Connection, template_id: str, *, limit: int = 8) -> list[str]:
+    rows = conn.execute(
+        """
+        SELECT DISTINCT dp.label
+        FROM graph_edge e
+        JOIN graph_node dp ON dp.node_id=e.target_node_id
+        WHERE e.source_node_id=? AND e.edge_type='HAS_DATAPOINT'
+          AND COALESCE(dp.label,'') <> ''
+        ORDER BY dp.label
+        LIMIT ?
+        """,
+        (template_id, limit),
+    ).fetchall()
+    return [row["label"] for row in rows]
 
 
 def _ui_reporting_node(node: dict[str, Any], *, role: str | None = None) -> dict[str, Any]:

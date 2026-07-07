@@ -74,7 +74,7 @@ class ReportingOverviewGraphTests(unittest.TestCase):
         self.assertEqual(graph["available_edge_types"]["USES_TEMPLATE"], 1)
         self.assertEqual(graph["available_edge_types"]["REFERENCES_RULE"], 1)
 
-    def test_overview_excludes_datapoints_by_default_but_can_include_them(self):
+    def test_overview_excludes_datapoints_by_default_but_can_summarise_them(self):
         conn = self.make_conn()
         self.add_node(conn, "data_item:PRA110", "DataItem", "PRA110")
         self.add_node(conn, "template:PRA110", "Template", "PRA110 template")
@@ -86,7 +86,8 @@ class ReportingOverviewGraphTests(unittest.TestCase):
         with_dp = reporting_overview_graph(conn, q="PRA110", include_datapoints=True)
 
         self.assertNotIn("datapoint:1", {n["id"] for n in without["nodes"]})
-        self.assertIn("datapoint:1", {n["id"] for n in with_dp["nodes"]})
+        self.assertIn("datapoint_group:template:PRA110", {n["id"] for n in with_dp["nodes"]})
+        self.assertNotIn("datapoint:1", {n["id"] for n in with_dp["nodes"]})
 
 
 if __name__ == "__main__":
