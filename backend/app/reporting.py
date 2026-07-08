@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from collections import deque
 from typing import Any
@@ -61,6 +62,7 @@ def reporting_overview_graph(
     edges: dict[str, dict[str, Any]] = {}
     if root_ids and selected_return:
         child_edges = _reporting_edges_for_sources(conn, root_ids, sorted(REPORTING_OVERVIEW_CHILD_EDGES), child_limit)
+        child_edges = _filter_current_reporting_source_documents(conn, child_edges)
         _add_reporting_edges(conn, child_edges, nodes, edges)
 
         source_ids = [e["target_node_id"] for e in child_edges if e["edge_type"] == "EVIDENCED_BY"]
@@ -150,6 +152,70 @@ def _add_reporting_edges(conn: sqlite3.Connection, rows: list[dict[str, Any]], n
     for row in rows:
         if row["source_node_id"] in nodes and row["target_node_id"] in nodes:
             edges[row["edge_id"]] = _ui_reporting_edge(row)
+
+
+def _filter_current_reporting_source_documents(conn: sqlite3.Connection, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Hide superseded source-document versions from selected-return graphs.
+
+    Some PRA reporting pages retain historical PDFs alongside the current one.
+    For versioned Q&A documents, showing every superseded file creates duplicate
+    evidence nodes and makes the graph look contradictory. Keep the highest
+    explicit version in each Q&A document family and drop unversioned/older
+    versions from the visible reporting graph.
+    """
+    source_ids = sorted({r["target_node_id"] for r in rows if r.get("edge_type") == "EVIDENCED_BY"})
+    if not source_ids:
+        return rows
+    try:
+        meta_rows = conn.execute(
+            f"""
+            SELECT n.node_id,n.label,n.properties_json,sd.title AS source_title,sd.url AS source_url,sd.file_type AS source_file_type
+            FROM graph_node n
+            LEFT JOIN source_document sd ON sd.source_id=n.source_pk OR sd.source_id=n.node_id
+            WHERE n.node_id IN ({','.join('?' for _ in source_ids)})
+              AND n.node_type='SourceDocument'
+            """,
+            source_ids,
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return rows
+
+    families: dict[str, list[tuple[int, str]]] = {}
+    for row in meta_rows:
+        props = _json(row["properties_json"] or "{}")
+        title = str(row["source_title"] or row["label"] or props.get("title") or "")
+        url = str(row["source_url"] or props.get("url") or "")
+        family = _versioned_q_and_a_family(title, url)
+        if not family:
+            continue
+        families.setdefault(family, []).append((_source_document_version(url), row["node_id"]))
+
+    drop: set[str] = set()
+    for versions in families.values():
+        if len(versions) <= 1:
+            continue
+        current_version = max(version for version, _ in versions)
+        current_ids = {node_id for version, node_id in versions if version == current_version}
+        drop.update(node_id for _, node_id in versions if node_id not in current_ids)
+    if not drop:
+        return rows
+    return [r for r in rows if r.get("target_node_id") not in drop and r.get("source_node_id") not in drop]
+
+
+def _versioned_q_and_a_family(title: str, url: str) -> str:
+    hay = f"{title} {url}".lower().replace("&amp;", "&")
+    if "q&a" not in hay and "q-and-a" not in hay and "q-and-as" not in hay:
+        return ""
+    path = url.split("#", 1)[0].split("?", 1)[0].rstrip("/")
+    basename = path.rsplit("/", 1)[-1].lower()
+    if not basename:
+        return re.sub(r"\s+", " ", title.lower()).strip()
+    return re.sub(r"-v\d+(?=\.[a-z0-9]+$)", "", basename)
+
+
+def _source_document_version(url: str) -> int:
+    match = re.search(r"-v(\d+)(?=\.[a-z0-9]+(?:[?#]|$))", url.lower())
+    return int(match.group(1)) if match else 0
 
 
 def _get_graph_nodes(conn: sqlite3.Connection, node_ids: list[str]) -> list[dict[str, Any]]:

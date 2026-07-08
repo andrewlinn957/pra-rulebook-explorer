@@ -137,6 +137,32 @@ class ReportingOverviewGraphTests(unittest.TestCase):
         self.assertIn("datapoint_group:template:PRA110", {n["id"] for n in with_dp["nodes"]})
         self.assertNotIn("datapoint:1", {n["id"] for n in with_dp["nodes"]})
 
+    def test_selected_return_keeps_only_current_pra110_q_and_a_source_document(self):
+        conn = self.make_conn()
+        self.add_node(conn, "data_item:PRA110", "DataItem", "PRA110")
+        versions = [
+            ("source:qna-unversioned", "https://www.bankofengland.co.uk/-/media/boe/files/prudential-regulation/regulatory-reporting/banking/pra110-reporting-templates-and-instructions-q-and-as.pdf"),
+            ("source:qna-v4", "https://www.bankofengland.co.uk/-/media/boe/files/prudential-regulation/regulatory-reporting/banking/pra110-reporting-templates-and-instructions-q-and-as-v4.pdf"),
+            ("source:qna-v6", "https://www.bankofengland.co.uk/-/media/boe/files/prudential-regulation/regulatory-reporting/banking/pra110-reporting-templates-and-instructions-q-and-as-v6.pdf"),
+            ("source:qna-v7", "https://www.bankofengland.co.uk/-/media/boe/files/prudential-regulation/regulatory-reporting/banking/pra110-reporting-templates-and-instructions-q-and-as-v7.pdf"),
+        ]
+        for node_id, url in versions:
+            self.add_node(conn, node_id, "SourceDocument", "PRA110 reporting template and instructions: Q&As")
+            conn.execute(
+                "INSERT INTO source_document(source_id,title,url,file_type) VALUES (?,?,?,?)",
+                (node_id, "PRA110 reporting template and instructions: Q&As", url, "pdf"),
+            )
+            self.add_edge(conn, f"edge:{node_id}", "data_item:PRA110", node_id, "EVIDENCED_BY")
+
+        graph = reporting_overview_graph(conn, selected_return="PRA110")
+
+        ids = {n["id"] for n in graph["nodes"]}
+        self.assertIn("source:qna-v7", ids)
+        self.assertNotIn("source:qna-unversioned", ids)
+        self.assertNotIn("source:qna-v4", ids)
+        self.assertNotIn("source:qna-v6", ids)
+        self.assertEqual([e["to_node_id"] for e in graph["edges"] if e["edge_type"] == "EVIDENCED_BY"], ["source:qna-v7"])
+
     def test_selected_return_template_nodes_include_source_template_links(self):
         conn = self.make_conn()
         self.add_node(conn, "data_item:COR011", "DataItem", "COR011")
