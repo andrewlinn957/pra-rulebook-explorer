@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import uuid
 from datetime import datetime, timezone
@@ -83,13 +84,22 @@ def create_feedback(root: Path, *, node: dict[str, Any], feedback: str, page_url
 
 
 def list_feedback(root: Path) -> dict[str, Any]:
-    items = _read_jsonl(_queue_path(root))
+    items = [_normalise_item_for_display(item) for item in _read_jsonl(_queue_path(root))]
     runs = _read_jsonl(_runs_path(root))
     counts: dict[str, int] = {}
     for item in items:
         status = item.get("status", "unknown")
         counts[status] = counts.get(status, 0) + 1
     return {"items": items, "runs": runs[-20:], "counts": counts}
+
+
+def _normalise_item_for_display(item: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(item.get("last_result"), str):
+        return item
+    display = _extract_text_result(item["last_result"])
+    if display == item["last_result"]:
+        return item
+    return {**item, "last_result": display}
 
 
 def _prompt_for(item: dict[str, Any]) -> str:
@@ -120,15 +130,86 @@ User feedback:
 def _extract_result(completed: subprocess.CompletedProcess[str]) -> str:
     text = (completed.stdout or "").strip()
     if text:
-        try:
-            payload = json.loads(text)
-            for key in ("reply", "message", "content", "output"):
-                if payload.get(key):
-                    return str(payload[key])
-        except json.JSONDecodeError:
-            pass
-        return text[-4000:]
+        return _extract_text_result(text)
     return (completed.stderr or "").strip()[-4000:]
+
+
+def _extract_text_result(text: str) -> str:
+    text = text.strip()
+    for candidate in _json_candidates(text):
+        try:
+            payload = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        extracted = _assistant_text_from_payload(payload)
+        if extracted:
+            return extracted[-4000:]
+    fragment = _assistant_text_from_json_fragment(text)
+    if fragment:
+        return fragment[-4000:]
+    return text[-4000:]
+
+
+def _assistant_text_from_json_fragment(text: str) -> str:
+    for key in ("finalAssistantVisibleText", "finalAssistantRawText"):
+        match = re.search(r'"' + key + r'"\s*:\s*"((?:\\.|[^"\\])*)"', text, flags=re.S)
+        if not match:
+            continue
+        try:
+            return json.loads('"' + match.group(1) + '"')
+        except json.JSONDecodeError:
+            return match.group(1)
+    return ""
+
+
+def _json_candidates(text: str) -> list[str]:
+    candidates = [text]
+    candidates.extend(line.strip() for line in text.splitlines() if line.strip().startswith("{") and line.strip().endswith("}"))
+    first = text.find("{")
+    last = text.rfind("}")
+    if first >= 0 and last > first:
+        candidates.append(text[first:last + 1])
+    return candidates
+
+
+def _assistant_text_from_payload(payload: Any) -> str:
+    if isinstance(payload, str):
+        return payload
+    if isinstance(payload, list):
+        for item in reversed(payload):
+            extracted = _assistant_text_from_payload(item)
+            if extracted:
+                return extracted
+        return ""
+    if not isinstance(payload, dict):
+        return ""
+    for key in (
+        "finalAssistantVisibleText",
+        "finalAssistantRawText",
+        "reply",
+        "message",
+        "content",
+        "output",
+        "result",
+        "text",
+    ):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            if key == "result" and value.strip().startswith("{"):
+                nested = _extract_text_result(value)
+                if nested:
+                    return nested
+            return value.strip()
+        if isinstance(value, (dict, list)):
+            extracted = _assistant_text_from_payload(value)
+            if extracted:
+                return extracted
+    for value in payload.values():
+        if isinstance(value, (dict, list)):
+            extracted = _assistant_text_from_payload(value)
+            if extracted:
+                return extracted
+    return ""
 
 
 def process_feedback_queue(

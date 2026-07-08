@@ -62,6 +62,54 @@ class NodeFeedbackTests(unittest.TestCase):
             self.assertEqual(queued["items"][0]["status"], "completed")
             self.assertEqual(queued["items"][0]["last_result"], "Fixed and tested.")
 
+
+    def test_process_feedback_queue_prefers_openclaw_final_visible_text(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            create_feedback(root, node={"id": "node-1", "title": "Node"}, feedback="Fix this")
+            payload = {
+                "status": "completed",
+                "result": {
+                    "prompt": "Return a concise summary of what you did",
+                    "finalAssistantVisibleText": "Actual concise fix summary.",
+                    "finalAssistantRawText": "Raw concise fix summary.",
+                },
+            }
+
+            def fake_run(cmd, **kwargs):
+                return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(payload), stderr="")
+
+            result = process_feedback_queue(root, runner=fake_run)
+
+            self.assertEqual(result["runs"][0]["result"], "Actual concise fix summary.")
+            self.assertEqual(list_feedback(root)["items"][0]["last_result"], "Actual concise fix summary.")
+
+    def test_list_feedback_normalises_previous_openclaw_json_results(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            item = create_feedback(root, node={"id": "node-1", "title": "Node"}, feedback="Fix this")
+            queued_path = root / "outputs/node-feedback/feedback-queue.jsonl"
+            item["status"] = "completed"
+            item["last_result"] = json.dumps({
+                "prompt": "Return a concise summary of what you did",
+                "finalAssistantVisibleText": "Recovered display summary.",
+            })
+            queued_path.write_text(json.dumps(item) + "\n", encoding="utf-8")
+
+            self.assertEqual(list_feedback(root)["items"][0]["last_result"], "Recovered display summary.")
+
+
+    def test_list_feedback_recovers_visible_text_from_truncated_openclaw_fragment(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            item = create_feedback(root, node={"id": "node-1", "title": "Node"}, feedback="Fix this")
+            queued_path = root / "outputs/node-feedback/feedback-queue.jsonl"
+            item["status"] = "completed"
+            item["last_result"] = 'runner prompt text", "finalAssistantVisibleText": "Recovered from fragment.\nAll passed.", "finalAssistantRawText": "Raw"}'
+            queued_path.write_text(json.dumps(item) + "\n", encoding="utf-8")
+
+            self.assertEqual(list_feedback(root)["items"][0]["last_result"], "Recovered from fragment.\nAll passed.")
+
     def test_process_feedback_queue_reports_failed_openclaw_run(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

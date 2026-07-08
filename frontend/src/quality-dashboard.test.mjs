@@ -20,7 +20,7 @@ test('quality tab is a queue-first workbench rather than a dashboard of cards', 
 });
 
 test('quality workbench styles reserve most of the screen for the workflow', () => {
-  assert.match(styles, /\.quality-workbench/);
+  assert.match(styles, /\.quality-workbench\{[^}]*padding:8px 14px 14px/);
   assert.match(styles, /\.quality-workspace\{[^}]*grid-template-columns:124px minmax\(0,1fr\)/);
   assert.match(styles, /\.quality-queue-rail/);
   assert.match(styles, /\.quality-workflow/);
