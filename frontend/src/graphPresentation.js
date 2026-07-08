@@ -84,9 +84,23 @@ function reportingArtefactDisplayTitle(node, fallbackTitle) {
   const fileType = clean(metadata.file_type || metadata.source_file_type || '').toLowerCase();
   if (node?.node_type !== 'SourceDocument' || !['xml', 'xsd'].includes(fileType)) return '';
   const title = fallbackTitle || clean(node?.title) || clean(metadata.source_title);
-  const packageLabel = clean(metadata.taxonomy_package || metadata.package_version || reportingPackageLabelFromUrl(node?.url || metadata.source_url || metadata.url || ''));
-  if (!title || !packageLabel || title.includes(`· ${packageLabel}`)) return '';
-  return `${title} · ${packageLabel}`;
+  const match = title.match(/^([a-z]+\d+)(?:-(.+?))?\.(xml|xsd)$/i);
+  if (!match) return '';
+  const returnCode = match[1].toUpperCase();
+  const role = reportingArtefactRole(match[2] || '', match[3] || fileType);
+  return `${returnCode} ${role} · current taxonomy`;
+}
+
+function reportingArtefactRole(suffix, extension) {
+  const key = clean(suffix).toLowerCase();
+  if (extension.toLowerCase() === 'xsd' && !key) return 'taxonomy schema';
+  if (key === 'pre') return 'presentation structure';
+  if (key === 'lab-en') return 'English labels';
+  if (key === 'find-prec') return 'filing precedence rules';
+  if (key === 'val') return 'validation schema';
+  if (key === 'val-severity') return 'validation severity rules';
+  if (key) return `${key.replace(/-/g, ' ')} artefact`;
+  return `${extension.toUpperCase()} artefact`;
 }
 
 export function displayNodeTitle(node) {

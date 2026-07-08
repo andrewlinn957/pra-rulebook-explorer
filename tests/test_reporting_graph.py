@@ -137,6 +137,31 @@ class ReportingOverviewGraphTests(unittest.TestCase):
         self.assertIn("datapoint_group:template:PRA110", {n["id"] for n in with_dp["nodes"]})
         self.assertNotIn("datapoint:1", {n["id"] for n in with_dp["nodes"]})
 
+    def test_selected_return_keeps_only_current_taxonomy_package_source_documents(self):
+        conn = self.make_conn()
+        self.add_node(conn, "data_item:PRA110", "DataItem", "PRA110")
+        packages = [
+            ("source:pra110-v36", "pra110.xsd", "https://www.bankofengland.co.uk/example/boe-banking-v360.zip#Banking_3.6.0/path/pra110.xsd"),
+            ("source:pra110-v37", "pra110.xsd", "https://www.bankofengland.co.uk/example/boe-banking-370-hotfix.zip#boe-banking-370-hotfix/path/pra110.xsd"),
+            ("source:pra110-v40", "pra110.xsd", "https://www.bankofengland.co.uk/example/boebanking400.zip#Banking_4.0.0/path/pra110.xsd"),
+            ("source:pra110-label-v40", "pra110-lab-en.xml", "https://www.bankofengland.co.uk/example/boebanking400.zip#Banking_4.0.0/path/pra110-lab-en.xml"),
+        ]
+        for node_id, label, url in packages:
+            self.add_node(conn, node_id, "SourceDocument", label)
+            conn.execute(
+                "INSERT INTO source_document(source_id,title,url,file_type) VALUES (?,?,?,?)",
+                (node_id, label, url, "xsd" if label.endswith(".xsd") else "xml"),
+            )
+            self.add_edge(conn, f"edge:{node_id}", "data_item:PRA110", node_id, "EVIDENCED_BY")
+
+        graph = reporting_overview_graph(conn, selected_return="PRA110")
+
+        ids = {n["id"] for n in graph["nodes"]}
+        self.assertIn("source:pra110-v40", ids)
+        self.assertIn("source:pra110-label-v40", ids)
+        self.assertNotIn("source:pra110-v36", ids)
+        self.assertNotIn("source:pra110-v37", ids)
+
     def test_selected_return_keeps_only_current_pra110_q_and_a_source_document(self):
         conn = self.make_conn()
         self.add_node(conn, "data_item:PRA110", "DataItem", "PRA110")

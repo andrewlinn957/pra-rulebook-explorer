@@ -157,11 +157,11 @@ def _add_reporting_edges(conn: sqlite3.Connection, rows: list[dict[str, Any]], n
 def _filter_current_reporting_source_documents(conn: sqlite3.Connection, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Hide superseded source-document versions from selected-return graphs.
 
-    Some PRA reporting pages retain historical PDFs alongside the current one.
-    For versioned Q&A documents, showing every superseded file creates duplicate
+    Some PRA reporting pages retain historical PDFs and taxonomy packages
+    alongside the current one. Showing every superseded file creates duplicate
     evidence nodes and makes the graph look contradictory. Keep the highest
-    explicit version in each Q&A document family and drop unversioned/older
-    versions from the visible reporting graph.
+    explicit Q&A version and the latest explicit taxonomy package for XML/XSD
+    artefacts, then drop older versions from the visible reporting graph.
     """
     source_ids = sorted({r["target_node_id"] for r in rows if r.get("edge_type") == "EVIDENCED_BY"})
     if not source_ids:
@@ -180,15 +180,17 @@ def _filter_current_reporting_source_documents(conn: sqlite3.Connection, rows: l
     except sqlite3.OperationalError:
         return rows
 
+    node_meta: dict[str, dict[str, Any]] = {}
     families: dict[str, list[tuple[int, str]]] = {}
     for row in meta_rows:
         props = _json(row["properties_json"] or "{}")
         title = str(row["source_title"] or row["label"] or props.get("title") or "")
         url = str(row["source_url"] or props.get("url") or "")
+        file_type = str(row["source_file_type"] or props.get("file_type") or "").lower()
+        node_meta[row["node_id"]] = {"title": title, "url": url, "file_type": file_type}
         family = _versioned_q_and_a_family(title, url)
-        if not family:
-            continue
-        families.setdefault(family, []).append((_source_document_version(url), row["node_id"]))
+        if family:
+            families.setdefault(family, []).append((_source_document_version(url), row["node_id"]))
 
     drop: set[str] = set()
     for versions in families.values():
@@ -197,6 +199,24 @@ def _filter_current_reporting_source_documents(conn: sqlite3.Connection, rows: l
         current_version = max(version for version, _ in versions)
         current_ids = {node_id for version, node_id in versions if version == current_version}
         drop.update(node_id for _, node_id in versions if node_id not in current_ids)
+
+    taxonomy_versions_by_source: dict[str, list[tuple[tuple[int, int, int, int], str]]] = {}
+    for row in rows:
+        if row.get("edge_type") != "EVIDENCED_BY":
+            continue
+        meta = node_meta.get(row.get("target_node_id"))
+        if not meta or meta["file_type"] not in {"xml", "xsd"}:
+            continue
+        version = _taxonomy_package_version(meta["url"])
+        if version:
+            taxonomy_versions_by_source.setdefault(row["source_node_id"], []).append((version, row["target_node_id"]))
+    for versions in taxonomy_versions_by_source.values():
+        if len(versions) <= 1:
+            continue
+        current_version = max(version for version, _ in versions)
+        current_ids = {node_id for version, node_id in versions if version == current_version}
+        drop.update(node_id for _, node_id in versions if node_id not in current_ids)
+
     if not drop:
         return rows
     return [r for r in rows if r.get("target_node_id") not in drop and r.get("source_node_id") not in drop]
@@ -216,6 +236,17 @@ def _versioned_q_and_a_family(title: str, url: str) -> str:
 def _source_document_version(url: str) -> int:
     match = re.search(r"-v(\d+)(?=\.[a-z0-9]+(?:[?#]|$))", url.lower())
     return int(match.group(1)) if match else 0
+
+
+def _taxonomy_package_version(url: str) -> tuple[int, int, int, int] | None:
+    text = url.lower()
+    match = re.search(r"banking[_-](\d+)\.(\d+)\.(\d+)", text)
+    if match:
+        return (int(match.group(1)), int(match.group(2)), int(match.group(3)), 1 if "hotfix" in text else 0)
+    match = re.search(r"banking[-_]?v?(\d)(\d)(\d)", text)
+    if match:
+        return (int(match.group(1)), int(match.group(2)), int(match.group(3)), 1 if "hotfix" in text else 0)
+    return None
 
 
 def _get_graph_nodes(conn: sqlite3.Connection, node_ids: list[str]) -> list[dict[str, Any]]:

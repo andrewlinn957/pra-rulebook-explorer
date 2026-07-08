@@ -50,21 +50,17 @@ describe('graph presentation helpers', () => {
     assert.equal(displayNodeTitle(node), 'C05.01 · Transitional provisions');
   });
 
-  it('disambiguates reporting XML and XSD artefacts by taxonomy package', () => {
+  it('gives reporting XML and XSD artefacts user-facing current taxonomy names', () => {
     const base = {
       node_type: 'SourceDocument',
-      title: 'pra110-pre.xml',
       metadata: { file_type: 'xml' },
+      url: 'https://www.bankofengland.co.uk/-/media/boe/files/prudential-regulation/regulatory-reporting/banking/2026/february/boebanking400.zip#Banking_4.0.0/www.bankofengland.co.uk/data/xbrl/fws/banking/liquidity_pillarii/2019-08-14/mod/pra110-pre.xml',
     };
 
-    assert.equal(displayNodeTitle({
-      ...base,
-      url: 'https://www.bankofengland.co.uk/-/media/boe/files/prudential-regulation/regulatory-reporting/banking/2026/february/boebanking400.zip#Banking_4.0.0/www.bankofengland.co.uk/data/xbrl/fws/banking/liquidity_pillarii/2019-08-14/mod/pra110-pre.xml',
-    }), 'pra110-pre.xml · Banking 4.0.0');
-    assert.equal(displayNodeTitle({
-      ...base,
-      url: 'https://www.bankofengland.co.uk/-/media/boe/files/prudential-regulation/regulatory-reporting/banking/2025/boe-banking-370-hotfix.zip#boe-banking-370-hotfix/www.bankofengland.co.uk/data/xbrl/fws/banking/liquidity_pillarii/2019-08-14/mod/pra110-pre.xml',
-    }), 'pra110-pre.xml · boe-banking-370-hotfix');
+    assert.equal(displayNodeTitle({ ...base, title: 'pra110-pre.xml' }), 'PRA110 presentation structure · current taxonomy');
+    assert.equal(displayNodeTitle({ ...base, title: 'pra110-lab-en.xml' }), 'PRA110 English labels · current taxonomy');
+    assert.equal(displayNodeTitle({ ...base, title: 'pra110-find-prec.xml' }), 'PRA110 filing precedence rules · current taxonomy');
+    assert.equal(displayNodeTitle({ ...base, title: 'pra110.xsd', metadata: { file_type: 'xsd' } }), 'PRA110 taxonomy schema · current taxonomy');
   });
 
   it('identifies parents and children relative to the selected node through contains edges', () => {
