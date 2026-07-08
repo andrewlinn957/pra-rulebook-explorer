@@ -109,6 +109,8 @@ test('unverified link review captures actionable findings without nested workflo
   assert.match(source, /External valid/);
   assert.match(source, /Broken/);
   assert.match(source, /Not a link/);
+  assert.match(source, /Not relevant/);
+  assert.match(source, /No longer valid/);
   assert.match(source, /Rulebook target, if resolved internally/);
   assert.match(source, /Replacement URL, if needed/);
   assert.match(source, /Short finding/);

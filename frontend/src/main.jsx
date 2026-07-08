@@ -687,7 +687,7 @@ function UnverifiedLinksWorksurface({rows,query,setQuery,selected,setSelected,ch
             {selected.target_url&&<a href={selected.target_url} target="_blank" rel="noopener noreferrer">Open target</a>}
           </div>
           <div className="decision-strip">
-            {[['resolved','Resolved'],['external-valid','External valid'],['broken','Broken'],['not-a-link','Not a link']].map(([value,label])=><button key={value} type="button" className={draft.decision===value?'on':''} onClick={()=>setDraft({decision:value})}>{label}</button>)}
+            {[['resolved','Resolved'],['external-valid','External valid'],['broken','Broken'],['not-relevant','Not relevant'],['no-longer-valid','No longer valid'],['not-a-link','Not a link']].map(([value,label])=><button key={value} type="button" className={draft.decision===value?'on':''} onClick={()=>setDraft({decision:value})}>{label}</button>)}
           </div>
           <div className="decision-fields">
             <input value={draft.rulebook_target||''} onChange={e=>setDraft({rulebook_target:e.target.value})} placeholder="Rulebook target, if resolved internally"/>
