@@ -93,6 +93,16 @@ test('reporting graph distinguishes templates instructions and XBRL sources visu
   assert.match(styles, /\.legend i\.legend-node\.xbrl-source/);
 });
 
+
+test('node feedback result can expand to the full saved output', () => {
+  assert.match(source, /function ExpandableResult\(/);
+  assert.match(source, /Show full result/);
+  assert.match(source, /Hide full result/);
+  assert.match(source, /className=\{`result-cell \$\{open\?'open':'collapsed'\}`\}/);
+  assert.match(styles, /\.result-cell\.collapsed small\{[^}]*max-height:54px/);
+  assert.match(styles, /\.result-cell\.open small\{[^}]*max-height:none/);
+});
+
 test('unverified link review captures actionable findings without nested workflows', () => {
   assert.match(source, /function UnverifiedLinksWorksurface/);
   assert.match(source, /Resolved/);

@@ -626,10 +626,21 @@ function FeedbackQueueWorksurface({queue,busy,onRefresh,onProcess}){
         <b>{item.status}</b>
         <strong>{displayNodeTitle(item.node||{})}</strong>
         <p>{truncate(item.feedback,260)}</p>
-        <small>{item.last_result?truncate(item.last_result,260):'—'}</small>
+        <ExpandableResult text={item.last_result||''}/>
       </article>):<div className="empty-workflow">No node feedback queued.</div>}
     </div>
     {(queue?.runs||[]).length>0&&<details className="run-history"><summary>Run history</summary>{queue.runs.slice().reverse().slice(0,8).map(run=><p key={run.id}><b>{run.status}</b><span>{run.feedback_id}</span>{truncate(run.result||'',260)}</p>)}</details>}
+  </div>;
+}
+
+
+function ExpandableResult({text}){
+  const [open,setOpen]=useState(false);
+  if(!text) return <small>—</small>;
+  const canExpand=text.length>260 || text.includes('\n');
+  return <div className={`result-cell ${open?'open':'collapsed'}`}>
+    <small>{open?text:truncate(text,260)}</small>
+    {canExpand&&<button type="button" onClick={()=>setOpen(v=>!v)}>{open?'Hide full result':'Show full result'}</button>}
   </div>;
 }
 
