@@ -183,3 +183,10 @@ Runtime pieces:
 - persistent backend service: `pra-rulebook-api.service`;
 - existing public host service: `qbit-mini-ui.service`.
 
+
+## License
+
+This software is licensed under the PolyForm Noncommercial License 1.0.0.
+It is free to use for non-commercial purposes. Commercial use requires a separate commercial licence from the copyright holder.
+
+See [LICENSE](LICENSE) for the full terms.
