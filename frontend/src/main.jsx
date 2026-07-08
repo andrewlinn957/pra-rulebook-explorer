@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import ForceGraph2D from 'react-force-graph-2d';
 import { forceCollide, forceX, forceY } from 'd3-force';
 import { filterGraph, isInsuranceNode } from './graphFilters.js';
-import { buildUnresolvedActionQueues } from './unresolvedWorkflow.js';
+import { buildQualityQueues, filterQueueRows, summariseQueue } from './qualityWorkbench.js';
 import { displayNodeTitle, documentBadge, relativeNodeRole, edgeDirectionGlyph, edgeDirectionLabel } from './graphPresentation.js';
 import './styles.css';
 
@@ -552,277 +552,143 @@ function sourceFileName(value){
 }
 
 function ValidationDashboard({data,busy}){
-  const checks=data?.checks||[];
-  const reporting=data?.reporting||null;
-  const reportingIssue=useMemo(()=>reporting?reportingIssueConfig(reporting):null,[reporting]);
-  const suspect403Issue=useMemo(()=>suspect403IssueConfig(data?.suspect_403_reference_samples||[]),[data]);
-  const issues=useMemo(()=>[
-    ...checks.map(c=>issueConfig(c.check,data,c)),
-    ...(reportingIssue?[reportingIssue]:[]),
-    ...(suspect403Issue?[suspect403Issue]:[]),
-  ].sort((a,b)=>issueRank(b)-issueRank(a)),[checks,data,reportingIssue,suspect403Issue]);
-  const attentionIssues=issues.filter(i=>i.status!=='pass');
-  const passedIssues=issues.filter(i=>i.status==='pass');
-  const [activeId,setActiveId]=useState('');
-  const [sampleQuery,setSampleQuery]=useState('');
-  const [showPassed,setShowPassed]=useState(false);
-  const [evidenceFilters,setEvidenceFilters]=useState({type:'all',evidence:'all',method:'all',minConfidence:0,query:''});
-  const [reviewDraft,setReviewDraft]=useState('');
-  const [auditState,setAuditState]=useState(()=>readAuditState());
-  const [linkReviewChoices,setLinkReviewChoices]=useState({});
+  const [activeQueue,setActiveQueue]=useState('feedback');
   const [feedbackQueue,setFeedbackQueue]=useState({items:[],runs:[],counts:{}});
   const [feedbackBusy,setFeedbackBusy]=useState(false);
+  const [query,setQuery]=useState('');
+  const [selectedRow,setSelectedRow]=useState(null);
+  const [reviewChoices,setReviewChoices]=useState({});
 
   useEffect(()=>{ loadFeedbackQueue(); },[]);
-  useEffect(()=>{
-    if(!issues.length) return;
-    if(!activeId || !issues.some(i=>i.id===activeId)) setActiveId((attentionIssues[0]||issues[0]).id);
-  },[issues,attentionIssues,activeId]);
+  useEffect(()=>{ setQuery(''); setSelectedRow(null); },[activeQueue]);
 
-  if(busy&&!data) return <section className="quality"><div className="canvas-meta"><strong>Quality</strong><span>Checking the full database…</span></div></section>;
-  if(!data) return <section className="quality"><div className="canvas-meta"><strong>Quality</strong><span>Open Quality to load the checks.</span></div></section>;
+  if(busy&&!data) return <section className="quality quality-workbench"><div className="quality-loading">Loading quality queues…</div></section>;
+  if(!data) return <section className="quality quality-workbench"><div className="quality-loading">Open Quality to load queues.</div></section>;
 
-  const activeIssue=issues.find(i=>i.id===activeId)||attentionIssues[0]||issues[0];
-  const statusCounts=issues.reduce((acc,i)=>{acc[i.status]=(acc[i.status]||0)+1;return acc;},{pass:0,warn:0,fail:0});
-  const acceptedCount=issues.filter(i=>auditState[i.id]?.status==='accepted').length;
-  const reviewedCount=issues.filter(i=>auditState[i.id]?.status==='reviewed').length;
-  const openAttention=attentionIssues.filter(i=>(auditState[i.id]?.status||'open')!=='accepted');
-  const posture=statusCounts.fail?'fail':statusCounts.warn?'warn':'pass';
-  const visibleSamples=filterRows(activeIssue?.rows||[],sampleQuery);
-  const evidenceRows=filterEvidenceRows(data.edges_by_type_method||[],evidenceFilters);
-  const displayedIssues=showPassed?issues:[...attentionIssues,...passedIssues.slice(0,3)];
-  const trustCopy=posture==='pass'
-    ? 'No hard quality gates are currently failing. The explorer is suitable for navigation, subject to normal source checking.'
-    : posture==='warn'
-      ? 'The core graph is usable, but some links need review before treating every relationship as authoritative.'
-      : 'There are hard quality failures. Use the explorer for diagnosis, not final reliance, until these are fixed.';
+  const queues=buildQualityQueues({validation:data,feedback:feedbackQueue});
+  const active=queues.find(q=>q.id===activeQueue)||queues[0];
+  const unverifiedRows=active.id==='unverified-links'?filterQueueRows(active.rows||[],query):[];
+  const selected=selectedRow || unverifiedRows[0] || null;
 
   async function loadFeedbackQueue(){
     try{ setFeedbackQueue(await fetchJson(API_BASE+'/feedback')); }
-    catch{ /* feedback is helpful but should not block the quality dashboard */ }
+    catch(err){ setFeedbackQueue(prev=>({...prev,last_error:err.message||String(err)})); }
   }
   async function processFeedbackQueue(){
     setFeedbackBusy(true);
     try{
       const result=await fetchJson(API_BASE+'/feedback/process',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({limit:3})});
-      await loadFeedbackQueue();
-      setFeedbackQueue(prev=>({...prev,last_process:result}));
+      const refreshed=await fetchJson(API_BASE+'/feedback');
+      setFeedbackQueue({...refreshed,last_process:result});
     }catch(err){ setFeedbackQueue(prev=>({...prev,last_error:err.message||String(err)})); }
     finally{ setFeedbackBusy(false); }
   }
-  function openIssue(issue){
-    setActiveId(issue.id);
-    setSampleQuery('');
-  }
-  function setState(status){
-    if(activeIssue) setIssueState(activeIssue.id,status,setAuditState);
-  }
 
-  return <section className="quality quality-redesign">
-    <div className="canvas-meta"><strong>Quality</strong><span className={`quality-state ${posture}`}>{statusCounts.fail||0} fail · {statusCounts.warn||0} warn · {statusCounts.pass||0} pass</span></div>
-
-    <div className={`quality-hero ${posture}`}>
-      <div>
-        <span className="eyebrow">Can I trust the explorer?</span>
-        <h2>{posture==='pass'?'Yes, with normal source checks':posture==='warn'?'Mostly, but review the highlighted gaps':'Not yet for final reliance'}</h2>
-        <p>{trustCopy}</p>
-      </div>
-      <div className="quality-summary-grid" aria-label="Quality summary">
-        <div><span>Needs attention</span><strong>{fmt(openAttention.length)}</strong></div>
-        <div><span>Checks passed</span><strong>{fmt(statusCounts.pass||0)}</strong></div>
-        <div><span>Reviewed</span><strong>{fmt(reviewedCount)}</strong></div>
-        <div><span>Accepted</span><strong>{fmt(acceptedCount)}</strong></div>
-      </div>
+  return <section className="quality quality-workbench">
+    <div className="quality-topline">
+      <div><span>Quality</span><strong>{active.label}</strong></div>
+      <p>{active.description}</p>
     </div>
-
-    <NodeFeedbackWorkflow queue={feedbackQueue} busy={feedbackBusy} onRefresh={loadFeedbackQueue} onProcess={processFeedbackQueue}/>
-
-    <div className="quality-layout-v2">
-      <main className="quality-issues" aria-label="Quality issues">
-        <div className="section-heading">
-          <div><span className="eyebrow">What needs attention</span><h3>Issues, in plain English</h3></div>
-          <div className="quality-actions"><button type="button" onClick={()=>downloadCsv('quality-evidence.csv',data.edges_by_type_method||[])}>Export evidence</button><button type="button" onClick={()=>setShowPassed(v=>!v)}>{showPassed?'Hide passed checks':'Show all checks'}</button></div>
-        </div>
-        <div className="quality-card-list">
-          {displayedIssues.map(issue=><QualityIssueCard key={issue.id} issue={issue} active={activeIssue?.id===issue.id} state={auditState[issue.id]} onOpen={()=>openIssue(issue)}/>) }
-        </div>
+    <div className="quality-workspace">
+      <nav className="quality-queue-rail" aria-label="Quality queues">
+        {queues.map(queue=>{
+          const summary=summariseQueue(queue);
+          return <button key={queue.id} type="button" className={queue.id===active.id?'on':''} onClick={()=>setActiveQueue(queue.id)}>
+            <strong>{queue.label}</strong>
+            <span>{summary.primary}</span>
+            <em>{summary.secondary}</em>
+          </button>;
+        })}
+      </nav>
+      <main className="quality-workflow" aria-label={`${active.label} workflow`}>
+        {active.id==='feedback'
+          ? <FeedbackQueueWorksurface queue={feedbackQueue} busy={feedbackBusy} onRefresh={loadFeedbackQueue} onProcess={processFeedbackQueue}/>
+          : <UnverifiedLinksWorksurface rows={unverifiedRows} query={query} setQuery={setQuery} selected={selected} setSelected={setSelectedRow} choices={reviewChoices} setChoices={setReviewChoices}/>
+        }
       </main>
-
-      <aside className="quality-evidence-drawer" aria-label="Selected issue evidence">
-        {activeIssue&&<>
-          <div className={`drawer-header ${activeIssue.status}`}>
-            <span>{statusIcon(activeIssue.status)} {activeIssue.severity}</span>
-            <h3>{activeIssue.title}</h3>
-            <p>{activeIssue.summary}</p>
-          </div>
-          <div className="drawer-explainers">
-            <section><h4>What this means</h4><p>{activeIssue.cause}</p></section>
-            <section><h4>Why it matters</h4><p>{activeIssue.impact}</p></section>
-            <section><h4>What to do next</h4><p>{activeIssue.fix}</p></section>
-          </div>
-          <div className="drawer-toolbar">
-            <button type="button" onClick={()=>setState('reviewed')}>Mark reviewed</button>
-            <button type="button" onClick={()=>setState('accepted')}>Accept warning</button>
-            <button type="button" onClick={()=>setState('open')}>Reopen</button>
-          </div>
-          <details className="quality-steps" open>
-            <summary>Fix steps and pass condition</summary>
-            {activeIssue.reporting?<ReportingFixPlan issue={activeIssue}/>:<FixPlan issue={activeIssue}/>}
-          </details>
-          <details className="quality-samples" open>
-            <summary>{activeIssue.id==='unresolved-references'?'Review finding':'Show evidence'}</summary>
-            {activeIssue.reporting?<ReportingProspectiveIssues issue={activeIssue}/>:activeIssue.id==='suspect-403-links'?<Suspect403Review issue={activeIssue} choices={linkReviewChoices} setChoices={setLinkReviewChoices}/>:activeIssue.id==='unresolved-references'?<UnresolvedReferencePatterns issue={activeIssue} visibleSamples={visibleSamples} sampleQuery={sampleQuery} setSampleQuery={setSampleQuery}/>:<>
-              <div className="sample-toolbar compact"><input value={sampleQuery} onChange={e=>setSampleQuery(e.target.value)} placeholder="Filter sample rows…"/><button onClick={()=>downloadCsv(`${activeIssue.id}-samples.csv`,visibleSamples)}>Export samples</button></div>
-              <QualityTable title={activeIssue.sampleTitle} rows={visibleSamples.slice(0,activeIssue.sampleLimit||100)} cols={activeIssue.cols}/>
-            </>}
-          </details>
-          <details className="quality-evidence-table">
-            <summary>Technical evidence table</summary>
-            {activeIssue.reporting?<QualityTable title="Reporting relationship evidence" rows={(activeIssue.reportingData.edges_by_type_method||[]).slice(0,120)} cols={['edge_type','extraction_method','review_status','edges','avg_confidence','min_confidence','max_confidence']}/>:<>
-              <EvidenceFilters rows={data.edges_by_type_method||[]} filters={evidenceFilters} setFilters={setEvidenceFilters}/>
-              <QualityTable rows={evidenceRows.slice(0,120)} cols={['edge_type','source_method','evidence_status','edges','avg_confidence','min_confidence','max_confidence']}/>
-            </>}
-          </details>
-          <details className="quality-notes">
-            <summary>Reviewer notes</summary>
-            <div className="review-editor inline-review"><textarea value={reviewDraft} onChange={e=>setReviewDraft(e.target.value)} placeholder="Add reviewer note…"/><button onClick={()=>{appendIssueNote(activeIssue.id,reviewDraft,setAuditState);setReviewDraft('');}}>Save note</button><ReviewNotes notes={auditState[activeIssue.id]?.notes||[]}/></div>
-          </details>
-        </>}
-      </aside>
     </div>
   </section>;
 }
 
-function NodeFeedbackWorkflow({queue,busy,onRefresh,onProcess}){
-  const items=queue?.items||[];
-  const runs=queue?.runs||[];
-  const pending=items.filter(i=>['pending','failed'].includes(i.status));
-  const recent=items.slice(-6).reverse();
-  return <section className="feedback-workflow quality-panel-card">
-    <div className="section-heading">
-      <div><span className="eyebrow">Node feedback</span><h3>Manual Codex repair queue</h3></div>
-      <div className="quality-actions"><button type="button" onClick={onRefresh}>Refresh</button><button type="button" onClick={onProcess} disabled={busy||!pending.length}>{busy?'Running…':`Run queue (${pending.length})`}</button></div>
+function FeedbackQueueWorksurface({queue,busy,onRefresh,onProcess}){
+  const items=(queue?.items||[]).slice().reverse();
+  const pending=(queue?.items||[]).filter(item=>['pending','failed'].includes(item.status));
+  return <div className="queue-surface feedback-surface">
+    <div className="workflow-bar">
+      <div><span>Node feedback queue</span><strong>{fmt(pending.length)} item(s) ready to run</strong></div>
+      <div className="workflow-actions"><button type="button" onClick={onRefresh}>Refresh</button><button type="button" className="primary" onClick={onProcess} disabled={busy||!pending.length}>{busy?'Running…':'Process queue'}</button></div>
     </div>
-    <p className="workflow-copy">Right-click a graph node and add feedback. This queue sends pending items to an OpenClaw/Codex run only when you trigger it here.</p>
-    {queue?.last_error&&<div className="error">{queue.last_error}</div>}
-    {queue?.last_process&&<div className="feedback-run-summary"><strong>Last trigger:</strong> processed {fmt(queue.last_process.processed)} item(s). {queue.last_process.runs?.[0]?.result&&<span>{truncate(queue.last_process.runs[0].result,220)}</span>}</div>}
-    <div className="feedback-mini-grid"><div><span>Pending</span><strong>{fmt(pending.length)}</strong></div><div><span>Completed</span><strong>{fmt(queue?.counts?.completed||0)}</strong></div><div><span>Failed</span><strong>{fmt(queue?.counts?.failed||0)}</strong></div></div>
-    <div className="feedback-queue-list">
-      {recent.length?recent.map(item=><article key={item.id} className={`feedback-queue-item ${item.status}`}><span>{item.status}</span><strong>{displayNodeTitle(item.node||{})}</strong><p>{truncate(item.feedback,180)}</p>{item.last_result&&<small>{truncate(item.last_result,220)}</small>}</article>):<p className="empty-note">No node feedback has been queued yet.</p>}
+    {queue?.last_error&&<div className="quality-error">{queue.last_error}</div>}
+    {queue?.last_process&&<div className="quality-runline">Last run processed {fmt(queue.last_process.processed)} item(s).</div>}
+    <div className="feedback-ledger">
+      <div className="ledger-head"><span>Status</span><span>Node</span><span>Feedback</span><span>Result</span></div>
+      {items.length?items.map(item=><article key={item.id} className={`ledger-row ${item.status}`}>
+        <b>{item.status}</b>
+        <strong>{displayNodeTitle(item.node||{})}</strong>
+        <p>{truncate(item.feedback,260)}</p>
+        <small>{item.last_result?truncate(item.last_result,260):'—'}</small>
+      </article>):<div className="empty-workflow">No node feedback queued.</div>}
     </div>
-    {runs.length>0&&<details className="feedback-runs"><summary>Recent Codex runs</summary>{runs.slice().reverse().map(run=><article key={run.id}><span>{run.status}</span><strong>{run.feedback_id}</strong><p>{truncate(run.result||'',300)}</p></article>)}</details>}
-  </section>;
-}
-
-function QualityIssueCard({issue,active,state,onOpen}){
-  const triage=state?.status||'open';
-  return <article className={`quality-issue-card ${issue.status} ${active?'active':''}`}>
-    <button type="button" onClick={onOpen}>
-      <span className="issue-topline"><b>{statusIcon(issue.status)} {issue.title}</b><em>{triage}</em></span>
-      <span className="issue-summary">{issue.summary}</span>
-      <span className="issue-answer"><strong>Why it matters</strong>{issue.impact}</span>
-      <span className="issue-footer"><em>{fmt(issue.affected)} affected</em><strong>{issue.id==='unresolved-references'?'Review finding':'Show evidence'}</strong></span>
-    </button>
-  </article>;
-}
-
-function UnresolvedReferencePatterns({issue,visibleSamples,sampleQuery,setSampleQuery}){
-  const queues=useMemo(()=>buildUnresolvedActionQueues(visibleSamples),[visibleSamples]);
-  const [activeQueue,setActiveQueue]=useState('all');
-  const [reviewDrafts,setReviewDrafts]=useState({});
-  useEffect(()=>{
-    if(activeQueue==='all') return;
-    if(!queues.some(q=>q.id===activeQueue)) setActiveQueue('all');
-  },[queues,activeQueue]);
-  const selectedQueue=queues.find(q=>q.id===activeQueue);
-  const workingRows=activeQueue==='all'?visibleSamples.map(r=>({next_action:'Review pattern',why:'Choose an action queue or use the pattern cards to decide the next step.',...r})):selectedQueue?.rows||[];
-  const cols=['next_action','why','target_type','target_title','source_title','source_text','source_url','confidence','review_decision','review_note'];
-  return <div className="unresolved-patterns workflow-mode">
-    <div className="workflow-intro">
-      <div><strong>Review one link, then record the finding</strong><p>Open the source and target URL. Choose the outcome below so Declan can repair the graph, update the URL, or deliberately leave the link external.</p></div>
-      <button onClick={()=>downloadCsv(`${issue.id}-${activeQueue}-workflow.csv`,workingRows)}>Export current queue</button>
-    </div>
-    <div className="action-queue-grid" role="tablist" aria-label="Unresolved link action queues">
-      <button type="button" className={activeQueue==='all'?'action-card on':'action-card'} onClick={()=>setActiveQueue('all')}><span>{fmt(visibleSamples.length)} rows</span><strong>All unresolved</strong><em>Search and inspect everything</em></button>
-      {queues.map(q=><button key={q.id} type="button" className={activeQueue===q.id?'action-card on':'action-card'} onClick={()=>setActiveQueue(q.id)}><span>{fmt(q.count)} rows</span><strong>{q.label}</strong><em>{q.helper}</em></button>)}
-    </div>
-    <div className="pattern-grid compact-patterns">{(issue.patterns||[]).map(p=><article key={p.pattern} className="pattern-card"><div><span>{fmt(p.targets)} targets</span><strong>{p.pattern}</strong><em>{fmt(p.live_edges)} live links</em></div><ul>{(p.examples||[]).slice(0,3).map(ex=><li key={ex.target_id}><b>{ex.target_title}</b><small>{ex.example_source_title||ex.stable_key}</small></li>)}</ul></article>)}</div>
-    <div className="sample-toolbar compact"><input value={sampleQuery} onChange={e=>setSampleQuery(e.target.value)} placeholder="Filter unresolved links by title, source, URL or action…"/><button onClick={()=>downloadCsv(`${issue.id}-samples.csv`,visibleSamples)}>Export all filtered</button></div>
-    <UnresolvedLinkReview rows={workingRows.slice(0,18)} choices={reviewDrafts} setChoices={setReviewDrafts}/>
-    <QualityTable title={activeQueue==='all'?'Unresolved links: all action types':`${selectedQueue?.label||'Selected'} queue`} rows={workingRows.slice(0,issue.sampleLimit||100)} cols={cols}/>
+    {(queue?.runs||[]).length>0&&<details className="run-history"><summary>Run history</summary>{queue.runs.slice().reverse().slice(0,8).map(run=><p key={run.id}><b>{run.status}</b><span>{run.feedback_id}</span>{truncate(run.result||'',260)}</p>)}</details>}
   </div>;
 }
 
-function UnresolvedLinkReview({rows,choices,setChoices}){
-  const outcomes=[
-    ['outdated','URL works but points to an out-of-date document','Give the current URL if you found it.'],
-    ['irrelevant','URL works but irrelevant','Say why it is not relevant to the source provision.'],
-    ['dead','URL is dead','Note the error or where you checked.'],
-    ['rulebook_target','Link should point to an existing Rulebook page/provision','Paste the correct Rulebook page, provision title, or node id.'],
-    ['keep_external','Keep as external reference','Use when it is valid context but should not be matched to a Rulebook provision.'],
-  ];
-  const setDraft=(row,patch)=>setChoices(prev=>({...prev,[rowKey(row)]:{decision:row.review_decision||'',replacement_url:row.review_replacement_url||'',rulebook_target:row.review_rulebook_target||'',note:row.review_note||'',...(prev[rowKey(row)]||{}),...patch}}));
-  async function submit(row){
-    const draft={decision:row.review_decision||'',replacement_url:row.review_replacement_url||'',rulebook_target:row.review_rulebook_target||'',note:row.review_note||'',...(choices[rowKey(row)]||{})};
-    if(!draft.decision) return alert('Choose an outcome first.');
-    const res=await fetch(API_BASE+'/validation/unresolved-reference-review',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target_id:row.target_id,edge_id:row.edge_id,sample_id:row.sample_id,decision:draft.decision,replacement_url:draft.replacement_url||'',rulebook_target:draft.rulebook_target||'',note:draft.note||''})});
-    if(!res.ok) return alert(await res.text());
-    setChoices(prev=>({...prev,[rowKey(row)]:{...draft,saved:true}}));
+function UnverifiedLinksWorksurface({rows,query,setQuery,selected,setSelected,choices,setChoices}){
+  const [saving,setSaving]=useState(false);
+  const rowKey=row=>row?.sample_id||row?.edge_id||row?.target_id||`${row?.source_title||''}:${row?.target_title||''}`;
+  const draft={decision:selected?.review_decision||'',replacement_url:selected?.review_replacement_url||'',rulebook_target:selected?.review_rulebook_target||'',note:selected?.review_note||'',...(choices[rowKey(selected)]||{})};
+  function setDraft(patch){ if(selected) setChoices(prev=>({...prev,[rowKey(selected)]:{...draft,...patch}})); }
+  async function saveDecision(){
+    if(!selected || !draft.decision) return;
+    setSaving(true);
+    try{
+      const res=await fetch(API_BASE+'/validation/unresolved-reference-review',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target_id:selected.target_id,edge_id:selected.edge_id,sample_id:selected.sample_id,decision:draft.decision,replacement_url:draft.replacement_url||'',rulebook_target:draft.rulebook_target||'',note:draft.note||''})});
+      if(!res.ok) throw new Error(await res.text());
+      setDraft({saved:true});
+    }catch(err){ alert(err.message||String(err)); }
+    finally{ setSaving(false); }
   }
-  return <section className="unresolved-review"><div className="review-guide"><strong>What Declan needs from you</strong><p>Pick a row, open the URLs, then save a finding. If it is outdated or should point elsewhere, paste the replacement URL or Rulebook page. If it is irrelevant or dead, a short note is enough.</p></div>{rows.map(row=>{const draft={decision:row.review_decision||'',replacement_url:row.review_replacement_url||'',rulebook_target:row.review_rulebook_target||'',note:row.review_note||'',...(choices[rowKey(row)]||{})}; return <article key={rowKey(row)} className={`unresolved-review-row ${draft.saved?'saved':''}`}>
-    <div className="review-row-head"><span>{row.sample_id}</span><strong>{row.target_title}</strong><em>{draft.saved?'saved':draft.decision?draft.decision.replaceAll('_',' '):'not reviewed'}</em></div>
-    <p>{row.why}</p>
-    <div className="review-links"><a href={row.source_url} target="_blank" rel="noopener noreferrer">Open source</a>{row.target_url&&<a href={row.target_url} target="_blank" rel="noopener noreferrer">Open target URL</a>}</div>
-    <div className="decision-buttons unresolved-decisions">{outcomes.map(([value,label,help])=><button key={value} type="button" className={draft.decision===value?'on':''} title={help} onClick={()=>setDraft(row,{decision:value})}>{label}</button>)}</div>
-    <div className="review-fields"><label>Correct URL<input value={draft.replacement_url||''} onChange={e=>setDraft(row,{replacement_url:e.target.value})} placeholder="Paste newer or corrected URL, if any"/></label><label>Correct Rulebook page or provision<input value={draft.rulebook_target||''} onChange={e=>setDraft(row,{rulebook_target:e.target.value})} placeholder="Paste Rulebook URL, provision title, or node id"/></label><label className="wide">Finding note<textarea value={draft.note||''} onChange={e=>setDraft(row,{note:e.target.value})} placeholder="Example: URL loads but is a 2018 version; newer PS is at …"/></label></div>
-    <button type="button" className="save-finding" onClick={()=>submit(row)}>Save finding for Declan</button>
-  </article>})}</section>;
-}
-
-function rowKey(row){return row.target_id||row.edge_id||row.sample_id}
-
-function Suspect403Review({issue,choices,setChoices}){
-  async function submit(row){
-    const draft=choices[row.target_id]||{};
-    const decision=draft.decision||row.review_decision||'';
-    if(!decision) return alert('Choose valid, broken, needs URL fix, or unsure first.');
-    const res=await fetch(API_BASE+'/validation/suspect-403-review',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target_id:row.target_id,review_id:row.review_id,decision,note:draft.note||row.review_note||''})});
-    if(!res.ok) return alert(await res.text());
-    setChoices(prev=>({...prev,[row.target_id]:{...(prev[row.target_id]||{}),saved:decision,decision}}));
-  }
-  const setDraft=(row,patch)=>setChoices(prev=>({...prev,[row.target_id]:{decision:row.review_decision||'',note:row.review_note||'',...(prev[row.target_id]||{}),...patch}}));
-  return <section className="suspect-review"><div className="sample-toolbar compact"><strong>{fmt(issue.rows.length)} links to review</strong><span>Click the URL, choose an outcome, then submit so the decision is saved server-side.</span></div><div className="table-wrap"><table><thead><tr><th>Review ID</th><th>Current</th><th>Title</th><th>URL</th><th>Outcome</th><th>Note</th><th>Submit</th></tr></thead><tbody>{issue.rows.map(row=>{const draft=choices[row.target_id]||{}; const decision=draft.decision||row.review_decision||''; const saved=draft.saved||row.review_decision||''; return <tr key={row.target_id}><td>{row.review_id}</td><td>{saved||'—'}</td><td title={row.title}>{cell(row.title,'title')}</td><td title={row.url}><a className="table-link full-url" href={row.url} target="_blank" rel="noopener noreferrer">{row.url}</a></td><td><div className="decision-buttons">{['valid','broken','needs_url_fix','unsure'].map(v=><button key={v} type="button" className={decision===v?'on':''} onClick={()=>setDraft(row,{decision:v})}>{v.replaceAll('_',' ')}</button>)}</div></td><td><input value={draft.note??row.review_note??''} onChange={e=>setDraft(row,{note:e.target.value})} placeholder="Optional note or replacement URL"/></td><td><button type="button" onClick={()=>submit(row)}>Submit</button></td></tr>})}</tbody></table></div></section>;
-}
-
-function ReportingProspectiveIssues({issue}){
-  const samples=issue.reportingData.samples||{};
-  return <div className="reporting-detail">
-    <div className="reporting-prospects">
-      {issue.prospectiveIssues.map(p=><article key={p.check} className={`reporting-prospect ${p.status}`}><span>{statusIcon(p.status)} {plainCheckName(p.check)}</span><p>{p.purpose}</p><div>{Object.entries(p.metrics||{}).map(([k,v])=><em key={k}><b>{metricLabel(k)}</b>{fmt(v)}</em>)}</div></article>)}
+  return <div className="queue-surface links-surface">
+    <div className="workflow-bar">
+      <div><span>Unverified links</span><strong>{fmt(rows.length)} unresolved relationship(s)</strong></div>
+      <div className="workflow-actions"><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Filter by node, URL, source or target…"/><button type="button" onClick={()=>downloadCsv('unverified-links.csv',rows)}>Export</button></div>
     </div>
-    <div className="reporting-sample-grid">
-      <QualityTable title="Data items without templates" rows={(samples.data_items_without_templates||[]).slice(0,40)} cols={['node_id','label','source_table','source_pk']}/>
-      <QualityTable title="Data items without source documents" rows={(samples.data_items_without_source_documents||[]).slice(0,40)} cols={['node_id','label','source_table','source_pk']}/>
-      <QualityTable title="Templates without datapoints" rows={(samples.templates_without_datapoints||[]).slice(0,40)} cols={['node_id','label','source_table','source_pk']}/>
+    <div className="links-workgrid">
+      <div className="link-ledger" role="list">
+        {rows.length?rows.map(row=><button key={rowKey(row)} type="button" className={rowKey(row)===rowKey(selected)?'on':''} onClick={()=>setSelected(row)}>
+          <span>{row.target_type||'link'}</span>
+          <strong>{row.target_title||row.target_url||'Untitled target'}</strong>
+          <em>{row.source_title||row.source_container_title||'Unknown source'}</em>
+        </button>):<div className="empty-workflow">No unverified links match this filter.</div>}
+      </div>
+      <article className="link-review-sheet">
+        {selected?<>
+          <header><span>{selected.target_type||'unverified'}</span><h3>{selected.target_title||selected.target_url||'Untitled target'}</h3><p>{selected.source_title||selected.source_container_title||'Unknown source'}</p></header>
+          <dl className="link-facts">
+            <div><dt>Source node</dt><dd>{selected.source_title||'—'}</dd></div>
+            <div><dt>Target id</dt><dd>{selected.target_id||'—'}</dd></div>
+            <div><dt>Confidence</dt><dd>{selected.confidence!==undefined?cell(selected.confidence,'confidence'):'—'}</dd></div>
+            <div><dt>Original method</dt><dd>{selected.original_source_method||selected.source_method||'—'}</dd></div>
+          </dl>
+          <blockquote>{selected.source_text||selected.evidence_text||'No source text captured.'}</blockquote>
+          <div className="link-openers">
+            {selected.source_url&&<a href={selected.source_url} target="_blank" rel="noopener noreferrer">Open source</a>}
+            {selected.target_url&&<a href={selected.target_url} target="_blank" rel="noopener noreferrer">Open target</a>}
+          </div>
+          <div className="decision-strip">
+            {[['resolved','Resolved'],['external-valid','External valid'],['broken','Broken'],['not-a-link','Not a link']].map(([value,label])=><button key={value} type="button" className={draft.decision===value?'on':''} onClick={()=>setDraft({decision:value})}>{label}</button>)}
+          </div>
+          <div className="decision-fields">
+            <input value={draft.rulebook_target||''} onChange={e=>setDraft({rulebook_target:e.target.value})} placeholder="Rulebook target, if resolved internally"/>
+            <input value={draft.replacement_url||''} onChange={e=>setDraft({replacement_url:e.target.value})} placeholder="Replacement URL, if needed"/>
+            <textarea value={draft.note||''} onChange={e=>setDraft({note:e.target.value})} placeholder="Short finding"/>
+            <button type="button" className="primary" disabled={saving||!draft.decision} onClick={saveDecision}>{saving?'Saving…':draft.saved?'Saved':'Save finding'}</button>
+          </div>
+        </>:<div className="empty-workflow">Select a link to review.</div>}
+      </article>
     </div>
   </div>;
 }
-
-function ReportingFixPlan({issue}){
-  return <div className="fix-plan"><div className="fix-summary"><h3>Prospective reporting issues</h3><p>Use these as candidate quality gates for the reporting tables and reporting-rule links. Promote stable checks into hard failures once the expected coverage baseline is agreed.</p></div><ol>{issue.prospectiveIssues.map(p=><li key={p.check}><strong>{plainCheckName(p.check)}</strong><p>{p.purpose}</p></li>)}</ol><div className="acceptance"><span>Done when</span><p>{issue.test}</p></div></div>;
-}
-
-function EvidenceFilters({rows,filters,setFilters}){
-  const types=unique(rows.map(r=>r.edge_type));
-  const evidence=unique(rows.map(r=>r.evidence_status));
-  const methods=unique(rows.map(r=>r.source_method));
-  return <div className="evidence-filters"><input value={filters.query} onChange={e=>setFilters({...filters,query:e.target.value})} placeholder="Search type, method or evidence…"/><select value={filters.type} onChange={e=>setFilters({...filters,type:e.target.value})}><option value="all">All link types</option>{types.map(v=><option key={v} value={v}>{relationLabel(v)}</option>)}</select><select value={filters.evidence} onChange={e=>setFilters({...filters,evidence:e.target.value})}><option value="all">All evidence kinds</option>{evidence.map(v=><option key={v} value={v}>{metricLabel(v)}</option>)}</select><select value={filters.method} onChange={e=>setFilters({...filters,method:e.target.value})}><option value="all">All methods</option>{methods.map(v=><option key={v} value={v}>{v}</option>)}</select><label>Min confidence <input type="range" min="0" max="1" step="0.05" value={filters.minConfidence} onChange={e=>setFilters({...filters,minConfidence:Number(e.target.value)})}/><b>{Math.round(filters.minConfidence*100)}%</b></label></div>;
-}
-
-function FixPlan({issue}){
-  return <div className="fix-plan"><div className="fix-summary"><h3>{issue.title}</h3><p>{issue.fix}</p></div><ol>{issue.runbook.map((step,i)=><li key={i}><strong>{step.title}</strong><p>{step.text}</p>{step.command&&<code>{step.command}</code>}</li>)}</ol><div className="acceptance"><span>Done when</span><p>{issue.test}</p></div></div>;
-}
-function ReviewNotes({notes}){return <div className="review-notes">{notes.length?notes.map((n,i)=><p key={i}><b>{new Date(n.ts).toLocaleString()}</b>{n.text}</p>):<p className="muted">No notes yet.</p>}</div>}
 
 function QualityTable({title,rows,cols}){
   const tableClass=title==='Live unresolved reference samples'?'quality-table unresolved-reference-table':'quality-table';

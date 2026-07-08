@@ -5,24 +5,29 @@ import { test } from 'node:test';
 const source = readFileSync(new URL('./main.jsx', import.meta.url), 'utf8');
 const styles = readFileSync(new URL('./styles.css', import.meta.url), 'utf8');
 
-test('quality tab is a plain-English issue review rather than an audit cockpit', () => {
-  assert.match(source, /className="quality quality-redesign"/);
-  assert.match(source, /What needs attention/);
-  assert.match(source, /Can I trust the explorer\?/);
-  assert.match(source, /What this means/);
-  assert.match(source, /Why it matters/);
-  assert.match(source, /What to do next/);
-  assert.match(source, /Show evidence/);
-  assert.doesNotMatch(source, /Risk<\/span>/);
+test('quality tab is a queue-first workbench rather than a dashboard of cards', () => {
+  assert.match(source, /className="quality quality-workbench"/);
+  assert.match(source, /quality-queue-rail/);
+  assert.match(source, /FeedbackQueueWorksurface/);
+  assert.match(source, /UnverifiedLinksWorksurface/);
+  assert.match(source, /Process queue/);
+  assert.match(source, /Save finding/);
+  assert.doesNotMatch(source, /Can I trust the explorer\?/);
+  assert.doesNotMatch(source, /What needs attention/);
+  assert.doesNotMatch(source, /quality-redesign/);
+  assert.doesNotMatch(source, /quality-evidence-drawer/);
   assert.doesNotMatch(source, /audit-cockpit/);
-  assert.doesNotMatch(source, /Priority<\/span>/);
 });
 
-test('quality redesign styles make issue cards and evidence drawers first-class', () => {
-  assert.match(styles, /\.quality-redesign/);
-  assert.match(styles, /\.quality-summary-grid/);
-  assert.match(styles, /\.quality-issue-card/);
-  assert.match(styles, /\.quality-evidence-drawer/);
+test('quality workbench styles reserve most of the screen for the workflow', () => {
+  assert.match(styles, /\.quality-workbench/);
+  assert.match(styles, /\.quality-workspace\{[^}]*grid-template-columns:124px minmax\(0,1fr\)/);
+  assert.match(styles, /\.quality-queue-rail/);
+  assert.match(styles, /\.quality-workflow/);
+  assert.match(styles, /\.links-workgrid/);
+  assert.doesNotMatch(styles, /\.quality-redesign/);
+  assert.doesNotMatch(styles, /\.quality-evidence-drawer/);
+  assert.doesNotMatch(styles, /\.audit-cockpit/);
 });
 
 test('reporting tab uses compact side panels around the graph', () => {
@@ -88,15 +93,15 @@ test('reporting graph distinguishes templates instructions and XBRL sources visu
   assert.match(styles, /\.legend i\.legend-node\.xbrl-source/);
 });
 
-test('unresolved link review captures actionable findings', () => {
-  assert.match(source, /Review finding/);
-  assert.match(source, /function UnresolvedLinkReview/);
-  assert.match(source, /URL works but points to an out-of-date document/);
-  assert.match(source, /URL works but irrelevant/);
-  assert.match(source, /URL is dead/);
-  assert.match(source, /Link should point to an existing Rulebook page\/provision/);
-  assert.match(source, /Keep as external reference/);
-  assert.match(source, /Correct URL/);
-  assert.match(source, /Correct Rulebook page or provision/);
-  assert.doesNotMatch(source, /reviewed by/i);
+test('unverified link review captures actionable findings without nested workflows', () => {
+  assert.match(source, /function UnverifiedLinksWorksurface/);
+  assert.match(source, /Resolved/);
+  assert.match(source, /External valid/);
+  assert.match(source, /Broken/);
+  assert.match(source, /Not a link/);
+  assert.match(source, /Rulebook target, if resolved internally/);
+  assert.match(source, /Replacement URL, if needed/);
+  assert.match(source, /Short finding/);
+  assert.doesNotMatch(source, /function UnresolvedLinkReview/);
+  assert.doesNotMatch(source, /action-queue-grid/);
 });
