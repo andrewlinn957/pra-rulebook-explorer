@@ -95,7 +95,29 @@ def test_of_crr_article_reference_inside_liquidity_part_still_resolves_to_uk_crr
     assert method == 'uk_crr_external_article'
 
 
+def test_eu_regulation_article_reference_does_not_resolve_to_same_part_paragraph_number():
+    conn = make_conn()
+    add_node(conn, 'source', 'rule', 'Article 8(6)', metadata='{"part_title":"Liquidity Coverage Ratio (CRR)","rule_number":"6"}')
+    add_node(conn, 'lcr-article-8', 'chapter', 'Article 8 Operational Requirements', metadata='{"part_title":"Liquidity Coverage Ratio (CRR)"}')
+    add_node(conn, 'lcr-article-28-8', 'rule', 'Article 28(8)', metadata='{"part_title":"Liquidity Coverage Ratio (CRR)","rule_number":"8"}')
+
+    resolver = llm_reference_pass.Resolver(conn)
+    target, method, score = resolver.resolve('source', {
+        'reference_text': 'Article 8 of Regulation (EU) No 2015/61',
+        'target_kind': 'regulation',
+        'target_title_or_identifier': 'Article 8 of Regulation (EU) No 2015/61',
+        'target_part_or_document': '',
+        'evidence_quote': 'Article 8 of Regulation (EU) No 2015/61',
+        'confidence': 0.86,
+    })
+
+    assert target['id'] == 'lcr-article-8'
+    assert method == 'article_with_part_context'
+    assert target['id'] != 'lcr-article-28-8'
+
+
 if __name__ == '__main__':
     test_crr_article_reference_outside_liquidity_parts_resolves_to_uk_crr_external_article()
     test_explicit_liquidity_rulebook_crr_article_reference_stays_internal_when_target_names_liquidity_part()
     test_of_crr_article_reference_inside_liquidity_part_still_resolves_to_uk_crr()
+    test_eu_regulation_article_reference_does_not_resolve_to_same_part_paragraph_number()

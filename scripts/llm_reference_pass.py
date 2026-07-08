@@ -450,7 +450,7 @@ class Resolver:
         # Provision identifiers, preferably within an explicitly named Part, else same Part/source context.
         # Covers ordinary rule numbers (14.12A), SCR headings (3E3, 3D2.3), and ranges (14.4A to 14.10 => first target).
         identifier_match = re.search(r"\b(\d+[A-Z]?(?:\d+)?(?:\.\d+[A-Z]?)*|\d+[A-Z]\d+(?:\.\d+[A-Z]?)?)\b", ident or text, re.I)
-        if identifier_match and target_kind_norm != "article":
+        if identifier_match and target_kind_norm != "article" and not article_ref:
             num = identifier_match.group(1).rstrip(".")
             wanted_part = norm(doc) or norm(ctx.get("part_title", ""))
             for n in self.nodes:
