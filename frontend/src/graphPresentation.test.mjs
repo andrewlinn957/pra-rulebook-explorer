@@ -50,6 +50,23 @@ describe('graph presentation helpers', () => {
     assert.equal(displayNodeTitle(node), 'C05.01 · Transitional provisions');
   });
 
+  it('disambiguates reporting XML and XSD artefacts by taxonomy package', () => {
+    const base = {
+      node_type: 'SourceDocument',
+      title: 'pra110-pre.xml',
+      metadata: { file_type: 'xml' },
+    };
+
+    assert.equal(displayNodeTitle({
+      ...base,
+      url: 'https://www.bankofengland.co.uk/-/media/boe/files/prudential-regulation/regulatory-reporting/banking/2026/february/boebanking400.zip#Banking_4.0.0/www.bankofengland.co.uk/data/xbrl/fws/banking/liquidity_pillarii/2019-08-14/mod/pra110-pre.xml',
+    }), 'pra110-pre.xml · Banking 4.0.0');
+    assert.equal(displayNodeTitle({
+      ...base,
+      url: 'https://www.bankofengland.co.uk/-/media/boe/files/prudential-regulation/regulatory-reporting/banking/2025/boe-banking-370-hotfix.zip#boe-banking-370-hotfix/www.bankofengland.co.uk/data/xbrl/fws/banking/liquidity_pillarii/2019-08-14/mod/pra110-pre.xml',
+    }), 'pra110-pre.xml · boe-banking-370-hotfix');
+  });
+
   it('identifies parents and children relative to the selected node through contains edges', () => {
     const graph = { edges: [
       { edge_type: 'contains', from_node_id: 'parent', to_node_id: 'selected' },

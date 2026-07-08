@@ -71,12 +71,32 @@ function reportingTemplateDisplayTitle(node, fallbackTitle) {
   return `${code} · ${name}`;
 }
 
+function reportingPackageLabelFromUrl(url) {
+  const text = clean(url);
+  if (!text.includes('#')) return '';
+  const fragment = text.split('#')[1] || '';
+  const packageRoot = fragment.split('/')[0] || '';
+  return decodeURIComponent(packageRoot).replace(/_/g, ' ').trim();
+}
+
+function reportingArtefactDisplayTitle(node, fallbackTitle) {
+  const metadata = node?.metadata || {};
+  const fileType = clean(metadata.file_type || metadata.source_file_type || '').toLowerCase();
+  if (node?.node_type !== 'SourceDocument' || !['xml', 'xsd'].includes(fileType)) return '';
+  const title = fallbackTitle || clean(node?.title) || clean(metadata.source_title);
+  const packageLabel = clean(metadata.taxonomy_package || metadata.package_version || reportingPackageLabelFromUrl(node?.url || metadata.source_url || metadata.url || ''));
+  if (!title || !packageLabel || title.includes(`· ${packageLabel}`)) return '';
+  return `${title} · ${packageLabel}`;
+}
+
 export function displayNodeTitle(node) {
   if (!node) return 'Unloaded node';
   const badge = documentBadge(node);
   const title = clean(node.title) || 'Untitled node';
   const templateTitle = reportingTemplateDisplayTitle(node, title);
   if (templateTitle) return templateTitle;
+  const artefactTitle = reportingArtefactDisplayTitle(node, title);
+  if (artefactTitle) return artefactTitle;
 
   if (isExternalDocument(node)) {
     if (genericExternalTitle(title)) return `${documentBaseLabel(node, badge)} · ${badge.label}`;
