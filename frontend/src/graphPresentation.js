@@ -43,10 +43,40 @@ function documentBaseLabel(node, badge) {
   return badge?.kind === 'spreadsheet' ? 'Spreadsheet document' : 'PDF document';
 }
 
+function normaliseTemplateCode(value) {
+  return clean(value).replace(/\s+/g, '').toUpperCase();
+}
+
+function sentenceCaseTemplateName(value) {
+  const text = clean(value).replace(/\s+/g, ' ');
+  if (!text) return '';
+  if (text !== text.toUpperCase()) return text;
+  return text.toLowerCase()
+    .replace(/^./, c => c.toUpperCase())
+    .replace(/\b(cet1|at1|t2|crr|irb|pd|lgd|crm|rwa|rwas|npe|ccr|sa-crr|sa|sme)\b/gi, m => m.toUpperCase());
+}
+
+function reportingTemplateDisplayTitle(node, fallbackTitle) {
+  if (node?.node_type !== 'Template') return '';
+  const metadata = node.metadata || {};
+  const code = normaliseTemplateCode(metadata.template_code || fallbackTitle);
+  const raw = clean(metadata.template_title || metadata.title || node.text || '');
+  if (!code || !raw) return '';
+  const spacedCode = code.replace(/^([A-Z]+)(\d)/, '$1 $2');
+  const escapedCode = spacedCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s*');
+  const match = raw.match(new RegExp(`${escapedCode}(?:\.\d+)?\\s*[-–—]\\s*([^|()]+)`, 'i'))
+    || raw.match(/^[\d.]+\s*\|?\s*([^|()]+)/);
+  const name = sentenceCaseTemplateName(match?.[1] || '');
+  if (!name || normaliseTemplateCode(name) === code) return '';
+  return `${code} · ${name}`;
+}
+
 export function displayNodeTitle(node) {
   if (!node) return 'Unloaded node';
   const badge = documentBadge(node);
   const title = clean(node.title) || 'Untitled node';
+  const templateTitle = reportingTemplateDisplayTitle(node, title);
+  if (templateTitle) return templateTitle;
 
   if (isExternalDocument(node)) {
     if (genericExternalTitle(title)) return `${documentBaseLabel(node, badge)} · ${badge.label}`;

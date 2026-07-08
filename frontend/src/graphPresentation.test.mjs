@@ -37,6 +37,19 @@ describe('graph presentation helpers', () => {
     assert.deepEqual(documentBadge(node), { label: 'PDF', kind: 'pdf' });
   });
 
+  it('adds concise workbook template names to reporting template labels', () => {
+    const node = {
+      node_type: 'Template',
+      title: 'C05.01',
+      metadata: {
+        template_code: 'C05.01',
+        title: '5.1 | C 05.01 - TRANSITIONAL PROVISIONS (CA5.1) Adjustments to CET1 | Adjustments to AT1',
+      },
+    };
+
+    assert.equal(displayNodeTitle(node), 'C05.01 · Transitional provisions');
+  });
+
   it('identifies parents and children relative to the selected node through contains edges', () => {
     const graph = { edges: [
       { edge_type: 'contains', from_node_id: 'parent', to_node_id: 'selected' },
