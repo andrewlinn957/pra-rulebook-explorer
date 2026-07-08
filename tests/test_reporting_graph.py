@@ -217,6 +217,30 @@ class ReportingOverviewGraphTests(unittest.TestCase):
         self.assertEqual(template["metadata"]["source_file_type"], "xlsx")
         self.assertEqual(template["metadata"]["source_local_path"], "backend/data/raw/reporting-sources/cor011-lcr-final/files/corep-liquidity.xlsx")
 
+    def test_template_nodes_fall_back_to_properties_source_id_for_source_metadata(self):
+        conn = self.make_conn()
+        self.add_node(conn, "data_item:FINREP", "DataItem", "FINREP")
+        self.add_node(conn, "template:FINREP:FINREP_42", "Template", "FINREP 42", '{"source_id":"source:finrep-national"}')
+        conn.execute(
+            "INSERT INTO source_document(source_id,title,url,local_path,file_type,parent_url) VALUES (?,?,?,?,?,?)",
+            (
+                "source:finrep-national",
+                "Annex IV",
+                "https://www.bankofengland.co.uk/-/media/boe/files/prudential-regulation/regulatory-reporting/banking/finrep-national-accounting-framework.xlsx",
+                "backend/data/raw/reporting-sources/banking-reporting-all/files/finrep-national-accounting-framework.xlsx",
+                "xlsx",
+                "https://www.bankofengland.co.uk/prudential-regulation/regulatory-reporting/regulatory-reporting-banking-sector/banks-building-societies-and-investment-firms",
+            ),
+        )
+        self.add_edge(conn, "e1", "data_item:FINREP", "template:FINREP:FINREP_42", "USES_TEMPLATE")
+
+        graph = reporting_overview_graph(conn, selected_return="FINREP")
+
+        template = next(n for n in graph["nodes"] if n["id"] == "template:FINREP:FINREP_42")
+        self.assertEqual(template["metadata"]["source_title"], "Annex IV")
+        self.assertEqual(template["metadata"]["source_url"], "https://www.bankofengland.co.uk/-/media/boe/files/prudential-regulation/regulatory-reporting/banking/finrep-national-accounting-framework.xlsx")
+        self.assertEqual(template["metadata"]["source_file_type"], "xlsx")
+
 
 if __name__ == "__main__":
     unittest.main()

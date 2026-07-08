@@ -363,6 +363,18 @@ def _enrich_reporting_nodes(conn: sqlite3.Connection, nodes: list[dict[str, Any]
             d = dict(row)
             template_meta[d["template_id"]] = {k: v for k, v in d.items() if v is not None}
 
+    template_source_ids = sorted({
+        str(source_id)
+        for node in nodes
+        if node.get("node_type") == "Template"
+        for source_id in [
+            template_meta.get(node.get("source_pk") or node.get("node_id"), {}).get("source_id")
+            or (node.get("properties") or {}).get("source_id")
+        ]
+        if source_id
+    })
+    source_ids = sorted(set(source_ids) | set(template_source_ids))
+
     source_meta: dict[str, dict[str, Any]] = {}
     if source_ids:
         try:
@@ -385,7 +397,10 @@ def _enrich_reporting_nodes(conn: sqlite3.Connection, nodes: list[dict[str, Any]
     for node in nodes:
         props = dict(node.get("properties") or {})
         if node.get("node_type") == "Template":
-            props = template_meta.get(node.get("source_pk") or node.get("node_id"), {}) | props
+            canonical = template_meta.get(node.get("source_pk") or node.get("node_id"), {})
+            source_id = canonical.get("source_id") or props.get("source_id")
+            source = source_meta.get(source_id, {}) if source_id else {}
+            props = source | canonical | props
         elif node.get("node_type") == "SourceDocument":
             props = source_meta.get(node.get("source_pk") or node.get("node_id"), {}) | props
         node["properties"] = props

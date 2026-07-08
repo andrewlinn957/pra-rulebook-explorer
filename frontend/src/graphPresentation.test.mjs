@@ -50,6 +50,17 @@ describe('graph presentation helpers', () => {
     assert.equal(displayNodeTitle(node), 'C05.01 · Transitional provisions');
   });
 
+  it('disambiguates reporting templates with source workbook context when no template title is available', () => {
+    assert.equal(displayNodeTitle({
+      node_type: 'Template',
+      title: 'FINREP 42',
+      metadata: {
+        source_title: 'Annex IV',
+        source_url: 'https://www.bankofengland.co.uk/-/media/boe/files/prudential-regulation/regulatory-reporting/banking/finrep-national-accounting-framework.xlsx',
+      },
+    }), 'FINREP 42 · Annex IV');
+  });
+
   it('gives reporting XML and XSD artefacts user-facing current taxonomy names', () => {
     const base = {
       node_type: 'SourceDocument',
@@ -61,6 +72,21 @@ describe('graph presentation helpers', () => {
     assert.equal(displayNodeTitle({ ...base, title: 'pra110-lab-en.xml' }), 'PRA110 English labels · current taxonomy');
     assert.equal(displayNodeTitle({ ...base, title: 'pra110-find-prec.xml' }), 'PRA110 filing precedence rules · current taxonomy');
     assert.equal(displayNodeTitle({ ...base, title: 'pra110.xsd', metadata: { file_type: 'xsd' } }), 'PRA110 taxonomy schema · current taxonomy');
+  });
+
+  it('disambiguates reporting spreadsheet source documents using useful path context', () => {
+    assert.equal(displayNodeTitle({
+      node_type: 'SourceDocument',
+      title: 'Annex III (XLSX)',
+      url: 'https://www.bankofengland.co.uk/-/media/boe/files/prudential-regulation/regulatory-reporting/banking/pillar3-risk-management.xlsx',
+      metadata: { file_type: 'xlsx' },
+    }), 'Annex III · pillar3-risk-management.xlsx');
+    assert.equal(displayNodeTitle({
+      node_type: 'SourceDocument',
+      title: 'BoE Banking DPM Dictionary v2.0.0.xlsx',
+      url: 'https://www.bankofengland.co.uk/-/media/boe/files/prudential-regulation/regulatory-reporting/banking/financial-statements-xbrl-utility.zip#Financial Statements XBRL Utility v1.0.1/FS IFRS XBRL Utility v1.0.1/BoE Banking DPM Dictionary v2.0.0.xlsx',
+      metadata: { file_type: 'xlsx' },
+    }), 'BoE Banking DPM Dictionary v2.0.0 · FS IFRS XBRL Utility');
   });
 
   it('identifies parents and children relative to the selected node through contains edges', () => {

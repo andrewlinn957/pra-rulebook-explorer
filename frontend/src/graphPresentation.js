@@ -61,14 +61,24 @@ function reportingTemplateDisplayTitle(node, fallbackTitle) {
   const metadata = node.metadata || {};
   const code = normaliseTemplateCode(metadata.template_code || fallbackTitle);
   const raw = clean(metadata.template_title || metadata.title || node.text || '');
-  if (!code || !raw) return '';
+  if (!code) return '';
   const spacedCode = code.replace(/^([A-Z]+)(\d)/, '$1 $2');
   const escapedCode = spacedCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s*');
   const match = raw.match(new RegExp(`${escapedCode}(?:\.\d+)?\\s*[-–—]\\s*([^|()]+)`, 'i'))
     || raw.match(/^[\d.]+\s*\|?\s*([^|()]+)/);
   const name = sentenceCaseTemplateName(match?.[1] || '');
-  if (!name || normaliseTemplateCode(name) === code) return '';
-  return `${code} · ${name}`;
+  if (name && normaliseTemplateCode(name) !== code) return `${code} · ${name}`;
+  const sourceContext = reportingTemplateSourceContext(metadata);
+  if (sourceContext) return `${spacedCode} · ${sourceContext}`;
+  return '';
+}
+
+function reportingTemplateSourceContext(metadata) {
+  const sourceTitle = clean(metadata.source_title);
+  if (/^annex\s+[ivxlcdm]+$/i.test(sourceTitle)) return sourceTitle;
+  const sourceUrl = clean(metadata.source_url || metadata.url);
+  const file = sourceUrl.split('#')[0].split('?')[0].split('/').pop() || '';
+  return decodeURIComponent(file).replace(/\.(?:xls|xlsx|xlsm)$/i, '').replace(/-/g, ' ').trim();
 }
 
 function reportingPackageLabelFromUrl(url) {
@@ -91,6 +101,32 @@ function reportingArtefactDisplayTitle(node, fallbackTitle) {
   return `${returnCode} ${role} · current taxonomy`;
 }
 
+function reportingSpreadsheetDisplayTitle(node, fallbackTitle) {
+  const metadata = node?.metadata || {};
+  const fileType = clean(metadata.file_type || metadata.source_file_type || '').toLowerCase();
+  if (node?.node_type !== 'SourceDocument' || !['xls', 'xlsx', 'xlsm'].includes(fileType)) return '';
+  const title = (fallbackTitle || clean(node?.title) || clean(metadata.source_title))
+    .replace(/\s*\((?:xls|xlsx|xlsm)\)$/i, '')
+    .replace(/\.(?:xls|xlsx|xlsm)$/i, '');
+  const url = clean(node?.url || metadata.source_url || metadata.url || '');
+  const context = reportingSpreadsheetContext(url, title);
+  if (!title || !context || title.toLowerCase().includes(context.toLowerCase())) return '';
+  return `${title} · ${context}`;
+}
+
+function reportingSpreadsheetContext(url, title) {
+  if (!url) return '';
+  const fragment = url.includes('#') ? decodeURIComponent(url.split('#')[1] || '') : '';
+  if (fragment) {
+    const parts = fragment.split('/').filter(Boolean);
+    const parent = parts.length > 1 ? parts[parts.length - 2] : '';
+    if (parent) return parent.replace(/\s+v?\d+(?:\.\d+)*$/i, '').trim();
+  }
+  const file = decodeURIComponent(url.split('#')[0].split('?')[0].split('/').pop() || '');
+  if (file && file.toLowerCase() !== title.toLowerCase()) return file;
+  return '';
+}
+
 function reportingArtefactRole(suffix, extension) {
   const key = clean(suffix).toLowerCase();
   if (extension.toLowerCase() === 'xsd' && !key) return 'taxonomy schema';
@@ -111,6 +147,8 @@ export function displayNodeTitle(node) {
   if (templateTitle) return templateTitle;
   const artefactTitle = reportingArtefactDisplayTitle(node, title);
   if (artefactTitle) return artefactTitle;
+  const spreadsheetTitle = reportingSpreadsheetDisplayTitle(node, title);
+  if (spreadsheetTitle) return spreadsheetTitle;
 
   if (isExternalDocument(node)) {
     if (genericExternalTitle(title)) return `${documentBaseLabel(node, badge)} · ${badge.label}`;
