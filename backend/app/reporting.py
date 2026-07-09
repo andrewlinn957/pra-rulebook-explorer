@@ -78,6 +78,7 @@ def reporting_overview_graph(
     available: dict[str, int] = {}
     for edge in edges.values():
         available[edge["edge_type"]] = available.get(edge["edge_type"], 0) + 1
+    _ensure_reporting_node_source_urls(nodes, edges)
     return {
         "level": "reporting_overview",
         "root_count": len(roots),
@@ -290,10 +291,11 @@ def _add_grouped_datapoints(conn: sqlite3.Connection, template_ids: list[str], n
             "stable_key": group_id,
             "title": f"{count:,} datapoints",
             "text": f"Datapoints reported through {nodes.get(template_id, {}).get('title', template_id)}",
-            "url": "",
+            "url": nodes.get(template_id, {}).get("url") or "",
             "metadata": {
                 "reporting_role": "datapoint_summary",
                 "template_id": template_id,
+                "source_url": nodes.get(template_id, {}).get("url") or "",
                 "datapoint_count": count,
                 "sample_datapoints": labels,
             },
@@ -308,9 +310,89 @@ def _add_grouped_datapoints(conn: sqlite3.Connection, template_ids: list[str], n
             "source_method": "reporting_datapoint_summary",
             "confidence": 1,
             "evidence_text": f"{count:,} datapoints grouped for screen readability",
-            "source_url": "",
+            "source_url": nodes.get(template_id, {}).get("url") or "",
             "metadata": {"datapoint_count": count, "sample_datapoints": labels},
         }
+
+
+def _ensure_reporting_node_source_urls(nodes: dict[str, dict[str, Any]], edges: dict[str, dict[str, Any]]) -> None:
+    """Populate a source URL on every node emitted to the reporting UI.
+
+    Reporting graph nodes are a mixture of canonical source documents, parsed
+    templates, return-level roll-ups and materialised references. Many of the
+    roll-up/reference nodes do not have their own URL in graph_node, but in the
+    reporting UI every visible node must still take the user back to the source
+    evidence that put it in the graph. Prefer a node's own URL, then metadata
+    URLs, then connected source-document/evidence neighbours.
+    """
+    for node in nodes.values():
+        _set_reporting_node_url(node, _node_direct_source_url(node))
+
+    source_document_urls = {
+        node_id: node.get("url")
+        for node_id, node in nodes.items()
+        if node.get("node_type") == "SourceDocument" and _is_http_url(node.get("url"))
+    }
+
+    for edge in edges.values():
+        source_id = edge.get("from_node_id")
+        target_id = edge.get("to_node_id")
+        source_node = nodes.get(source_id)
+        target_node = nodes.get(target_id)
+        edge_url = _first_http_url(edge.get("source_url"), (edge.get("metadata") or {}).get("source_url"), (edge.get("metadata") or {}).get("url"))
+
+        if edge.get("edge_type") == "EVIDENCED_BY" and target_id in source_document_urls:
+            evidence_url = source_document_urls[target_id]
+            _set_reporting_node_url(source_node, evidence_url)
+            edge["source_url"] = evidence_url
+        elif edge_url:
+            _set_reporting_node_url(source_node, edge_url)
+            _set_reporting_node_url(target_node, edge_url)
+
+    for edge in edges.values():
+        source_node = nodes.get(edge.get("from_node_id"))
+        target_node = nodes.get(edge.get("to_node_id"))
+        if source_node and target_node:
+            if not _is_http_url(target_node.get("url")):
+                _set_reporting_node_url(target_node, source_node.get("url"))
+            if not _is_http_url(source_node.get("url")):
+                _set_reporting_node_url(source_node, target_node.get("url"))
+        if not _is_http_url(edge.get("source_url")):
+            edge["source_url"] = _first_http_url(source_node.get("url") if source_node else None, target_node.get("url") if target_node else None) or ""
+
+
+def _set_reporting_node_url(node: dict[str, Any] | None, url: Any) -> None:
+    if not node or not _is_http_url(url) or _is_http_url(node.get("url")):
+        return
+    text = str(url)
+    node["url"] = text
+    metadata = node.setdefault("metadata", {})
+    metadata.setdefault("source_url", text)
+
+
+def _node_direct_source_url(node: dict[str, Any]) -> str:
+    metadata = node.get("metadata") or {}
+    return _first_http_url(
+        node.get("url"),
+        metadata.get("url"),
+        metadata.get("source_url"),
+        metadata.get("source_parent_url"),
+        metadata.get("parent_url"),
+        metadata.get("document_url"),
+        metadata.get("target_url"),
+        metadata.get("original_url"),
+    ) or ""
+
+
+def _first_http_url(*values: Any) -> str:
+    for value in values:
+        if _is_http_url(value):
+            return str(value)
+    return ""
+
+
+def _is_http_url(value: Any) -> bool:
+    return isinstance(value, str) and value.startswith(("http://", "https://"))
 
 
 def _sample_datapoint_labels(conn: sqlite3.Connection, template_id: str, *, limit: int = 8) -> list[str]:
@@ -341,6 +423,7 @@ def _enrich_reporting_nodes(conn: sqlite3.Connection, nodes: list[dict[str, Any]
         return nodes
     template_ids = sorted({(n.get("source_pk") or n.get("node_id")) for n in nodes if n.get("node_type") == "Template"})
     source_ids = sorted({(n.get("source_pk") or n.get("node_id")) for n in nodes if n.get("node_type") == "SourceDocument"})
+    node_ids = sorted({n.get("node_id") for n in nodes if n.get("node_id")})
 
     template_meta: dict[str, dict[str, Any]] = {}
     if template_ids:
@@ -363,6 +446,12 @@ def _enrich_reporting_nodes(conn: sqlite3.Connection, nodes: list[dict[str, Any]
             d = dict(row)
             template_meta[d["template_id"]] = {k: v for k, v in d.items() if v is not None}
 
+    explicit_source_document_ids = sorted({
+        str(source_id)
+        for node in nodes
+        for source_id in (node.get("properties") or {}).get("source_document_ids", [])
+        if source_id
+    })
     template_source_ids = sorted({
         str(source_id)
         for node in nodes
@@ -373,7 +462,7 @@ def _enrich_reporting_nodes(conn: sqlite3.Connection, nodes: list[dict[str, Any]
         ]
         if source_id
     })
-    source_ids = sorted(set(source_ids) | set(template_source_ids))
+    source_ids = sorted(set(source_ids) | set(template_source_ids) | set(explicit_source_document_ids))
 
     source_meta: dict[str, dict[str, Any]] = {}
     if source_ids:
@@ -403,8 +492,75 @@ def _enrich_reporting_nodes(conn: sqlite3.Connection, nodes: list[dict[str, Any]
             props = source | canonical | props
         elif node.get("node_type") == "SourceDocument":
             props = source_meta.get(node.get("source_pk") or node.get("node_id"), {}) | props
+        else:
+            explicit_ids = [str(source_id) for source_id in props.get("source_document_ids", []) if source_id]
+            explicit_sources = [source_meta[source_id] for source_id in explicit_ids if source_id in source_meta]
+            if explicit_sources:
+                props = explicit_sources[0] | props
+        node["properties"] = props
+    evidence_urls = _template_source_urls(conn, node_ids) | _evidence_source_urls(conn, node_ids)
+    for node in nodes:
+        url = evidence_urls.get(node.get("node_id"))
+        if not url:
+            continue
+        props = dict(node.get("properties") or {})
+        props.setdefault("source_url", url)
         node["properties"] = props
     return nodes
+
+
+def _evidence_source_urls(conn: sqlite3.Connection, node_ids: list[str]) -> dict[str, str]:
+    if not node_ids:
+        return {}
+    try:
+        rows = conn.execute(
+            f"""
+            SELECT e.source_node_id,sd.url,sd.parent_url
+            FROM graph_edge e
+            JOIN graph_node n ON n.node_id=e.target_node_id
+            LEFT JOIN source_document sd ON sd.source_id=n.source_pk OR sd.source_id=n.node_id
+            WHERE e.source_node_id IN ({','.join('?' for _ in node_ids)})
+              AND e.edge_type='EVIDENCED_BY'
+              AND n.node_type='SourceDocument'
+              AND COALESCE(sd.url,'') <> ''
+            ORDER BY e.source_node_id,
+              CASE LOWER(COALESCE(sd.file_type,'')) WHEN 'html' THEN 0 WHEN 'xlsx' THEN 1 WHEN 'xls' THEN 1 WHEN 'pdf' THEN 2 ELSE 3 END,
+              sd.url
+            """,
+            node_ids,
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return {}
+    urls: dict[str, str] = {}
+    for row in rows:
+        urls.setdefault(row["source_node_id"], row["url"] or row["parent_url"] or "")
+    return {node_id: url for node_id, url in urls.items() if _is_http_url(url)}
+
+
+def _template_source_urls(conn: sqlite3.Connection, node_ids: list[str]) -> dict[str, str]:
+    if not node_ids:
+        return {}
+    try:
+        rows = conn.execute(
+            f"""
+            SELECT e.source_node_id,sd.url,sd.parent_url
+            FROM graph_edge e
+            JOIN graph_node template_node ON template_node.node_id=e.target_node_id
+            JOIN template t ON t.template_id=template_node.source_pk OR t.template_id=template_node.node_id
+            JOIN source_document sd ON sd.source_id=t.source_id
+            WHERE e.source_node_id IN ({','.join('?' for _ in node_ids)})
+              AND e.edge_type='USES_TEMPLATE'
+              AND COALESCE(sd.url,'') <> ''
+            ORDER BY e.source_node_id,sd.url
+            """,
+            node_ids,
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return {}
+    urls: dict[str, str] = {}
+    for row in rows:
+        urls.setdefault(row["source_node_id"], row["url"] or row["parent_url"] or "")
+    return {node_id: url for node_id, url in urls.items() if _is_http_url(url)}
 
 
 def _ui_reporting_node(node: dict[str, Any], *, role: str | None = None) -> dict[str, Any]:
