@@ -72,7 +72,21 @@ test('reporting overview rail groups returns by reporting estate', () => {
   assert.match(source, /PRA returns/);
   assert.match(source, /function compareReturnCode\(a,b\)/);
   assert.match(source, /className="reporting-return-groups"/);
+  assert.match(source, /reportingReturnSummary\(n\)/);
+  assert.match(source, /function reportingReturnSummary\(node\)/);
+  assert.match(source, /template_count/);
+  assert.match(source, /source_document_count/);
   assert.match(styles, /\.reporting-return-group h4/);
+});
+
+test('reporting drilldown rail groups related artefacts by role', () => {
+  assert.match(source, /function reportingRailGroups\(node,graph\)/);
+  assert.match(source, /Templates/);
+  assert.match(source, /Instructions/);
+  assert.match(source, /Sources/);
+  assert.match(source, /Rules and legal basis/);
+  assert.match(source, /Concepts and scope/);
+  assert.match(source, /group\.items\.map/);
 });
 
 test('reporting graph keeps return as selected graph root while inspecting child nodes', () => {

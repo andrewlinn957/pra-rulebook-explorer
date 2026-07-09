@@ -336,20 +336,21 @@ function ReportingRail({roots,selectedReturn,detail,graph,onOpen,onDrill,onBackT
     <h3>Returns</h3>
     <div className="reporting-return-groups">{groupReportingReturns(roots).map(group=><section className="reporting-return-group" key={group.key}>
       <h4>{group.label}<span>{group.returns.length}</span></h4>
-      <div className="reporting-return-list">{group.returns.map(n=><button key={n.id} className={detail?.id===n.id?'active':''} onClick={()=>onDrill(n)}><strong>{n.title}</strong><small>Open return drilldown</small></button>)}</div>
+      <div className="reporting-return-list">{group.returns.map(n=><button key={n.id} className={detail?.id===n.id?'active':''} onClick={()=>onDrill(n)}><strong>{n.title}</strong><small>{reportingReturnSummary(n)}</small></button>)}</div>
     </section>)}</div>
   </aside>;
   const root=graph.nodes.find(n=>n.node_type==='DataItem')||roots[0];
-  const neighbours=reportingNeighbours(detail||root,graph);
-  const templates=graph.nodes.filter(n=>['Template','TemplateSet','InstructionSet','SourceDocument'].includes(n.node_type));
+  const railGroups=reportingRailGroups(detail||root,graph);
   const sampleDatapoints=reportingSampleDatapoints(detail,graph);
   return <aside className="reporting-rail">
     <button type="button" className="reporting-nav-back" onClick={onBackToOverview}>‹ Back to returns overview</button>
     {root&&detail?.id!==root.id&&<button type="button" className="reporting-nav-back secondary" onClick={()=>onOpen(root)}>↑ Back to return</button>}
     <h3>{selectedReturn}</h3>
     <div className="reporting-return-list">{root&&<button className={detail?.id===root.id?'active':''} onClick={()=>onOpen(root)}><strong>{displayNodeTitle(root)}</strong><small>Return root</small></button>}</div>
-    <h3>{detail?.node_type==='Template'?'Related parts':'Templates and sources'}</h3>
-    <div className="reporting-return-list">{(detail?.node_type==='DataItem'?templates:neighbours).map(n=><button key={n.id} className={detail?.id===n.id?'active':''} onClick={()=>onOpen(n)}><strong>{displayNodeTitle(n)}</strong><small>{materialLabel(materialType(n))}</small></button>)}</div>
+    {railGroups.map(group=><section className="reporting-return-group" key={group.key}>
+      <h4>{group.label}<span>{group.items.length}</span></h4>
+      <div className="reporting-return-list">{group.items.map(n=><button key={n.id} className={detail?.id===n.id?'active':''} onClick={()=>onOpen(n)}><strong>{displayNodeTitle(n)}</strong><small>{reportingNodeSummary(n)}</small></button>)}</div>
+    </section>)}
     {sampleDatapoints.length>0&&<>
       <h3>Sample datapoints</h3>
       <div className="reporting-sample-list">{sampleDatapoints.map((text,i)=><button type="button" key={`${text}-${i}`} onClick={()=>{}}><strong>{text.split('|')[0]?.trim()||`Row ${i+1}`}</strong><small>{text.includes('|')?text.split('|').slice(1).join('|').trim():text}</small></button>)}</div>
@@ -367,6 +368,22 @@ function groupReportingReturns(roots){
   return [...groups.values()]
     .sort((a,b)=>a.order-b.order||a.label.localeCompare(b.label))
     .map(g=>({...g,returns:g.returns.sort(compareReportingReturns)}));
+}
+function reportingReturnSummary(node){
+  const meta=node?.metadata||{};
+  const bits=[];
+  appendCountSummary(bits,meta.template_count,'template');
+  appendCountSummary(bits,meta.source_document_count,'source');
+  if(meta.submission_system) bits.push(String(meta.submission_system));
+  if(meta.reporting_domain) bits.push(String(meta.reporting_domain));
+  return bits.filter(Boolean).slice(0,4).join(' · ') || 'Open return drilldown';
+}
+
+function appendCountSummary(bits,value,label){
+  if(value===undefined || value===null || value==='') return;
+  const count=Number(value);
+  if(!Number.isFinite(count)) return;
+  bits.push(`${fmt(count)} ${label}${count===1?'':'s'}`);
 }
 function reportingEstateForReturn(node){
   const code=reportingReturnCode(node);
@@ -413,6 +430,43 @@ function reportingNeighbours(node,graph){
     if(other && !seen.has(other.id)){ seen.add(other.id); rows.push(other); }
   }
   return rows.sort((a,b)=>materialLabel(materialType(a)).localeCompare(materialLabel(materialType(b)))||displayNodeTitle(a).localeCompare(displayNodeTitle(b)));
+}
+
+function reportingRailGroups(node,graph){
+  const candidates=node?.node_type==='DataItem'
+    ? (graph.nodes||[]).filter(n=>n.id!==node.id)
+    : reportingNeighbours(node,graph);
+  const sections=[
+    {key:'templates',label:'Templates',types:['Template','TemplateSet']},
+    {key:'instructions',label:'Instructions',types:['InstructionSet']},
+    {key:'sources',label:'Sources',types:['SourceDocument','ExternalReference']},
+    {key:'rules',label:'Rules and legal basis',types:['Provision','LegalInstrument','PolicyStatement','Permission']},
+    {key:'concepts',label:'Concepts and scope',types:['Concept','ScopeRule','FirmType','Metric','CalculationRule','ValidationRule']},
+    {key:'datapoints',label:'Datapoints',types:['DataPointGroup','DataPoint','TemplateRow','TemplateColumn']},
+  ];
+  const seen=new Set();
+  return sections.map(section=>({
+    ...section,
+    items:candidates.filter(n=>{
+      if(!section.types.includes(n.node_type) || seen.has(n.id)) return false;
+      seen.add(n.id);
+      return true;
+    }).sort(compareReportingRailNodes),
+  })).filter(section=>section.items.length>0);
+}
+
+function compareReportingRailNodes(a,b){
+  return materialLabel(materialType(a)).localeCompare(materialLabel(materialType(b)))||displayNodeTitle(a).localeCompare(displayNodeTitle(b),undefined,{numeric:true,sensitivity:'base'});
+}
+
+function reportingNodeSummary(node){
+  const meta=node?.metadata||{};
+  const bits=[materialLabel(materialType(node))];
+  appendCountSummary(bits,meta.datapoint_count,'datapoint');
+  appendCountSummary(bits,meta.source_document_count,'source');
+  if(meta.file_type) bits.push(String(meta.file_type).toUpperCase());
+  if(meta.reporting_role) bits.push(String(meta.reporting_role));
+  return bits.filter(Boolean).slice(0,4).join(' · ');
 }
 
 function reportingSampleDatapoints(node,graph){
