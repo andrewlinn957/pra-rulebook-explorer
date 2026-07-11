@@ -283,9 +283,15 @@ function ReportingGraphView({onFeedback}){
   const activeGraph=useMemo(()=>filterGraph(graph,nodeTypes,edgeTypes,'all',detail?.id,true),[graph,nodeTypes,edgeTypes,detail?.id]);
   const selectedEdges=useMemo(()=>activeGraph.edges.filter(e=>detail&&(e.from_node_id===detail.id||e.to_node_id===detail.id)),[activeGraph,detail]);
   const reportingRoot=useMemo(()=>graph.nodes?.find(n=>n.node_type==='DataItem')||detail||null,[graph.nodes,detail?.id]);
+  const hiddenByFilters=useMemo(()=>selectedReturn && (activeGraph.nodes.length<(graph.nodes||[]).length || activeGraph.edges.length<(graph.edges||[]).length),[selectedReturn,activeGraph.nodes.length,activeGraph.edges.length,graph.nodes,graph.edges]);
   useEffect(()=>{ loadReportingGraph(selectedReturn?'':submitted, selectedReturn); },[includeDatapoints]);
 
-  async function loadReportingGraph(q=submitted, returnCode=''){
+  function resetReportingFilters(){
+    setEdgeTypes(new Set(REPORTING_DEFAULT_EDGE_TYPES));
+    setNodeTypes(new Set(REPORTING_NODE_TYPES.filter(t=>t!=='DataPoint'&&t!=='TemplateRow'&&t!=='TemplateColumn')));
+  }
+  async function loadReportingGraph(q=submitted, returnCode='', options={}){
+    if(options.resetFilters) resetReportingFilters();
     setBusy(true); setError('');
     try{
       const p=new URLSearchParams({limit:'80',child_limit:includeDatapoints?'1400':'900',include_datapoints:String(includeDatapoints)});
@@ -303,7 +309,8 @@ function ReportingGraphView({onFeedback}){
   function submit(e){ e?.preventDefault(); loadReportingGraph(query,''); }
   function returnCode(node){ return node?.metadata?.data_item_code || String(node?.title||node?.id||'').replace(/^data_item:/,''); }
   function inspectReportingNode(node){ setDetail(node); }
-  function drillReportingNode(node){ if(node?.node_type==='DataItem') loadReportingGraph('', returnCode(node)); else setDetail(node); }
+  async function drillReportingNode(node){ if(node?.node_type==='DataItem'){ resetReportingFilters();
+    await loadReportingGraph('', returnCode(node), {resetFilters:false}); } else setDetail(node); }
   function openReturn(node){ drillReportingNode(node); }
   function showAllReturns(){ setQuery(''); loadReportingGraph('', ''); }
   function toggleEdge(t){ const next=new Set(edgeTypes); next.has(t)?next.delete(t):next.add(t); setEdgeTypes(next); }
@@ -324,6 +331,7 @@ function ReportingGraphView({onFeedback}){
       <ReportingRail roots={roots} selectedReturn={selectedReturn} detail={detail} graph={activeGraph} onOpen={inspectReportingNode} onDrill={drillReportingNode} onBackToOverview={showAllReturns}/>
       <main className="reporting-canvas">
         <div className="canvas-meta reporting-meta"><strong>{selectedReturn?`Reporting graph: ${selectedReturn}`:submitted?`Returns matching: ${submitted}`:'Reporting returns overview'}</strong><span>{activeGraph.nodes.length} shown · {activeGraph.edges.length} visible links · {selectedReturn?(includeDatapoints?'datapoints summarised':'datapoints hidden'):'click to inspect · double-click to drill'}</span></div>
+        {hiddenByFilters&&<div className="reporting-filter-notice">Some reporting nodes or links are hidden by filters. <button type="button" onClick={resetReportingFilters}>Reset filters</button></div>}
         <Graph graph={activeGraph} selected={reportingRoot} detail={detail} nodeTypes={nodeTypes} relationshipTypes={edgeTypes} relationshipFilters={visibleEdgeTypes} materialFilters={visibleMaterialFilters} availableEdgeTypes={graph.available_edge_types||{}} onToggleNodeType={toggleNode} onToggleRelationship={toggleEdge} onSelect={inspectReportingNode} onOpen={drillReportingNode} onFeedback={onFeedback}/>
       </main>
       <aside className="reporting-inspector"><ReportingInspector node={detail} edges={selectedEdges} graph={activeGraph}/></aside>
@@ -449,6 +457,8 @@ function reportingRailGroups(node,graph){
 }
 
 function reportingRailDedupeKey(node){
+  if(node?.node_type==='Template') return `template:${node.id}`;
+  if(node?.node_type==='TemplateSet') return `template-set:${node.id}`;
   const meta=node?.metadata||{};
   const url=firstUrl(node?.url,meta.source_url,meta.url,meta.document_url,meta.original_url,meta.target_url);
   if(url) return `url:${normaliseSourceUrl(url)}`;
@@ -563,11 +573,12 @@ function ReportingInspector({node,edges,graph}){
 function ReportingMetadata({node,edges,graph}){
   const rows=reportingMetadataRows(node);
   const links=reportingSourceUrls(node,edges,graph);
+  const openDetails=node?.node_type==='Template' || rows.length<=6;
   return <>
     <Collapsible title="URLs" count={links.length?`${links.length} sources`:'no URL'} open>
       {links.length?<div className="source-link-list">{links.slice(0,24).map(link=><a key={`${link.url}-${link.label}`} href={link.url} target="_blank" rel="noopener noreferrer"><span>{link.kind}</span><strong>{link.label}</strong><small>{compactUrl(link.url)}</small><em>Open source ↗</em></a>)}</div>:<p className="muted">No source document URL is attached to this node in the current graph.</p>}
     </Collapsible>
-    {rows.length>0&&<Collapsible title="Details" count={`${rows.length} fields`} open={rows.length<=6}>
+    {rows.length>0&&<Collapsible title="Details" count={`${rows.length} fields`} open={openDetails}>
       <dl className="metadata-list">{rows.map(row=><div key={row.key}><dt>{row.label}</dt><dd title={row.raw}>{row.value}</dd></div>)}</dl>
     </Collapsible>}
   </>;
@@ -1526,4 +1537,5 @@ function displayColour(v){return MATERIAL_COLOURS[materialType(v)]||'#64748b'}
 function label(v){return materialLabel(materialType(v))}
 function truncate(s='',n=120){return s&&s.length>n?s.slice(0,n-1)+'…':s}
 
-createRoot(document.getElementById('root')).render(<App/>);
+const appContainer=document.getElementById('root');
+(appContainer.__praRulebookRoot??=createRoot(appContainer)).render(<App/>);

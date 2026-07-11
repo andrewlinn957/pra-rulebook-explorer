@@ -131,6 +131,26 @@ test('reporting graph keeps return as selected graph root while inspecting child
   assert.match(source, /function reportingMaterialFilters\(graph\)/);
 });
 
+test('reporting drilldown resets filters and warns when filters hide graph content', () => {
+  assert.match(source, /function resetReportingFilters\(\)/);
+  assert.match(source, /resetReportingFilters\(\);\s*\n\s*await loadReportingGraph\('', returnCode\(node\), \{resetFilters:false\}\)/);
+  assert.match(source, /const hiddenByFilters=useMemo/);
+  assert.match(source, /Some reporting nodes or links are hidden by filters/);
+  assert.match(source, /Reset filters/);
+  assert.match(styles, /\.reporting-filter-notice/);
+});
+
+test('reporting rail dedupes source documents by URL without hiding parsed templates', () => {
+  assert.match(source, /if\(node\?\.node_type==='Template'\) return `template:\$\{node\.id\}`/);
+  assert.match(source, /if\(node\?\.node_type==='TemplateSet'\) return `template-set:\$\{node\.id\}`/);
+  assert.match(source, /return `url:\$\{normaliseSourceUrl\(url\)\}`/);
+});
+
+test('reporting template inspector opens details by default', () => {
+  assert.match(source, /const openDetails=node\?\.node_type==='Template' \|\| rows\.length<=6/);
+  assert.match(source, /<Collapsible title="Details" count=\{`\$\{rows\.length\} fields`\} open=\{openDetails\}>/);
+});
+
 test('reporting graph distinguishes templates instructions and XBRL sources visually', () => {
   assert.match(source, /function reportingVisualKind\(node\)/);
   assert.match(source, /visual==='template'/);
@@ -151,6 +171,12 @@ test('node feedback result can expand to the full saved output', () => {
   assert.match(source, /className=\{`result-cell \$\{open\?'open':'collapsed'\}`\}/);
   assert.match(styles, /\.result-cell\.collapsed small\{[^}]*max-height:54px/);
   assert.match(styles, /\.result-cell\.open small\{[^}]*max-height:none/);
+});
+
+test('React root is reused across dev-server reloads', () => {
+  assert.match(source, /const appContainer=document\.getElementById\('root'\)/);
+  assert.match(source, /appContainer\.__praRulebookRoot/);
+  assert.match(source, /\(appContainer\.__praRulebookRoot\?\?=createRoot\(appContainer\)\)\.render\(<App\/>\)/);
 });
 
 test('unverified link review captures actionable findings without nested workflows', () => {
