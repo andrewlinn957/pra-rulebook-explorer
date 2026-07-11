@@ -194,6 +194,12 @@ def _filter_current_reporting_source_documents(conn: sqlite3.Connection, rows: l
             families.setdefault(family, []).append((_source_document_version(url), row["node_id"]))
 
     drop: set[str] = set()
+    represented_source_urls = _represented_reporting_source_urls(conn, rows)
+    if represented_source_urls:
+        for node_id, meta in node_meta.items():
+            if _normalise_reporting_source_url(meta.get("url", "")) in represented_source_urls:
+                drop.add(node_id)
+
     for versions in families.values():
         if len(versions) <= 1:
             continue
@@ -221,6 +227,54 @@ def _filter_current_reporting_source_documents(conn: sqlite3.Connection, rows: l
     if not drop:
         return rows
     return [r for r in rows if r.get("target_node_id") not in drop and r.get("source_node_id") not in drop]
+
+
+def _represented_reporting_source_urls(conn: sqlite3.Connection, rows: list[dict[str, Any]]) -> set[str]:
+    """Return source-document URLs already represented by semantic artefact nodes.
+
+    The selected-return graph often has both a higher-level node such as
+    ``instruction_set:COREP-CCR`` and its provenance source document
+    ``Annex XXVI (PDF)``. If both point to the same PDF, showing both as graph
+    nodes is duplicate navigation noise. Keep the higher-level artefact node
+    and suppress the duplicate SourceDocument node.
+    """
+    artefact_ids = sorted({
+        r.get("target_node_id")
+        for r in rows
+        if r.get("edge_type") in {"USES_TEMPLATE", "USES_INSTRUCTIONS"}
+        and r.get("target_node_id")
+    })
+    if not artefact_ids:
+        return set()
+    fetched = conn.execute(
+        f"""
+        SELECT node_id,properties_json
+        FROM graph_node
+        WHERE node_id IN ({','.join('?' for _ in artefact_ids)})
+        """,
+        artefact_ids,
+    ).fetchall()
+    source_ids: set[str] = set()
+    for row in fetched:
+        props = _json(row["properties_json"] or "{}")
+        for source_id in props.get("source_document_ids") or []:
+            if source_id:
+                source_ids.add(str(source_id))
+    if not source_ids:
+        return set()
+    docs = conn.execute(
+        f"""
+        SELECT url
+        FROM source_document
+        WHERE source_id IN ({','.join('?' for _ in source_ids)})
+        """,
+        sorted(source_ids),
+    ).fetchall()
+    return {_normalise_reporting_source_url(row["url"]) for row in docs if row["url"]}
+
+
+def _normalise_reporting_source_url(url: str) -> str:
+    return re.sub(r"/$", "", re.sub(r"[?#].*$", "", str(url or "").strip().lower()))
 
 
 def _versioned_q_and_a_family(title: str, url: str) -> str:
@@ -446,6 +500,8 @@ def _enrich_reporting_nodes(conn: sqlite3.Connection, nodes: list[dict[str, Any]
             d = dict(row)
             template_meta[d["template_id"]] = {k: v for k, v in d.items() if v is not None}
 
+    template_enrichment = _latest_template_enrichment(conn, template_ids)
+
     explicit_source_document_ids = sorted({
         str(source_id)
         for node in nodes
@@ -487,9 +543,10 @@ def _enrich_reporting_nodes(conn: sqlite3.Connection, nodes: list[dict[str, Any]
         props = dict(node.get("properties") or {})
         if node.get("node_type") == "Template":
             canonical = template_meta.get(node.get("source_pk") or node.get("node_id"), {})
+            enrichment = template_enrichment.get(node.get("source_pk") or node.get("node_id"), {})
             source_id = canonical.get("source_id") or props.get("source_id")
             source = source_meta.get(source_id, {}) if source_id else {}
-            props = source | canonical | props
+            props = source | canonical | enrichment | props
         elif node.get("node_type") == "SourceDocument":
             props = source_meta.get(node.get("source_pk") or node.get("node_id"), {}) | props
         else:
@@ -507,6 +564,44 @@ def _enrich_reporting_nodes(conn: sqlite3.Connection, nodes: list[dict[str, Any]
         props.setdefault("source_url", url)
         node["properties"] = props
     return nodes
+
+
+def _latest_template_enrichment(conn: sqlite3.Connection, template_ids: list[str]) -> dict[str, dict[str, Any]]:
+    if not template_ids:
+        return {}
+    try:
+        rows = conn.execute(
+            f"""
+            SELECT template_id,model,prompt_version,input_hash,purpose,contents,summary,key_rows_json,quality_notes,updated_at
+            FROM reporting_template_enrichment
+            WHERE template_id IN ({','.join('?' for _ in template_ids)})
+              AND status='ok'
+            """,
+            template_ids,
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return {}
+
+    enrichment: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        try:
+            key_rows = json.loads(row["key_rows_json"] or "[]")
+        except json.JSONDecodeError:
+            key_rows = []
+        if not isinstance(key_rows, list):
+            key_rows = []
+        enrichment[row["template_id"]] = {
+            "template_enrichment_model": row["model"],
+            "template_enrichment_prompt_version": row["prompt_version"],
+            "template_enrichment_input_hash": row["input_hash"],
+            "template_purpose": row["purpose"],
+            "template_contents": row["contents"],
+            "template_summary": row["summary"],
+            "template_key_rows": [str(x) for x in key_rows if x],
+            "template_quality_notes": row["quality_notes"],
+            "template_enriched_at": row["updated_at"],
+        }
+    return enrichment
 
 
 def _evidence_source_urls(conn: sqlite3.Connection, node_ids: list[str]) -> dict[str, str]:

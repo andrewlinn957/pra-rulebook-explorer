@@ -336,7 +336,7 @@ function ReportingRail({roots,selectedReturn,detail,graph,onOpen,onDrill,onBackT
     <h3>Returns</h3>
     <div className="reporting-return-groups">{groupReportingReturns(roots).map(group=><section className="reporting-return-group" key={group.key}>
       <h4>{group.label}<span>{group.returns.length}</span></h4>
-      <div className="reporting-return-list">{group.returns.map(n=><button key={n.id} className={detail?.id===n.id?'active':''} onClick={()=>onDrill(n)}><strong>{n.title}</strong><small>{reportingReturnSummary(n)}</small></button>)}</div>
+      <div className="reporting-return-list">{group.returns.map(n=><button key={n.id} className={detail?.id===n.id?'active':''} onClick={()=>onDrill(n)}><strong>{n.title}</strong></button>)}</div>
     </section>)}</div>
   </aside>;
   const root=graph.nodes.find(n=>n.node_type==='DataItem')||roots[0];
@@ -349,7 +349,7 @@ function ReportingRail({roots,selectedReturn,detail,graph,onOpen,onDrill,onBackT
     <div className="reporting-return-list">{root&&<button className={detail?.id===root.id?'active':''} onClick={()=>onOpen(root)}><strong>{displayNodeTitle(root)}</strong><small>Return root</small></button>}</div>
     {railGroups.map(group=><section className="reporting-return-group" key={group.key}>
       <h4>{group.label}<span>{group.items.length}</span></h4>
-      <div className="reporting-return-list">{group.items.map(n=><button key={n.id} className={detail?.id===n.id?'active':''} onClick={()=>onOpen(n)}><strong>{displayNodeTitle(n)}</strong><small>{reportingNodeSummary(n)}</small></button>)}</div>
+      <div className="reporting-return-list">{group.items.map(n=><button key={n.id} className={detail?.id===n.id?'active':''} onClick={()=>onOpen(n)}><strong>{displayNodeTitle(n)}</strong></button>)}</div>
     </section>)}
     {sampleDatapoints.length>0&&<>
       <h3>Sample datapoints</h3>
@@ -369,16 +369,6 @@ function groupReportingReturns(roots){
     .sort((a,b)=>a.order-b.order||a.label.localeCompare(b.label))
     .map(g=>({...g,returns:g.returns.sort(compareReportingReturns)}));
 }
-function reportingReturnSummary(node){
-  const meta=node?.metadata||{};
-  const bits=[];
-  appendCountSummary(bits,meta.template_count,'template');
-  appendCountSummary(bits,meta.source_document_count,'source');
-  if(meta.submission_system) bits.push(String(meta.submission_system));
-  if(meta.reporting_domain) bits.push(String(meta.reporting_domain));
-  return bits.filter(Boolean).slice(0,4).join(' · ') || 'Open return drilldown';
-}
-
 function appendCountSummary(bits,value,label){
   if(value===undefined || value===null || value==='') return;
   const count=Number(value);
@@ -437,9 +427,9 @@ function reportingRailGroups(node,graph){
     ? (graph.nodes||[]).filter(n=>n.id!==node.id)
     : reportingNeighbours(node,graph);
   const sections=[
-    {key:'templates',label:'Templates',types:['Template','TemplateSet']},
-    {key:'instructions',label:'Instructions',types:['InstructionSet']},
-    {key:'sources',label:'Sources',types:['SourceDocument','ExternalReference']},
+    {key:'templates',label:'Templates',match:n=>['Template'].includes(n.node_type)||isWorkbookSourceDocument(n)},
+    {key:'instructions',label:'Instructions and guidance',match:n=>['InstructionSet'].includes(n.node_type)||isPdfSourceDocument(n)},
+    {key:'taxonomies',label:'Taxonomies',match:n=>isTaxonomySourceDocument(n)},
     {key:'rules',label:'Rules and legal basis',types:['Provision','LegalInstrument','PolicyStatement','Permission']},
     {key:'concepts',label:'Concepts and scope',types:['Concept','ScopeRule','FirmType','Metric','CalculationRule','ValidationRule']},
     {key:'datapoints',label:'Datapoints',types:['DataPointGroup','DataPoint','TemplateRow','TemplateColumn']},
@@ -447,12 +437,62 @@ function reportingRailGroups(node,graph){
   const seen=new Set();
   return sections.map(section=>({
     ...section,
-    items:candidates.filter(n=>{
-      if(!section.types.includes(n.node_type) || seen.has(n.id)) return false;
+    items:candidates.slice().sort(compareReportingRailCandidates).filter(n=>{
+      const matches=section.match ? section.match(n) : section.types.includes(n.node_type);
+      const key=reportingRailDedupeKey(n);
+      if(!matches || seen.has(key)) return false;
+      seen.add(key);
       seen.add(n.id);
       return true;
     }).sort(compareReportingRailNodes),
   })).filter(section=>section.items.length>0);
+}
+
+function reportingRailDedupeKey(node){
+  const meta=node?.metadata||{};
+  const url=firstUrl(node?.url,meta.source_url,meta.url,meta.document_url,meta.original_url,meta.target_url);
+  if(url) return `url:${normaliseSourceUrl(url)}`;
+  return `id:${node?.id}`;
+}
+
+function normaliseSourceUrl(url){
+  return String(url||'').trim().replace(/#.*$/,'').replace(/[?&]download=1$/i,'').replace(/\/$/,'').toLowerCase();
+}
+
+function compareReportingRailCandidates(a,b){
+  return reportingRailNodePriority(a)-reportingRailNodePriority(b) || compareReportingRailNodes(a,b);
+}
+
+function reportingRailNodePriority(node){
+  if(node?.node_type==='Template') return 1;
+  if(node?.node_type==='InstructionSet') return 2;
+  if(node?.node_type==='TemplateSet' && (isWorkbookSourceDocument(node)||isTaxonomySourceDocument(node))) return 3;
+  if(node?.node_type==='SourceDocument') return 4;
+  return 10;
+}
+
+function firstUrl(...values){
+  return values.map(v=>String(v||'').trim()).find(v=>/^https?:\/\//i.test(v))||'';
+}
+
+function reportingSourceHaystack(node){
+  const md=node?.metadata||{};
+  return [node?.title,node?.text,node?.url,md.source_url,md.url,md.document_url,md.original_url,md.target_url,md.source_local_path,md.local_path,md.source_title,md.title,md.file_type,md.source_file_type].filter(Boolean).join(' ').toLowerCase();
+}
+
+function isWorkbookSourceDocument(node){
+  if(!['SourceDocument','TemplateSet'].includes(node?.node_type)) return false;
+  return /\.(xlsx|xlsm|xltx)(#|\?|$)/i.test(reportingSourceHaystack(node)) || ['xlsx','xlsm','xltx'].includes(String(node?.metadata?.file_type||node?.metadata?.source_file_type||'').toLowerCase());
+}
+
+function isPdfSourceDocument(node){
+  if(node?.node_type!=='SourceDocument') return false;
+  return /\.pdf(#|\?|$)/i.test(reportingSourceHaystack(node)) || String(node?.metadata?.file_type||node?.metadata?.source_file_type||'').toLowerCase()==='pdf';
+}
+
+function isTaxonomySourceDocument(node){
+  if(!['SourceDocument','TemplateSet'].includes(node?.node_type)) return false;
+  return /\.(xml|xsd|zip|xbrl)(#|\?|$)/i.test(reportingSourceHaystack(node)) || /\b(taxonomy|xbrl|dpm)\b/i.test(reportingSourceHaystack(node));
 }
 
 function compareReportingRailNodes(a,b){
@@ -461,12 +501,22 @@ function compareReportingRailNodes(a,b){
 
 function reportingNodeSummary(node){
   const meta=node?.metadata||{};
+  const enriched=summariseTemplateEnrichment(node);
+  if(enriched) return enriched;
   const bits=[materialLabel(materialType(node))];
   appendCountSummary(bits,meta.datapoint_count,'datapoint');
   appendCountSummary(bits,meta.source_document_count,'source');
   if(meta.file_type) bits.push(String(meta.file_type).toUpperCase());
   if(meta.reporting_role) bits.push(String(meta.reporting_role));
   return bits.filter(Boolean).slice(0,4).join(' · ');
+}
+
+function summariseTemplateEnrichment(node){
+  if(!['Template','TemplateSet'].includes(node?.node_type)) return '';
+  const meta=node?.metadata||{};
+  const text=meta.template_contents || meta.template_purpose || meta.template_summary;
+  if(!text) return '';
+  return truncate(String(text),150);
 }
 
 function reportingSampleDatapoints(node,graph){
@@ -500,7 +550,7 @@ function reportingMaterialFilters(graph){
 function ReportingInspector({node,edges,graph}){
   if(!node) return <div className="pane"><p className="muted">Select a reporting node.</p></div>;
   const neighbours=new Map(graph.nodes.map(n=>[n.id,n]));
-  const grouped=groupEdges(edges);
+  const grouped=groupEdges((edges||[]).filter(edge=>!['USES_TEMPLATE','USES_INSTRUCTIONS','EVIDENCED_BY'].includes(edge.edge_type)));
   return <div className="pane explore-pane reporting-detail-pane">
     <span className="kind">{materialLabel(materialType(node))}</span>
     <h2>{displayNodeTitle(node)}</h2>
@@ -512,46 +562,46 @@ function ReportingInspector({node,edges,graph}){
 
 function ReportingMetadata({node,edges,graph}){
   const rows=reportingMetadataRows(node);
-  const links=reportingUsefulLinks(node,edges,graph);
+  const links=reportingSourceUrls(node,edges,graph);
   return <>
-    <Collapsible title="Useful links" count={links.length?`${links.length} items`:'no URL'} open>
-      {links.length?<div className="source-link-list">{links.slice(0,14).map(link=>link.url?<a key={`${link.url}-${link.label}`} href={link.url} target="_blank" rel="noopener noreferrer"><span>{link.kind}</span><strong>{link.label}</strong><small>{compactUrl(link.url)}</small><em>Open source ↗</em></a>:<div className="source-link-item" key={`${link.kind}-${link.label}`}><span>{link.kind}</span><strong>{link.label}</strong>{link.detail&&<small>{link.detail}</small>}</div>)}</div>:<p className="muted">No source URL is attached to this node in the current graph. Related templates and datapoint summaries are shown in the left rail and link sections below.</p>}
+    <Collapsible title="URLs" count={links.length?`${links.length} sources`:'no URL'} open>
+      {links.length?<div className="source-link-list">{links.slice(0,24).map(link=><a key={`${link.url}-${link.label}`} href={link.url} target="_blank" rel="noopener noreferrer"><span>{link.kind}</span><strong>{link.label}</strong><small>{compactUrl(link.url)}</small><em>Open source ↗</em></a>)}</div>:<p className="muted">No source document URL is attached to this node in the current graph.</p>}
     </Collapsible>
-    <Collapsible title="Metadata" count={`${rows.length} fields`} open={rows.length<=6}>
+    {rows.length>0&&<Collapsible title="Details" count={`${rows.length} fields`} open={rows.length<=6}>
       <dl className="metadata-list">{rows.map(row=><div key={row.key}><dt>{row.label}</dt><dd title={row.raw}>{row.value}</dd></div>)}</dl>
-    </Collapsible>
+    </Collapsible>}
   </>;
 }
 
 function reportingMetadataRows(node){
   const meta=node?.metadata||{};
-  const fields=[
-    ['data_item_code','Data item code'],
-    ['reporting_domain','Reporting domain'],
-    ['reporting_role','Reporting role'],
-    ['submission_system','Submission system'],
-    ['file_type','File type'],
-    ['source_document_count','Source documents'],
-    ['source_table','Source table'],
-    ['source_pk','Source record key'],
-    ['checksum_sha256','File checksum'],
-    ['datapoint_count','Datapoints summarised'],
-    ['template_count','Templates'],
-    ['sample_labels','Sample datapoints'],
-    ['title','Source title'],
-  ];
-  const used=new Set();
   const rows=[];
-  for(const [key,label] of fields){
-    if(meta[key]===undefined || meta[key]===null || meta[key]==='') continue;
-    used.add(key);
-    rows.push({key,label,value:formatReportingMetadataValue(key,meta[key]),raw:rawMetadataValue(meta[key])});
+  const add=(key,label,value=meta[key])=>{
+    if(value===undefined || value===null || value==='') return;
+    rows.push({key,label,value:formatReportingMetadataValue(key,value),raw:rawMetadataValue(value)});
+  };
+  if(node?.node_type==='Template'){
+    add('template_code','Template code');
+    add('title','Template title');
+    add('annex','Annex');
+    add('template_purpose','Template purpose');
+    add('template_contents','What it contains');
+    add('template_summary','Template explanation');
+    if(Array.isArray(meta.template_key_rows)&&meta.template_key_rows.length) add('template_key_rows','Key rows or sections',meta.template_key_rows);
+    add('template_quality_notes','Quality notes');
+    add('source_title','Source title');
+    add('source_file_type','Source file type');
+    add('source_status','Source status');
+    add('publication_date','Publication date');
+    add('effective_from','Effective from');
+    add('effective_to','Effective to');
+    add('downloaded_at','Downloaded');
   }
-  for(const [key,value] of Object.entries(meta)){
-    if(used.has(key) || value===undefined || value===null || value==='' || key==='url') continue;
-    rows.push({key,label:metricLabel(key),value:formatReportingMetadataValue(key,value),raw:rawMetadataValue(value)});
-  }
-  return rows.slice(0,36);
+  add('data_item_code','Data item code');
+  add('reporting_domain','Reporting domain');
+  add('datapoint_count','Datapoints');
+  add('source_document_count','Source documents');
+  return rows;
 }
 
 function formatReportingMetadataValue(key,value){
@@ -589,6 +639,38 @@ function reportingUsefulLinks(node,edges,graph){
     if(['Template','TemplateSet','InstructionSet','SourceDocument','DataPointGroup'].includes(other.node_type)) addItem(displayNodeTitle(other), materialLabel(materialType(other)), edge.edge_type==='SUMMARISES_DATAPOINTS'?`${fmt(other.metadata?.datapoint_count||0)} datapoints`:relationLabel(edge.edge_type));
   }
   return links;
+}
+
+function reportingSourceUrls(node,edges,graph){
+  const byId=new Map((graph?.nodes||[]).map(n=>[n.id,n]));
+  const links=[];
+  const add=(url,label,kind='Source document')=>{
+    const clean=String(url||'').trim();
+    if(!/^https?:\/\//i.test(clean) || links.some(l=>l.url===clean)) return;
+    links.push({url:clean,label:label||'Source document',kind});
+  };
+  const addNode=(candidate)=>{
+    if(!candidate) return;
+    const md=candidate.metadata||{};
+    if(['SourceDocument','InstructionSet','Template','TemplateSet'].includes(candidate.node_type)){
+      for(const key of ['source_url','url','document_url','original_url','target_url']) add(md[key]||candidate[key],reportingSourceLinkLabel(candidate),reportingUrlKind(candidate));
+    }
+  };
+  addNode(node);
+  for(const edge of edges||[]){
+    const other=byId.get(edge.from_node_id===node?.id?edge.to_node_id:edge.from_node_id);
+    addNode(other);
+    add(edge.source_url,relationLabel(edge.edge_type),relationLabel(edge.edge_type));
+    for(const key of ['source_url','url','document_url','original_url','target_url']) add(edge.metadata?.[key],relationLabel(edge.edge_type),relationLabel(edge.edge_type));
+  }
+  return links.sort((a,b)=>a.kind.localeCompare(b.kind)||a.label.localeCompare(b.label));
+}
+
+function reportingUrlKind(node){
+  if(isWorkbookSourceDocument(node)||node?.node_type==='Template') return 'Template workbook';
+  if(isPdfSourceDocument(node)||node?.node_type==='InstructionSet') return 'Instructions and guidance';
+  if(isTaxonomySourceDocument(node)||node?.node_type==='TemplateSet') return 'Taxonomy';
+  return materialLabel(materialType(node));
 }
 
 function reportingSourceLinkLabel(node){

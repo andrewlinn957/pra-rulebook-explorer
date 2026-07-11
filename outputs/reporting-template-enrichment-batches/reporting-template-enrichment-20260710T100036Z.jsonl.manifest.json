@@ -1,0 +1,1234 @@
+{
+  "model": "gpt-4.1-nano",
+  "prompt_version": "reporting-template-enrichment-v1",
+  "templates": [
+    {
+      "template_id": "template:PRA101:C00.01_Entry_points",
+      "input_hash": "0001ed949ccdf1815166df573f3f0da7f3f609111dace8089626037e09799ee7"
+    },
+    {
+      "template_id": "template:PRA102:C00.01_Entry_points",
+      "input_hash": "4d93245825a08096b86ec81c09f13fb4da5ba5d5f2b563b1420fe309f936e031"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C01.00_1",
+      "input_hash": "58e0370a4eed0eb4abf097ef4163021b7b51f64727db447abadcd89c48795477"
+    },
+    {
+      "template_id": "template:PRA101:C01.00_CAPITAL_PRA101",
+      "input_hash": "47507981eaf80dcf904b41b1a1de78295f4035c5fc17092476780c7cc7fd40a2"
+    },
+    {
+      "template_id": "template:PRA102:C01.00_CAPITAL_PRA102",
+      "input_hash": "44b54b11dfe7c35067e15e9c0ac3c8e3e3d82280cd0ded5d8d8181d913278f83"
+    },
+    {
+      "template_id": "template:PRA101:C01.00_Capital_Input",
+      "input_hash": "893b5dbc22ff494eaec1e84dc94078f25eb60476b1fbfb3bac993484f3073b70"
+    },
+    {
+      "template_id": "template:PRA102:C01.00_Capital_Input",
+      "input_hash": "31c8ae6ee2b4010c97e91766ab70459fc75f35050a21ae1b27d1e88b7f24b1e2"
+    },
+    {
+      "template_id": "template:PRA103:C01.00_Capital_Input",
+      "input_hash": "6caa0a5027758b0cf6b19a0e2a2ef16d69039ff2485bbbe78d3059c8ce1f95cb"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C01.00_Index",
+      "input_hash": "75d75be94e71663d56f29a06bfaad5a9fc765e3e37960852d7360dfad6d98f8a"
+    },
+    {
+      "template_id": "template:PRA101:C01.00_PRA_101",
+      "input_hash": "7f3323f03eee2050ab5639397e77d93aba23108504d0e801fe524aa9210d5c58"
+    },
+    {
+      "template_id": "template:PRA102:C01.00_PRA_101",
+      "input_hash": "5cd53ff005d1e5cac66f72851e08bfda6d60930fef1f843f9424fb4ee20a2a18"
+    },
+    {
+      "template_id": "template:PRA103:C01.00_PRA_101",
+      "input_hash": "a4b280060d397ec83de46ddb974207eb509923e93157c7899586aa11b4f188bf"
+    },
+    {
+      "template_id": "template:PRA101:C01.00_PRA_102",
+      "input_hash": "ccdd742ccdb54dc0b0183e686e5a4a426d9ae31db8e7bb6546ff4130f2223d61"
+    },
+    {
+      "template_id": "template:PRA102:C01.00_PRA_102",
+      "input_hash": "312af7b912fc561e2845b23edb582056bc6389a501a7708249717677ce0104d5"
+    },
+    {
+      "template_id": "template:PRA103:C01.00_PRA_102",
+      "input_hash": "8b7297d79dbd0b2ae35f6d627110925264671737bf62126b2b0b2dadd591f1bb"
+    },
+    {
+      "template_id": "template:PRA101:C01.00_PRA_103",
+      "input_hash": "da4ca97c1fa7d9cfa0d25eeaec057dbe77d20f0ae159d34e2bb9a7fbf66ebf97"
+    },
+    {
+      "template_id": "template:PRA102:C01.00_PRA_103",
+      "input_hash": "e9d2bac50e4d132ead6b865f4d201fe7f931f01118f99ff71e84f775bb4010ce"
+    },
+    {
+      "template_id": "template:PRA103:C01.00_PRA_103",
+      "input_hash": "edeebc3b28be76c37d891b5626cd8accaecf845757a8e531c1daaa7e4f26cb26"
+    },
+    {
+      "template_id": "template:PRA112:C01.00_PRA112",
+      "input_hash": "68acc6d36d925e7a97084025e26714e3a74594e1f68ed6b9c32c0e3c2bb80131"
+    },
+    {
+      "template_id": "template:PRA113:C01.00_PRA113",
+      "input_hash": "65e3e11fc0d3949c8473b5bcdf2e737303fb410fcc47dec36f6b936bd2928aaf"
+    },
+    {
+      "template_id": "template:PRA114:C01.00_PRA114",
+      "input_hash": "247ebfd9bfbad449a4e1442207e72239a60406aa5ea148f232de80e03eae060f"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C02.00_2",
+      "input_hash": "826283ce48e1130dcc1626ad7e908d4c1335003bc411824a1eafb0d400d7caa0"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C03.00_3",
+      "input_hash": "f59e774f1c1bddd242ec443cfaf1d87d4e5fd9ce4437a79220b3d6f145f74ee9"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C04.00_4",
+      "input_hash": "884f3cee051089ecd237fb959367f1432459276b0730ecc3464d123c26edb5a5"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C05.01_5.1",
+      "input_hash": "7bdc8bb9ac93a85935e7c4be22ba0208aedf79023e42e0c0e10455af371e3564"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C05.02_5.2",
+      "input_hash": "dc774c2705e423a0234cd541fc55f79bd69764ae8aa3c062c3f325c85de86db8"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C06.01_6.1",
+      "input_hash": "52854108c9585e9ea8dc259c9d1fa06a69eec2eb59322cf8109999105cfb206f"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C06.02_6.2",
+      "input_hash": "244a24bfd2441c3595c65dc90cc72b7115478a1ce8357cbda548a6931dfdc6a9"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C07.00_7",
+      "input_hash": "58897b8e511dbdfb04638e1d8c5e8be4397890f2c6205a3bf5671940c6f9d358"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C08.01_8.1",
+      "input_hash": "5dacb4144728d4609c3a9f4c974e960a30926ae12a502e47799b28019bd6fb36"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C08.02_8.2",
+      "input_hash": "3b75ebd73d6df6ed8528dd2bfd68a314daef970eb660a609474151a6c9188cb8"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C08.03_8.3",
+      "input_hash": "3805af5d5e2a7c7d4b8fe3e9d74b1486ca904c47f1defc6b64c1efae8fdbd1a5"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C08.04_8.4",
+      "input_hash": "08fdb463c8ee14655025a3fdb6835fa87e5ceebcc09d7904d0b3ad4e3b6be027"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C08.05_8.5",
+      "input_hash": "0552069f528e975f8c88a109789762590a256ac8d3594ee692749cce7e782c73"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C08.05_8.5.1",
+      "input_hash": "e3661007afb3d36354b5ed3cad12bcc348179e1f6e62ac2c4d5cc6aaad6a1f85"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C08.06_8.6",
+      "input_hash": "099c5cc698896ae94a3d042c5c4f2cdef1605645416d7b68ce7f677f6c2c18c6"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C08.07_8.7",
+      "input_hash": "9a9c01cfe0508b6a402743261fcd1cdaaabaacbf60d0df9f870f59fee64356df"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C09.01_9.1",
+      "input_hash": "c076c4ac299cabf87a21c0bbf780ba5c8cdaeb1e5e75972f5aee376320ddace3"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C09.02_9.2",
+      "input_hash": "027ea337634ce545238d328d8742420475256ce953cbecbf743495948aa78d03"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C09.04_9.4",
+      "input_hash": "8da5062d15ece7c426bf828a7d2845ab5910e4a137977231a24f4d33a4d254a5"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C10.01_10.1",
+      "input_hash": "d6098cfaff0c362ce99f5c2b7e5c0367f27d15c072f866e320860ecd183cd39f"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C10.02_10.2",
+      "input_hash": "ba70af7d4df73174e2d835d985dd4c6eeda419a5f15e57556d5e735f36aa5ee0"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C11.00_11",
+      "input_hash": "9474e0986e4501c66f1422734052b9f9ff0480f321550a68706a53d4cefcabd7"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C13.01_13.1",
+      "input_hash": "90feded4d5724fdae91659e19d24ace2ce6980efdfe3d326f97c1a1401a3d80f"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C14.00_14",
+      "input_hash": "a0c6b7a2dad3c04a19df0cf534553e97e5c4599759775840f089b52a138d8137"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C14.01_14.1",
+      "input_hash": "ceab8dcbb3e37d63e2094d47d0fb5e63ed629935d6a97e01db8ea1765f2bb5e0"
+    },
+    {
+      "template_id": "template:COREP-LOSSES-IMMOVABLE-PROPERTY:C15.00_15",
+      "input_hash": "d48a7334c930ecc017aca67199fe7d632b26fbb3c62726dc7171217c4e04f3e6"
+    },
+    {
+      "template_id": "template:COREP-LOSSES-IMMOVABLE-PROPERTY:C15.00_Index",
+      "input_hash": "e2ed0321ec0bb76a96cca4899a92d8c6bfc9009ce0ce30efeb94f7a646cab5c0"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C16.00_16",
+      "input_hash": "7a5f881f2e5fb31e3babd5745eab168707599e379b0fb21c8cb4e1e5feb388dc"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C17.01_17.1",
+      "input_hash": "8657d72639768d7dea41dbcc565c5cb0b23b01bed5eaa624c9d175973b9af842"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C17.02_17.2",
+      "input_hash": "e06042af5735143d81bc6d4de20af09112c9aacebfb65b2ee933c5a28dea47c2"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C18.00_18_",
+      "input_hash": "903f06342f42d59dcda056fb71fdfa4c89b97fc8bcae1f7028a775b3b88fcd83"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C19.00_19",
+      "input_hash": "8937eec7c2e87b2287daa75666623f250977bb2defce07798042bc9522bc5ee5"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C20.00_20",
+      "input_hash": "fcb5b7c937047160d04768bdb7fe666dbc6ac8c428eff8b573d3fc0398771b02"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C21.00_21",
+      "input_hash": "59786228d066072883a0352cf6302e825aec31ea7fbf63e58cc3ca0d0f71d7f5"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C22.00_22",
+      "input_hash": "3ed45dd304282dad552c2096ce6f149d035fd80ea2c799273482ccb52f0d6a15"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C23.00_23",
+      "input_hash": "6fd3a48e2f158825c0700fa51e506286421cf56bb85ad949286cfa643e899a1e"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C24.00_24",
+      "input_hash": "da04862c59613482ebdf851d0935c4ba22812f4b21d95e32527c30f6a3b9d0ee"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C25.00_25",
+      "input_hash": "dcb7270ca84c8fda2c50f6f597708b153201db48608d210b6105679152015bcf"
+    },
+    {
+      "template_id": "template:COREP-LARGE-EXPOSURES:C26.00_Index",
+      "input_hash": "8f1d7aac81aa05602755ca995e04f94c48289e1875bfbe19981ff008085fc56f"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C32.01_32.1",
+      "input_hash": "8524795b873e863ef0a07bd250c2eae36a9f02c1c64154949639b147b5638b76"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C32.02_32.2",
+      "input_hash": "d44c8bb066b8ab2cf33ecd60c411f7f67aeb4c9501c5dbd8e135bc03b61711b7"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C32.03_32.3",
+      "input_hash": "ae242a99e1aa0ca52b5c9d4f91e85bc088d4da025bc826f94fe8888ffad14385"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C32.04_32.4",
+      "input_hash": "41b7020c0097256c3332e82ef258671f0c7a89b589cf2d8452bc76328bdadd87"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C33.00_33",
+      "input_hash": "68ce9a04e7dc54777f19cb0bcdab544f79a036b7b18557ddc117f2624bd85dff"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C34.01_34.1",
+      "input_hash": "17887baa5467d0d6bfdeae48a1cb4a12cdb5be9a0553e793daa36dce6e11f25e"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C34.02_34.2",
+      "input_hash": "6aee60ba590a4d2c86311c1b6be2192fc9f4c7c0afe5e93a87d1cf49025f2261"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C34.03_34.3",
+      "input_hash": "9993a387e76e25dc6ba3b7abf618dc47546e7aa22a5e1c31b25c09bf62fd673b"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C34.04_34.4_",
+      "input_hash": "8438855f87909a3edc865a742e026cb39697b34ae716f779b9785a61ad4a907d"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C34.05_34.5",
+      "input_hash": "b0109443cbeefaaa820965be2663468a4b15a0a2c9b10ba2fefbb4a5d17f316f"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C34.06_34.6",
+      "input_hash": "18f8329cf6ecc3414a5b184adfd25953151a0b9e0aacdfbe108349c809de3a7e"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C34.07_34.7",
+      "input_hash": "65720f02f92333431f68d2bcdd48824b82ca90464494aac273ea18eb4483efd8"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C34.08_34.8",
+      "input_hash": "6a97a8a08af3bbe18d635922a17087ab8fd2dea4d375c14860f0d85e4286689f"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C34.09_34.9",
+      "input_hash": "511d6e166bd2b1723ff7e070dbf52004261622096f61b4297caaa578a4c62ca8"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C34.10_34.10",
+      "input_hash": "fb6a5b5f383f424f8779e309207fdf6c5f913a5c60dfa975d8c06cf95ae34fcf"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C34.11_34.11",
+      "input_hash": "fe5e429ef28f33fe713b807ab67495f480c856962bfe1c16eef75e13afcf5968"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C35.01_35.1",
+      "input_hash": "fd5071d32e914eb739f36ddffce2c56b8ba286954d9a4a1a362939da43dda2cd"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C35.02_35.2",
+      "input_hash": "9599fdb371a1b644223d4de1440f4f9203a6786fbf265d80baf430e19822188c"
+    },
+    {
+      "template_id": "template:COREP-OWN-FUNDS:C35.03_35.3",
+      "input_hash": "d98610ae8dcd554a6a67c1699de99e0838286850a9f2c484549a52169307730b"
+    },
+    {
+      "template_id": "template:C72.00",
+      "input_hash": "ae38c8709338da6d46b32a70b8b0222ab6e104adf1172607f15e5bd7b4e8f65f"
+    },
+    {
+      "template_id": "template:C73.00",
+      "input_hash": "04730969698934a41d7e34ff8c994a51e0e4d322f2a215ca274cf7977bd77e59"
+    },
+    {
+      "template_id": "template:C74.00",
+      "input_hash": "ce0e419812d863b89010903e3aeb09c2cc4a45934e3aef407cc00c0c89e65383"
+    },
+    {
+      "template_id": "template:C75.01",
+      "input_hash": "cbdb6b38d6cb56dbb39045ae1be139b7e7ddf1ab32014a36af710ced3338c4f9"
+    },
+    {
+      "template_id": "template:C76.00",
+      "input_hash": "18c7e665ec9ee459373574cef3a2ea5be33e346f4baaf4e593c2da3d50245b52"
+    },
+    {
+      "template_id": "template:COREP-CREDIT-RISK:COREP-CREDIT-RISK_Annex_XV",
+      "input_hash": "4655ac9b8e21cf5c1aae31bdb4fc186d5ac8749a0108f25c4c0f51d7a3abee88"
+    },
+    {
+      "template_id": "template:COREP-CREDIT-RISK:COREP-CREDIT-RISK_Annex_XVII",
+      "input_hash": "1defb8af7ee2775d043b2afce23488e93d9d36d00f276304717a4e722bcf1de6"
+    },
+    {
+      "template_id": "template:COREP-CREDIT-RISK:COREP-CREDIT-RISK_Annex_XXI",
+      "input_hash": "618a19b9a30480d5658c458fd465d2adc94a6e9e8b767fb5d8d6f85bd2e584b2"
+    },
+    {
+      "template_id": "template:COREP-CREDIT-RISK:COREP-CREDIT-RISK_Table_UK_CRA",
+      "input_hash": "3245f944d4959bf5c6b6095aeaf9f46a080e539b54143c4da31e1cdede8d2661"
+    },
+    {
+      "template_id": "template:COREP-CREDIT-RISK:COREP-CREDIT-RISK_Table_UK_CRB",
+      "input_hash": "31b7b3ca827b1cec2dd823104381e9329a9562b7141252f7a7376fee6314aacf"
+    },
+    {
+      "template_id": "template:COREP-CREDIT-RISK:COREP-CREDIT-RISK_Template_UK_CQ1",
+      "input_hash": "fa6e9f986e39a7b6167224289343c907179adc21303ab06bbb264c700fad81b3"
+    },
+    {
+      "template_id": "template:COREP-CREDIT-RISK:COREP-CREDIT-RISK_Template_UK_CQ2",
+      "input_hash": "2cf72fd1c014819e26bbcd4e4621382b2180522c0b161cfd9a982844fb958563"
+    },
+    {
+      "template_id": "template:COREP-CREDIT-RISK:COREP-CREDIT-RISK_Template_UK_CQ3",
+      "input_hash": "bd4d74e0b35457694ceb929d945434d585e154cd534b30053652c695ffbcf735"
+    },
+    {
+      "template_id": "template:COREP-CREDIT-RISK:COREP-CREDIT-RISK_Template_UK_CQ4",
+      "input_hash": "d029efec83a25dbf57a0512484749d5142c66d01e6560a99e7b6f364e19859b6"
+    },
+    {
+      "template_id": "template:COREP-CREDIT-RISK:COREP-CREDIT-RISK_Template_UK_CQ5",
+      "input_hash": "c48218cac621bb38fd8d52e47aec9c25ed53592fbbe9f70fde3d2122974c6cdb"
+    },
+    {
+      "template_id": "template:COREP-CREDIT-RISK:COREP-CREDIT-RISK_Template_UK_CQ6",
+      "input_hash": "daa1c099ce206d1451557c6a8986fd8ef05042a06eb0240544ee0f8691956f21"
+    },
+    {
+      "template_id": "template:COREP-CREDIT-RISK:COREP-CREDIT-RISK_Template_UK_CQ7",
+      "input_hash": "df64f66356741dd8b265d52a98c4f25a61d2bc24a7cea8d6ee5158cbbf53e0e1"
+    },
+    {
+      "template_id": "template:COREP-CREDIT-RISK:COREP-CREDIT-RISK_Template_UK_CQ8",
+      "input_hash": "5c5f896e9c246518c88a052c78a7623eb329b7be6d5db9139f29536987316dbd"
+    },
+    {
+      "template_id": "template:COREP-CREDIT-RISK:COREP-CREDIT-RISK_Template_UK_CR1",
+      "input_hash": "1ceef1da37e26ad771fabace71dc11d89d248ecb1a1d91d8550069e7ff8127e2"
+    },
+    {
+      "template_id": "template:COREP-CREDIT-RISK:COREP-CREDIT-RISK_Template_UK_CR1-A",
+      "input_hash": "dce28ed34a8262405962f01b6222a0c60bb9166dcb05fa448a879b37652f6765"
+    },
+    {
+      "template_id": "template:COREP-CREDIT-RISK:COREP-CREDIT-RISK_Template_UK_CR2",
+      "input_hash": "19464000a941a864d52488301a5c492b779b8a11f8eef850176204944e6422a5"
+    },
+    {
+      "template_id": "template:COREP-CREDIT-RISK:COREP-CREDIT-RISK_Template_UK_CR2a",
+      "input_hash": "48bb0fac2cafccb4338d8b76cd36784c54d95de5339c905b3314e50f916addc8"
+    },
+    {
+      "template_id": "template:COREP-CREDIT-RISK:COREP-CREDIT-RISK_UK_CR3",
+      "input_hash": "d9b72b85f68d2cb3014cc9ae1b402b0a56b019ba7c08792a063eddc9856ec737"
+    },
+    {
+      "template_id": "template:COREP-CREDIT-RISK:COREP-CREDIT-RISK_UK_CR8",
+      "input_hash": "017ac9ed2386274bc26417a6e2040acae421a27a8616249d7cb5a3231d575262"
+    },
+    {
+      "template_id": "template:COREP-CREDIT-RISK:COREP-CREDIT-RISK_UK_CR9.1",
+      "input_hash": "da198b4a96500231425275b8d26c719e44db703acb1472750d5ac6df1cd3a10d"
+    },
+    {
+      "template_id": "template:COREP-CREDIT-RISK:COREP-CREDIT-RISK_UK_CRC",
+      "input_hash": "b3f640c4b459dc0a3002178751b8cb58821bf3e2d52673eae18a1374efc3f8d3"
+    },
+    {
+      "template_id": "template:COREP-CREDIT-RISK:COREP-CREDIT-RISK_UK_CRE",
+      "input_hash": "d97e0b84cbd0efe0f9b4aa6dda18cde2e95618b55cadd1664499fae93aa669bb"
+    },
+    {
+      "template_id": "template:COREP-G-SII-BUFFER:COREP-G-SII-BUFFER_G_01",
+      "input_hash": "1991ff566c3a11367205715444555f11dd13798b4309d3914f31dcdd70f884e7"
+    },
+    {
+      "template_id": "template:COREP-G-SII-BUFFER:COREP-G-SII-BUFFER_Index",
+      "input_hash": "dd3f945aae24dfe4c41a622a9dfb54310e7e2b473d9585d2ec8dbd42f7ad3680"
+    },
+    {
+      "template_id": "template:COREP-LEVERAGE:COREP-LEVERAGE_Annex_I",
+      "input_hash": "d8d58e58b504ecd96b8c358d9be7f3b74a3f1e6d982d1f5d846f12865b20bc68"
+    },
+    {
+      "template_id": "template:COREP-LEVERAGE:COREP-LEVERAGE_Annex_XI",
+      "input_hash": "c2f5bc6e561d93da9f73976223d459200300121c725ca0608ee947a3347746e6"
+    },
+    {
+      "template_id": "template:COREP-LEVERAGE:COREP-LEVERAGE_UK_INS1",
+      "input_hash": "a2f09f4482cf1dff8a96ceea67892a84b066248ad9a4994898aba086dbfc659a"
+    },
+    {
+      "template_id": "template:COREP-LEVERAGE:COREP-LEVERAGE_UK_INS2",
+      "input_hash": "ef71b0e32569d7f29633cf2109ceadbd3c3331ef8a35be8a3fff4735e9e5d304"
+    },
+    {
+      "template_id": "template:COREP-LEVERAGE:COREP-LEVERAGE_UK_LR3_-_LRSpl",
+      "input_hash": "19aba24e5e4376eaabcda4c1684e17f2348489a341b9eabc3db3b6070549909e"
+    },
+    {
+      "template_id": "template:COREP-LEVERAGE:COREP-LEVERAGE_UK_LRA",
+      "input_hash": "a39cc5433e8856ed7c72a3bc6d00302a0bed220a95e63157bc2dcbbac8b63108"
+    },
+    {
+      "template_id": "template:COREP-LEVERAGE:COREP-LEVERAGE_UK_OVC",
+      "input_hash": "cf8d1940d32b231fef9c430e7f0b19290c5353b7d1522b98527495fa98fb6170"
+    },
+    {
+      "template_id": "template:COREP-MARKET-RISK:COREP-MARKET-RISK_Annex_XXIX",
+      "input_hash": "52a4153177bae82856bf023b278b1370010ee5a8acb237dd21d589e312a1fc27"
+    },
+    {
+      "template_id": "template:COREP-MARKET-RISK:COREP-MARKET-RISK_UK_MR1",
+      "input_hash": "79c6ee1431567b68789979e294b5ca35785df36bf38bb1c83d19778795091af7"
+    },
+    {
+      "template_id": "template:COREP-MARKET-RISK:COREP-MARKET-RISK_UK_MR2-B",
+      "input_hash": "7ab2b472c4c87143dad13fd326a9be2be8d8b38d5ab8accecbf808cc0374f60c"
+    },
+    {
+      "template_id": "template:COREP-MARKET-RISK:COREP-MARKET-RISK_UK_MR4",
+      "input_hash": "98fc15523f48732e19dd321da7b4c81a0028dee61722c32ec15afc3910ffe5fd"
+    },
+    {
+      "template_id": "template:COREP-MARKET-RISK:COREP-MARKET-RISK_UK_MRA",
+      "input_hash": "95a21e8ab22431fe696a6515b435f448b65d30a3cbf1b6d636b9a34c6b750c7d"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_1.1",
+      "input_hash": "af6c89e43cd28fc80706488f660c24a2bc37869f5c30fb504b3bcfac1c35a04a"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_1.2",
+      "input_hash": "174f59e574303757ed89e0586b0bae132328807fa7989e2fa6fd3af422b3b28d"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_1.3",
+      "input_hash": "6a7188cd37d1f74afec962767ef859a6a1626333348ffd3dee719fa37bc6880b"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_10",
+      "input_hash": "4126aee6072423e16bfb9cc8c366facadbf0a381e1ae833d795fe15bbfe5e532"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_11",
+      "input_hash": "9e68a1a12f0182644adfbc382a6f338d7549fcab1faf1489a6426211f746100d"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_12",
+      "input_hash": "099842e48f18e1740bcab015b3803066b1b72af94cd714bda22aeb19d8fcc7a7"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_13",
+      "input_hash": "38f5680c4cebf7e576e0de535da6cdb48174289d6bbf0ee78716716672850857"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_14",
+      "input_hash": "af536655d014ac317e52ee742dc2667150f82c8c6b2ef1f3172b151c602b33f7"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_15",
+      "input_hash": "87bed632b9f4db1016575987a1c8ab743e4bdec780b382ce3796563fc72dcae0"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_16",
+      "input_hash": "1bc97d60b2997ee1530ef67c76ffb3d6c7b50dc427463f6e11c4cbc0b75b632b"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_17",
+      "input_hash": "39ccf24cc8287c980b7b6f1d4b28c095f2875be4cbd6950f4cff3c1d1cdea7e6"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_18",
+      "input_hash": "6dda07ee43d44c65fe3ceba224e97ea6afcd9f96c1adaa3aa882830155425ec0"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_18.1",
+      "input_hash": "153b47678896620e113ad6dcd0424f862f1479eceda71d0d34172d1509cb6c8b"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_18.2",
+      "input_hash": "58b9bad7b9a3abf48bffe2fe40478e3639ebb8dc213eefa7b5efac946548f998"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_19",
+      "input_hash": "8da6783ac529d462b4d3f6c13415367a9afc5b7fbe828e4ad6a0dde62edc0083"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_2",
+      "input_hash": "f6952cd66f43e31a377a59949bd0f20630569fbbb2f55fe0677877845b5b6cb2"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_20",
+      "input_hash": "0b480090a6c5a68615284b3baac389ace6d29fcdb177fa1e69062cb7b2c7df4c"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_21",
+      "input_hash": "2da6d03a432e86f8aabff9947501c460e234e144137eaefb312fc2ba9d08371a"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_22",
+      "input_hash": "88f2005d2c9ea2f741a085b448a9908830f844f8a08ba6da34a3371fdde797b2"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_23",
+      "input_hash": "c67e492b53c596f2e65134da90529cda8c8b2374955e3ab2167246977227cdcd"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_24",
+      "input_hash": "683676e892fac5b2b52a2bb93903a8c1e57635e23128f6894af9f9749b9aa65c"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_25",
+      "input_hash": "223f0c65af560017dfd5759eeb1831788441833dc4619d6aaa9d7e30b7092855"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_26",
+      "input_hash": "1c17cb69b0ed2abada886ed4c8651090af0d5a9bdd96bcad7fbeecd28033dc88"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_3",
+      "input_hash": "dd935bff3c8cef07b4efee13bf7ffd1aebad01c0226a34cf9eda12adbceefe58"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_30",
+      "input_hash": "02dfa12f143f82e52477e1b1cbc4518907ecb5f7b0a7dcf55629918bf5d84656"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_31",
+      "input_hash": "1768053d525afbafe218ab609ccd637dcf575adab191b2eeaf724f475cfd54d3"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_32",
+      "input_hash": "63000bacfed4b2506f586f97a173e6bccb351ced40f40506b04cb8de4efd25f7"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_33",
+      "input_hash": "6d34cc29b5455c275475a8d3fa89aa919d5ad6e82f1b1e3513dcc4b1dbfdc246"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_34",
+      "input_hash": "ea3f42cd55677a9feb3b1856a3a2a302b4e6cedacd2c5a9a37aa5f646ee4d7f2"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_35",
+      "input_hash": "b37eab9997b5da889689088d12187f0e7056077ba568b178d12fab312d5a44ef"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_4",
+      "input_hash": "be8d611398edb8c6a65b9197e4ae33cb6265f698d1cd73592a7630e1f5d82c7f"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_40",
+      "input_hash": "90acea2549d6204493edef84d9a358b2469a0f348148b91664e8619eb2cfb48f"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_41",
+      "input_hash": "cd215a307bb091a6ac427bfc57542b0df70819ace0d26fdd7d6bc7f380d60e67"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_42",
+      "input_hash": "bb2cb58302fd0b67ecae7efaaa91009c04b64731caeedd7e8913874f320a66e4"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_42_",
+      "input_hash": "854eb229c5b057644f124f84bea841ae759220c4719116b6b2dfcbdc5bfa4992"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_43",
+      "input_hash": "aba40cb2cba03571c4dcc8d84fff707d7cc79756fe2fb2f02f669862562006d2"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_44",
+      "input_hash": "22e6ce066a1d0e5ef4d7607ccf945df5f6a9734cac361cdb83d54b6cc68caf0e"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_45",
+      "input_hash": "c0efcabe27492a15813f02ae8946aaedbe45c9cb2412a4e1db49c3fe837a3e85"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_46",
+      "input_hash": "761badf9cf889ae7f610c7b59c940138574f3e329c865e62a251f7d4886b22a0"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_47",
+      "input_hash": "41f622f5e0af3bd2610cef39a33108fc74338c97712f6ac33d8a136cc5ae1511"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_5",
+      "input_hash": "f2c2eca953035ebc826357c39ad69d441806155411bc1ddd844482031aa6918d"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_6",
+      "input_hash": "1b52dcb02b1e89c305afa3af9d8632dae54ed0a703dbee244d90642f5ea9e63f"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_7",
+      "input_hash": "7aac5f7171bf0453e8b8f8cf16cc1f003b3366da63e07ec9243e46d762cd50f5"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_8",
+      "input_hash": "3c78d228daf813da3a9cebef2505082e8428ca9c988defd1442b13ce5d4f35a1"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_9",
+      "input_hash": "fd1d545b741ebe194d469183d13946039c34731cc3f1fc72823cb709b644b192"
+    },
+    {
+      "template_id": "template:FINREP:FINREP_Cover_sheet",
+      "input_hash": "36121ebfebe1f1c69247638e89d2b50102ed50ec13dbb1a1b2e61e63b91a0e81"
+    },
+    {
+      "template_id": "template:FSA071:FSA071_FSA071",
+      "input_hash": "506cc44b559342ff0f69d9a32468c0977a92c35b27565becc3b9ac744b681ed7"
+    },
+    {
+      "template_id": "template:FSA071:FSA071_Lists",
+      "input_hash": "944af7dc12409abaa15ed1bf30157be232aed88e3542ef38576f61c5c016cb22"
+    },
+    {
+      "template_id": "template:FSA072:FSA072_FSA072_-_OR_Hist_Losses",
+      "input_hash": "750935d60a973b9b276268554280a781fd75cd04dbdb329bd790e8b7f94d802c"
+    },
+    {
+      "template_id": "template:FSA073:FSA073_FSA073_-_OR_HL_Details",
+      "input_hash": "0b150e14171f94bcf92dec26146bdc9eb356a4fde6495e7242b965790e6219bd"
+    },
+    {
+      "template_id": "template:FSA074:FSA074_FSA074_-_OR_Forecast_Losses",
+      "input_hash": "cab19238b25101027b95b09a2bfe1e7b5861e6b0c1e39cf0a0a222b55985f4a3"
+    },
+    {
+      "template_id": "template:FSA074:FSA074_Sheet1",
+      "input_hash": "970d5a36f862d791dbdf75f6a2fe8638beb61503be3c93ab8ed7c3ea9672ce03"
+    },
+    {
+      "template_id": "template:FSA075:FSA075_FSA075_-_OR_Scenarios_Data",
+      "input_hash": "e1ee1e6122f2efc93f50f579f1734c9eda443276507724d6ffe355dc7b69f347"
+    },
+    {
+      "template_id": "template:FSA077:FSA077_FSA077",
+      "input_hash": "ba419e84b353496a054cd8f31b3971b258aa78a66db2b7c64f517d46d67df6fc"
+    },
+    {
+      "template_id": "template:FSA077:FSA077_Lists",
+      "input_hash": "6b9ec6a669af29c31ce804c12802d542fbca735d1d0385e636fe83df8925745a"
+    },
+    {
+      "template_id": "template:FSA078:FSA078_FSA078",
+      "input_hash": "5afe6e4fb2f0729598dfae4257a40905eee8819c3b4c39a106e1e571fe506a79"
+    },
+    {
+      "template_id": "template:FSA078:FSA078_Lists",
+      "input_hash": "dbdf3d09ce102110ee034c455d914df0805b994de32bfbe9b83f88210b5c6d2b"
+    },
+    {
+      "template_id": "template:FSA079:FSA079_FSA079",
+      "input_hash": "9922f409dbea36a36a3617041cac5737c06ea85a268181696a54b6403f5fe056"
+    },
+    {
+      "template_id": "template:FSA079:FSA079_Lists",
+      "input_hash": "97b4c5ba32efb4beae9822ca0020cc2dfbc623944692b6fba9fb711486b2f5aa"
+    },
+    {
+      "template_id": "template:FSA080:FSA080_FSA080_Market",
+      "input_hash": "fdecd05394f2416df76eecc25f80675124ce4c9c6680390c337a9f06c5123e1b"
+    },
+    {
+      "template_id": "template:FSA081:FSA081_FSA081",
+      "input_hash": "be62c9130382fed0bf1c22244ccad6ceb799991093b3b0c8d2d3cafc040188f9"
+    },
+    {
+      "template_id": "template:FSA081:FSA081_Sheet1",
+      "input_hash": "7f4f3cf55be590ca559439b41b4ea12bfbdf33192d86aa6e56db53411537f7b1"
+    },
+    {
+      "template_id": "template:FSA082:FSA082_FSA082",
+      "input_hash": "70ce1c51bc0380cf18c38ab6bcb6e55a271709a50cf5446fba543af488b0109b"
+    },
+    {
+      "template_id": "template:FSA082:FSA082_Lists",
+      "input_hash": "c74f53172cc764465fb3a05b486f6e41ac242ce6a8b5e482aa2093480c4d2414"
+    },
+    {
+      "template_id": "template:IDY001:IDY001_Admin",
+      "input_hash": "0635e068f77e5ea85ac000939af3d034adc5146ab5c7e95dfd034ebe29f22fca"
+    },
+    {
+      "template_id": "template:IDY001:IDY001_Direct",
+      "input_hash": "b76d8c709565a25631d5d5461e445336e5ce84cacae5912f86d56025dafe095c"
+    },
+    {
+      "template_id": "template:IDY001:IDY001_Header_Info",
+      "input_hash": "43a530dfc3f11d058618fe4cadb33aee20cc4886784c498d0f8f605f8e5c232c"
+    },
+    {
+      "template_id": "template:IDY002:IDY002_Admin",
+      "input_hash": "eca5e82703251b473c6b3abd761eda5087331e612f3bb0c80abdbea2a2ad1931"
+    },
+    {
+      "template_id": "template:IDY002:IDY002_Header_Info",
+      "input_hash": "d42b8d2808cde0f28b8b906d0d2fa5f13568f820b63b063e7f8b48bdc2d2c3fb"
+    },
+    {
+      "template_id": "template:IDY002:IDY002_Indirect",
+      "input_hash": "2db73d7771b29a2d9532dbca61ff84accaa87a3f31ff31b50101cd5ec61270b7"
+    },
+    {
+      "template_id": "template:IDY003:IDY003_Admin",
+      "input_hash": "191570e3f2bbbaa3d10dc85887cecb535eceabab17e9ed4e6a81aa64ccca33af"
+    },
+    {
+      "template_id": "template:IDY003:IDY003_Header_Info",
+      "input_hash": "0747fcbb13ea482610826ef5b990c436f2cde6eecc22e0e0c5e66a8d12579c29"
+    },
+    {
+      "template_id": "template:IDY003:IDY003_Simplified",
+      "input_hash": "f4e269305cc276fa630451c3337087f299ef20c5c142fd5bfe76d39c2f9c3cea"
+    },
+    {
+      "template_id": "template:LVR001:LVR001_40",
+      "input_hash": "9578a741f411ef867f5021269cf6e883f69cdc7f4b2d333dbf5a931fb2755543"
+    },
+    {
+      "template_id": "template:LVR001:LVR001_41",
+      "input_hash": "37794062e8c291e7b8e2d45d008ff272c9f181ccef4ba14d338dff16e6b98cd5"
+    },
+    {
+      "template_id": "template:LVR001:LVR001_43",
+      "input_hash": "1c8e5e12d0e6838c81ef6a5c92d13ece8708e20eeeae3f52e56841e7ab1a682a"
+    },
+    {
+      "template_id": "template:LVR001:LVR001_44",
+      "input_hash": "d4b69a1301b2ac304cd2c42a6e7fe1f40eacdf35297e92c4e4a60368f120adbe"
+    },
+    {
+      "template_id": "template:LVR001:LVR001_47",
+      "input_hash": "a43314458adfa7f7c72895e99eabd40a15e41edfcf9658c0c36baabc52cda5f6"
+    },
+    {
+      "template_id": "template:LVR001:LVR001_Header_info",
+      "input_hash": "9038d70f5fc4d94ce15dbb616c494feb8136e3338ec232cf4863a02d8996f7d2"
+    },
+    {
+      "template_id": "template:LVR001:LVR001_Index",
+      "input_hash": "eec3c08b91310493e0d86451c72a1281a8642403a17d879b3f6287fb72341483"
+    },
+    {
+      "template_id": "template:LVR002:LVR002_Header_info",
+      "input_hash": "574f5ac493d854e147d75cb04d902a961489a33cda49186f848f2447986c6a5d"
+    },
+    {
+      "template_id": "template:LVR002:LVR002_Index",
+      "input_hash": "aa782539d64b689c3b9feb1dec951afadd47ebbc02602547e2cc5b5bd9c7f31c"
+    },
+    {
+      "template_id": "template:LVR002:LVR002_LV49.00",
+      "input_hash": "1c7618bd03fe285e72a85e2b35f16010ffb05943a142d39f2e103217a56c6533"
+    },
+    {
+      "template_id": "template:LVR002:LVR002_LV50.00",
+      "input_hash": "6d9e117232d6b59f8accccffe30708a4c0e45ebd8d10ba8edac0bcb987f466bc"
+    },
+    {
+      "template_id": "template:LVR002:LVR002_LV51.00",
+      "input_hash": "e5607a3ce6fd56be9db9e8b8d0523e8ff92164d08a2ba00fe05f6c8122727bcd"
+    },
+    {
+      "template_id": "template:LVR002:LVR002_Ref",
+      "input_hash": "308392c8a34308acd0e8d626f403435e1503577da8e4f45fa3e321f0028a6642"
+    },
+    {
+      "template_id": "template:PERIMETER_OF_CONSOLIDATION",
+      "input_hash": "e1a46037105c6cf10a8558bf441884c82d13a6cdbdef8a6c4efcd079d792a6ff"
+    },
+    {
+      "template_id": "template:PILLAR3-DISCLOSURE:PILLAR3-DISCLOSURE_Annex_III",
+      "input_hash": "d9cb93f16c224b37840610d86e9093c3cf0bd72f0c22535e14f474eb8cce9bf5"
+    },
+    {
+      "template_id": "template:PILLAR3-DISCLOSURE:PILLAR3-DISCLOSURE_Annex_IX",
+      "input_hash": "d940cad5bdc79ddf727f422ad6fffad02492ebc58f0ac858eb92d38e21641e85"
+    },
+    {
+      "template_id": "template:PILLAR3-DISCLOSURE:PILLAR3-DISCLOSURE_Annex_V",
+      "input_hash": "68b3ae56d198c4e9424e9ee8f7d5ecceeb10580cc2591e127f3ce5c62792218c"
+    },
+    {
+      "template_id": "template:PILLAR3-DISCLOSURE:PILLAR3-DISCLOSURE_Annex_VII",
+      "input_hash": "1827f40735966508900a1a883d7be53035566cdef71180e8c4faa7b6419a6993"
+    },
+    {
+      "template_id": "template:PILLAR3-DISCLOSURE:PILLAR3-DISCLOSURE_Artc_CRR",
+      "input_hash": "2539889e1538afd2be74366ecee29c739aecb1e5e817baa8c2ac1a464386fefa"
+    },
+    {
+      "template_id": "template:PILLAR3-DISCLOSURE:PILLAR3-DISCLOSURE_Table_UK_LIA",
+      "input_hash": "96e5c0e0dd8de6a4ba591f8190bb3f115c4cd3dd958808a45c56029cb06942ef"
+    },
+    {
+      "template_id": "template:PILLAR3-DISCLOSURE:PILLAR3-DISCLOSURE_Table_UK_LIB",
+      "input_hash": "3922fc6df1e39f95e7585fa2144640c2f423a7d2f0a07c0704256774dae28d43"
+    },
+    {
+      "template_id": "template:PILLAR3-DISCLOSURE:PILLAR3-DISCLOSURE_Table_UK_OVA",
+      "input_hash": "3e63aa6112607623c1a3ac5014bec2ef2fcd4ea880e72468b00b9e763e31e7d4"
+    },
+    {
+      "template_id": "template:PILLAR3-DISCLOSURE:PILLAR3-DISCLOSURE_Table_UK_OVB",
+      "input_hash": "a4c363c27c538405f3aa036720fdd5969c383e8414e837b2554fa79f2885e4d8"
+    },
+    {
+      "template_id": "template:PILLAR3-DISCLOSURE:PILLAR3-DISCLOSURE_Template_UK_LI3",
+      "input_hash": "d28352d215f4f2c6e6146f67fd034b2d92ea51097d873dd33ccbc3ff6811b087"
+    },
+    {
+      "template_id": "template:PILLAR3-DISCLOSURE:PILLAR3-DISCLOSURE_UK_CCyB1",
+      "input_hash": "6250cf80cad1bf8e14158121aa47010b1c20b175183d1380b53a832ab0c36baf"
+    },
+    {
+      "template_id": "template:PILLAR3-DISCLOSURE:PILLAR3-DISCLOSURE_UK_CCyB2",
+      "input_hash": "f6c4b9c772ea98df066ee095be1075d89eb1195374da07cd151d4dcd317705f6"
+    },
+    {
+      "template_id": "template:PRA101:PRA101_Header_info",
+      "input_hash": "52e60dfbb435661a1fd4b8a005191dec924aa049ddd9ee535a295cf90f4b460e"
+    },
+    {
+      "template_id": "template:PRA102:PRA102_Header_Info",
+      "input_hash": "39dba79bc38e9f94fee05d6c0c8ca92405e6ad6208e7a14e094a4059c99f5f4e"
+    },
+    {
+      "template_id": "template:PRA103:PRA103_Header_Info",
+      "input_hash": "ac63f4cf742f0da240015d11d1a116d85a4a6125aa94eb772b107de0cbcc78f9"
+    },
+    {
+      "template_id": "template:PRA104:PRA104_Forecast_BS_GAAP_1.01_",
+      "input_hash": "f88af58a47355bd933fcb11d9d04d9287c06a3801fcca99cb6a78d442bd9501d"
+    },
+    {
+      "template_id": "template:PRA104:PRA104_Forecast_BS_IFRS_1.01",
+      "input_hash": "3f8d9c7bcd784a9425ab11fb64b51b286a34d85f0c9084d0c2385b15c4e2079c"
+    },
+    {
+      "template_id": "template:PRA105:PRA105_Forecast_BS_GAAP_1.02",
+      "input_hash": "5d976f18a4cbad8a357ad93a2ee6c388ffb2e4083f24171898b4dad5e25c2b1f"
+    },
+    {
+      "template_id": "template:PRA105:PRA105_Forecast_BS_IFRS_1.02",
+      "input_hash": "28615662a2cda8b5945e874f8f2646ca62360454e06eb444bf6f1aa93fee146d"
+    },
+    {
+      "template_id": "template:PRA106:PRA106_Forecast_BS_GAAP_1.03",
+      "input_hash": "e986c3634ed95b67ce82f167f06f4aed0556fef785bfb4bfaa3ababc9323b928"
+    },
+    {
+      "template_id": "template:PRA106:PRA106_Forecast_BS_IFRS_1.03",
+      "input_hash": "e7f646e384dc47f2a5da690c1163bfc63bb22786e78a550fac1f23935da066fd"
+    },
+    {
+      "template_id": "template:PRA107:PRA107_Commercial",
+      "input_hash": "e46f0f9f889bb1dba3470039dcd6ca2c547f2e9a23796914d3d437c804a0d440"
+    },
+    {
+      "template_id": "template:PRA107:PRA107_Forecast_PL_GAAP",
+      "input_hash": "4833955f41c94ec27f2049840e2c1bbaed1317de13b7867574fc8fde4f04218c"
+    },
+    {
+      "template_id": "template:PRA107:PRA107_Forecast_PL_IFRS",
+      "input_hash": "433472c6b0cab7c6706bd0bf8f232bb91fc8cfed48e0bcffb576c0a2ea1c1881"
+    },
+    {
+      "template_id": "template:PRA107:PRA107_Investment",
+      "input_hash": "9d684885a53fcc5c5bb86edf66521cc687139124f99dbade043685ebfe05a561"
+    },
+    {
+      "template_id": "template:PRA107:PRA107_Investment_banking",
+      "input_hash": "52ab246cdaa096da7cc211841ec5f15d01e1e38320d57a26f64a2546163c42e5"
+    },
+    {
+      "template_id": "template:PRA107:PRA107_Other",
+      "input_hash": "af01397f8dfa91154eda39221dfc62a6e0362cd711f1ce347ac3f03242bcaf25"
+    },
+    {
+      "template_id": "template:PRA107:PRA107_Private_banking",
+      "input_hash": "f578a0f4c88fa87a14ef14cef9c1d70a832652f2ab746c1338b15f060f065d0c"
+    },
+    {
+      "template_id": "template:PRA107:PRA107_Retail_old",
+      "input_hash": "f9abe3d5f908d663ba32de2d33e94861122fb84365232057c18c719742ae4d0f"
+    },
+    {
+      "template_id": "template:PRA107:PRA107_Sheet4",
+      "input_hash": "185a6b9f94aca2e705fa37907c93de604f56e819108c7280236c641e1f2d5d93"
+    },
+    {
+      "template_id": "template:PRA107:PRA107_hierarchy",
+      "input_hash": "d84aee5dbddbba8a86a87751de60add13f9821b193a9134236a4ec264cbfe100"
+    },
+    {
+      "template_id": "template:PRA108:PRA108_PRA108",
+      "input_hash": "cea8cb5ba574877659a6c8391fbfefb69208033dedd0e82a437c9a8cda38c9f8"
+    },
+    {
+      "template_id": "template:PRA110:PRA110_PRA110",
+      "input_hash": "76299d159993d60e5e04714968d471b8ec1e22ac2f31af1ab16b877c5fb5e969"
+    },
+    {
+      "template_id": "template:PRA110:PRA110_PRA110_currency",
+      "input_hash": "b464fa02bfa408840c4ad268928662050eba551862cdef0ca7086ed4ddf3d3cd"
+    },
+    {
+      "template_id": "template:PRA111:PRA111_Capital_items",
+      "input_hash": "f34aadef3eb07ce53ae076799c311ec47fdc05724b57bf278a016182ca0e4de3"
+    },
+    {
+      "template_id": "template:PRA111:PRA111_Comments",
+      "input_hash": "f43b17df27fdcbc68f500921ad574554d0cd555f3d72a7b342eb90d84635708c"
+    },
+    {
+      "template_id": "template:PRA111:PRA111_Other_macro_economic_variables",
+      "input_hash": "9fc8fce1826388e01860dab48f67f3bb554a8cb43fca1408e2da6619f98c76c5"
+    },
+    {
+      "template_id": "template:PRA111:PRA111_Stress_case_management_actions",
+      "input_hash": "1147c42f67025ee8aa4463590a4da2fa62c9b6d7f9b28a9c6a3bb659932abc27"
+    },
+    {
+      "template_id": "template:PRA111:PRA111_Submission_header",
+      "input_hash": "57ff0729c9fe6a5ab0c9d616d73b5d42b00722adc272a3956de6bb6144f2677e"
+    },
+    {
+      "template_id": "template:PRA111:PRA111_UK_macro_economic_variables",
+      "input_hash": "d6ec24d934e31748b00d19ff85e1b0da7b3134cd383704a28345bfc98cdb19b6"
+    },
+    {
+      "template_id": "template:PRA119:PRA119_DataList",
+      "input_hash": "5e8224dc41eb145f99eaf079b1d73192813df9774e3587e0ca92f4a198de225f"
+    },
+    {
+      "template_id": "template:PRA119:PRA119_Lists",
+      "input_hash": "70c8bb248be5c0fcd6923b54c8e64be9ff818f5e4b1e85b7696532b02ed27276"
+    },
+    {
+      "template_id": "template:PRA119:PRA119_PRA119",
+      "input_hash": "c2cb59d89e2cc1ccc0d0cb5fa7babcc0ba74e4483a227c3afed464eb024c2302"
+    },
+    {
+      "template_id": "template:RFB001:RFB001_RFB001",
+      "input_hash": "f844f865cbc0be15f6f041aa8accde6e1052300c6eb62d06b8a707b0cae6d7fd"
+    },
+    {
+      "template_id": "template:RFB003:RFB003_RFB003",
+      "input_hash": "2f55860b4c87ec65d8e2dbd071d9cea8a5bcf7ccd15f354f684c35d58a727bcb"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_General_information",
+      "input_hash": "08ca71d6c4ec0eea1f1bd19dd43d668b688fe49039d0a32c93331dd196bf9854"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_RFB004_2019_OCP_",
+      "input_hash": "3175389150533f0f9aee85be7d0b11559b36a8f0689a33fbbce54247fdeaf4a9"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_RFB004_Intragroup_fin_rep_bkdn",
+      "input_hash": "2fd9048120a5fed99dbb973fc99f56ce232f010d3e1a3b1ff0132a25d562a648"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_RFB004a_-_past_due",
+      "input_hash": "b82c89ecb4d9fdd07cd423291e7bdcbeb7de87932b80aa6eb559d64397e3371e"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_RFB004b_-_financial_liabilities",
+      "input_hash": "92f6f50291f870bb6f40506bd20bcfa12ab23a19523c2d4891c57320633f15f2"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_RFB004c_-_off_balance_sheet",
+      "input_hash": "895fd269d73ee7983db503dd03ba04e018a35389ede97f2d9cdb82332775d320"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_RFB004d_-_derivatives",
+      "input_hash": "e65bd07848841dd19039e7abe382fdd976c27cffa01d2bc63beb79cb4b1ede21"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_RFB004e_-_fair_value_hierarchy",
+      "input_hash": "a5a3d448ae83bfac44fbed85111c031dfd1c501494ce654acc20b1de6fcf0cb5"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_RFB004f_-_P_L_breakdown",
+      "input_hash": "b0add44f810e24ae7f53749317baf742afc4f2b253b3f08f48943bce94571a54"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_RFB004g_-_Fees_commissions",
+      "input_hash": "196f64f07fefef293448493f3a0699004549bf0155d971e1a7ed138fd6cc3134"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_RFB004h_-_non_performing_loans",
+      "input_hash": "5dff2d7be766f8d42fac266016780b6711aea03ff1795e306a82c12ba353f794"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_RFB004i_-_foreborne_exposures",
+      "input_hash": "a79b6c2b62fa5038e65c4cd6d73214ea49b9f3984ff6f70d4909d61e1fa3c556"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_RFB004j-administrative_expenses",
+      "input_hash": "fd0e3868616f84711d7c664584efa41f58c8a0ec4c7df940c4da182b3dfc4683"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_SR_01.01.03",
+      "input_hash": "643eb62a2973d7d888d28446d60700a5d09433b8d86d6d674c5d0863ad53f058"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_SR_01.02.03",
+      "input_hash": "cf638768d3c703785f26cb4ff101d8d7ff077a3ec922b68e24dabb1a7febc098"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_SR_03.00.03",
+      "input_hash": "e013bd2ffcc4c85d15da768f2e40f54f24256576fc548735a084f8d95db82223"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_SR_07.01.04",
+      "input_hash": "6719c01ba17fe0dda23b3eb1c763e6deb6c12545111eecb547f37a52dfce16ae"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_SR_09.01.04",
+      "input_hash": "8ece7fa354a25d25b7c589b4d20b1b1305bc7d2b958c7a5537f25869d1cbb5a7"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_SR_09.02.04",
+      "input_hash": "4ee5724da38e0de163c9d45019214da48684c43985b0cb8d0ecca3cd2e5de42f"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_SR_10.00.04",
+      "input_hash": "340e30e665beb0f56afd2868f3fffa9fcac6aecad5c37b1373618ab70f9fbaee"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_SR_14.00.04",
+      "input_hash": "df120f0a0d4900786ab3130138d6b539bfc59fa326ede9a67a2dc5dbfd2a5883"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_SR_16.02.04",
+      "input_hash": "bba58f264cbf11933b025d68c38b17ddc3533bd217afb928487d7bf16dce7a1a"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_SR_16.03.04",
+      "input_hash": "a649c4dda711ae5d1749dc82bc6f119503ee13df8606a2e638a2589d48d578b1"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_SR_16.04.04",
+      "input_hash": "b3309327ed19953a381573a21f05c0da0238fa10aac28447078285c1bd89580b"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_SR_16.05.04",
+      "input_hash": "7d66373186fb229b7bc25c1b560a4ae34c47523dcf6c119c4d7a38346839c4d5"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_SR_22.02.04",
+      "input_hash": "fc61f8931246357b335b83c672ad0896e73b88259921de9975455764dd6a5923"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_SR_41.01.04",
+      "input_hash": "21a9698df4a780ba1e6dbde7b74c6cc66827bf253380276ebe674acbf744d7a1"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_SR_800.00.01",
+      "input_hash": "425e2a7f334362ac930367cd5a184e6bec77e5a067e8173688999e62a33e3569"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_SR_800.00.02",
+      "input_hash": "0de131c4bd0b68cbbd59166792701d06d36a3a688e64490255476b70dd0796f0"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_SR_800.00.03",
+      "input_hash": "0c96a0d43bdeb468c9330a998fa2de1d57cf6ed5486f23f9b8d92838863ae436"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_SR_801.01.01",
+      "input_hash": "2004c5a6d65db2666dc8d81d781ff602c079af6ebf5546a96fcfb6cab2a842c0"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_SR_801.02.01",
+      "input_hash": "cffd2534d6b0666aeae3e5c9ce1aa86b15aa2d39456dc077714215474b2ed7cf"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_SR_801.03.01",
+      "input_hash": "c5d9c3d5733fabbfaa65ee8c55d66d8f707148af553bcc831397ab8f2343ea34"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_SR_801.04.01",
+      "input_hash": "da35fa991f0ba762338a2254e9730ad520bbb657614adb299f0308c24f66d58c"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_SR_802.01.02",
+      "input_hash": "448a7dab8c9d3838ed55922563e05aa4b500ceb831a61c43446ba4614da994e9"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_SR_802.02.02",
+      "input_hash": "f952bd4d4c21945022fb884144b4926bed5e4d6f81cb8075020a9aa94585cc29"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_SR_805.01.05",
+      "input_hash": "7774f63edbee574b81af963ec27fafcac6c8c5efb5fba115abecb214a1a4bb20"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_SR_805.02.05",
+      "input_hash": "f00767cb62cc077ac416e618b9bac48882c41ba15b5d807994edde9bad06c189"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_SR_806.01.06",
+      "input_hash": "2122e321965a51a601412cdc8779890d0ba8bd506feda01224d0342776915dde"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_SR_806.02.06",
+      "input_hash": "fdc065061a055ace72802d2ba0dbb025071cf8ccf21ca22b77815d32c408fed0"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_SR_806.03.06",
+      "input_hash": "49d5552aa120f959999caa136e7ca4d2b142d45f3ae00d7d653bb318565b2a3c"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_SR_806.04.06",
+      "input_hash": "58beafa8027b08ed87d906475192158d5fc959bc74e6fad753ecfcd2a1c0ba75"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_SR_807.01.07",
+      "input_hash": "99763ffa56b9781eea26572e17ef1610308c76aaeaae73535f5e7987cf28a801"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_SR_807.02.07",
+      "input_hash": "2f5f24f0fcf8d7763cf7dc303e2fc8db6d8a436b2ef74e69e4e2030683f21c8f"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_SR_807.03.07",
+      "input_hash": "aba71e6fd00e7a03e7d4b11b7dddb427cd407866ed06de02b0f25339dabf7fa8"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_SR_807.04.07",
+      "input_hash": "f6f4bd5ff8b7dc4b4453795e08f144f1b859d1212d105cd8dcc96aef799ad7f1"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_SR_808.01.08",
+      "input_hash": "67c750d96ee9353c89695d612fe85e86d7a47bf360c8a917fdc95b9efab0d371"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_SR_808.02.08",
+      "input_hash": "8b04286efdaadf0e8f76dfd2db6004b0f6977f1a0d2a695e3a9b24e6462e1695"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_SR_808.03.08",
+      "input_hash": "6be65422a90c49de2ed3b0be6ffb3c10bde07843c1ed6d3567d6f62b2a672953"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_SR_808.04.08",
+      "input_hash": "c5007d29064a549178aacbd7d9e5f126a06961f333e79b50a23764362a7d4dcb"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_SR_808.05.08",
+      "input_hash": "f8a6dbd35e5c5814d4ffd4af3d02149fa593d34ea2eedea21901bfa35f3603dd"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_SR_808.06.08",
+      "input_hash": "f418e32254f37f05a9d2c11d579da2b25da533d9c868a286f1e5f552a23b0e2b"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_SR_808.07.08",
+      "input_hash": "7ee402c3e001f9c8aef9079f0c92e19fa51272037bd337c44a8b4941d61127f4"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_SR_808.08.08",
+      "input_hash": "b1ddc65ce439e9d5eb16e9de6d2e409b1619f84702086bc2886728b9ace36295"
+    },
+    {
+      "template_id": "template:RFB004:RFB004_SR_808.09.08",
+      "input_hash": "eaf0d75c434342b6000ce01650df48a990e37366eaba01e31e998d7a04402dbc"
+    }
+  ]
+}

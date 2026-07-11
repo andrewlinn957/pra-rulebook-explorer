@@ -122,6 +122,33 @@ class ReportingOverviewGraphTests(unittest.TestCase):
         self.assertEqual(graph["available_edge_types"]["USES_TEMPLATE"], 1)
         self.assertEqual(graph["available_edge_types"]["REFERENCES_RULE"], 1)
 
+    def test_selected_return_suppresses_source_document_duplicate_of_instruction_set(self):
+        conn = self.make_conn()
+        url = "https://www.bankofengland.co.uk/example/corep-ccr-instructions.pdf"
+        self.add_node(conn, "data_item:COREP-CCR", "DataItem", "COREP-CCR")
+        self.add_node(
+            conn,
+            "instruction_set:COREP-CCR",
+            "InstructionSet",
+            "COREP-CCR instruction set",
+            '{"source_document_ids":["annex-xxvi"]}',
+        )
+        self.add_node(conn, "source_document:annex-xxvi", "SourceDocument", "Annex XXVI (PDF)")
+        conn.execute("UPDATE graph_node SET source_pk=? WHERE node_id=?", ("annex-xxvi", "source_document:annex-xxvi"))
+        conn.execute(
+            "INSERT INTO source_document(source_id,title,url,file_type) VALUES (?,?,?,?)",
+            ("annex-xxvi", "Annex XXVI", url, "pdf"),
+        )
+        self.add_edge(conn, "e1", "data_item:COREP-CCR", "instruction_set:COREP-CCR", "USES_INSTRUCTIONS")
+        self.add_edge(conn, "e2", "data_item:COREP-CCR", "source_document:annex-xxvi", "EVIDENCED_BY")
+
+        graph = reporting_overview_graph(conn, selected_return="COREP-CCR")
+
+        ids = {n["id"] for n in graph["nodes"]}
+        self.assertIn("instruction_set:COREP-CCR", ids)
+        self.assertNotIn("source_document:annex-xxvi", ids)
+        self.assertNotIn("EVIDENCED_BY", graph["available_edge_types"])
+
     def test_overview_excludes_datapoints_by_default_but_can_summarise_them(self):
         conn = self.make_conn()
         self.add_node(conn, "data_item:PRA110", "DataItem", "PRA110")
@@ -240,6 +267,58 @@ class ReportingOverviewGraphTests(unittest.TestCase):
         self.assertEqual(template["metadata"]["source_title"], "Annex IV")
         self.assertEqual(template["metadata"]["source_url"], "https://www.bankofengland.co.uk/-/media/boe/files/prudential-regulation/regulatory-reporting/banking/finrep-national-accounting-framework.xlsx")
         self.assertEqual(template["metadata"]["source_file_type"], "xlsx")
+
+    def test_template_nodes_include_template_enrichment_when_available(self):
+        conn = self.make_conn()
+        conn.execute(
+            """
+            CREATE TABLE reporting_template_enrichment (
+              template_id TEXT PRIMARY KEY,
+              model TEXT,
+              prompt_version TEXT,
+              input_hash TEXT,
+              status TEXT,
+              purpose TEXT,
+              contents TEXT,
+              summary TEXT,
+              key_rows_json TEXT,
+              quality_notes TEXT,
+              response_json TEXT,
+              updated_at TEXT
+            )
+            """
+        )
+        self.add_node(conn, "data_item:FINREP", "DataItem", "FINREP")
+        self.add_node(conn, "template:FINREP:FINREP_1.1", "Template", "FINREP 1.1")
+        conn.execute(
+            """
+            INSERT INTO reporting_template_enrichment(template_id,model,prompt_version,input_hash,status,purpose,contents,summary,key_rows_json,quality_notes,response_json,updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                "template:FINREP:FINREP_1.1",
+                "gpt-4.1-nano",
+                "reporting-template-enrichment-v1",
+                "abc123",
+                "ok",
+                "Captures balance sheet financial assets by accounting portfolio.",
+                "Breaks assets into cash, loans, debt securities and equity instruments.",
+                "FINREP 1.1 explains the asset side of the statement of financial position.",
+                '["Cash and cash balances", "Financial assets held for trading"]',
+                "Uses workbook row labels only.",
+                "{}",
+                "2026-07-10T10:00:00Z",
+            ),
+        )
+        self.add_edge(conn, "e1", "data_item:FINREP", "template:FINREP:FINREP_1.1", "USES_TEMPLATE")
+
+        graph = reporting_overview_graph(conn, selected_return="FINREP")
+
+        template = next(n for n in graph["nodes"] if n["id"] == "template:FINREP:FINREP_1.1")
+        self.assertEqual(template["metadata"]["template_contents"], "Breaks assets into cash, loans, debt securities and equity instruments.")
+        self.assertEqual(template["metadata"]["template_purpose"], "Captures balance sheet financial assets by accounting portfolio.")
+        self.assertEqual(template["metadata"]["template_summary"], "FINREP 1.1 explains the asset side of the statement of financial position.")
+        self.assertEqual(template["metadata"]["template_key_rows"], ["Cash and cash balances", "Financial assets held for trading"])
 
 
 if __name__ == "__main__":

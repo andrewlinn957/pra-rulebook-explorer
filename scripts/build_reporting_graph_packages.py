@@ -615,7 +615,12 @@ class Builder:
             for sr in ["solo basis", "consolidated basis", "sub-consolidated basis"]:
                 sid = "scope_rule:" + re.sub(r"[^A-Za-z0-9]+", "_", sr).strip("_")
                 self.edge(obligation_node, "HAS_SCOPE_RULE", sid, first_span, 0.66, "generic_reporting_scope", "candidate", "Generic reporting-basis hook retained as a low-confidence scope candidate; source-specific scope may be in instructions and should not be treated as accepted legal applicability.")
-            template_docs = [d for d in docs if d["file_type"] in {"xlsx", "xlsm", "xltx", "xls", "pdf"} and re.search(r"template|data[- ]item|annex|reporting-on|pillar3|corep|finrep|lvr", f"{d['title']} {d['url']} {d['local_path']}", re.I)]
+            # Template sets must be backed by actual spreadsheet templates.
+            # Some COREP/Pillar 3 instruction PDFs are labelled as Annexes and
+            # mention COREP/templates in the URL/title. Treating those PDFs as
+            # template sources creates bogus "template set" nodes that duplicate
+            # the instruction set and annex PDF source document.
+            template_docs = [d for d in docs if d["file_type"] in {"xlsx", "xlsm", "xltx", "xls"} and re.search(r"template|data[- ]item|annex|reporting-on|pillar3|corep|finrep|lvr", f"{d['title']} {d['url']} {d['local_path']}", re.I)]
             instr_docs = [d for d in docs if re.search(r"instruction|guidance|notes|manual|q&a|qa", f"{d['title']} {d['url']} {d['local_path']}", re.I)]
             tax_docs = [d for d in docs if re.search(r"taxonomy|dpm|sample instance|xbrl|filing manual|release note|change log", f"{d['title']} {d['url']} {d['local_path']}", re.I)]
             val_docs = [d for d in docs if re.search(r"validation|known issues", f"{d['title']} {d['url']} {d['local_path']}", re.I)]

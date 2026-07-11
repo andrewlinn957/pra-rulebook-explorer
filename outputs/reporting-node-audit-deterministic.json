@@ -1,0 +1,10 @@
+{
+  "pdf_template_set_edges": [],
+  "duplicate_user_facing_urls": [
+    {
+      "url": "https://www.bankofengland.co.uk/prudential-regulation/publication/2015/pillar2-reporting-including-instructions-for-completing-data-items-fsa071-to-fsa082-ss",
+      "c": 2,
+      "nodes": "SourceDocument:source_document:242b6d05065ff51f | SourceDocument:source_document:242b6d05065ff51f-v-36c9336cdb"
+    }
+  ]
+}

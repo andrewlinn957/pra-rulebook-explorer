@@ -164,6 +164,20 @@ class Extractor:
     def add_template_nodes_edges(self) -> None:
         ann_span = self.best_span("Annex XXIV", "Template C 72.00") or self.best_span("Annex XXIV")
         instr_span = self.best_span("Annex XXV", "instructions") or self.best_span("Annex XXV")
+        if instr_span:
+            instr_source = self.conn.execute(
+                """
+                SELECT d.source_id,d.title
+                FROM source_span s
+                JOIN source_document d ON d.source_id=s.source_id
+                WHERE s.span_id=?
+                """,
+                (instr_span,),
+            ).fetchone()
+            if instr_source:
+                source_node = f"source_document:{instr_source['source_id']}"
+                self.add_node(source_node, "SourceDocument", instr_source["title"] or instr_source["source_id"], source_table="source_document", source_pk=instr_source["source_id"])
+                self.add_edge("instruction_set:AnnexXXV", "EVIDENCED_BY", source_node, instr_span, 1.0, "deterministic", "accepted_candidate", "Annex XXV instruction set is evidenced by the official Annex XXV instructions PDF.")
         self.add_edge("data_item:COR011", "USES_TEMPLATE", "template_set:AnnexXXIV", ann_span, 0.98, "deterministic", "accepted_candidate", "Annex XXIV is the reporting template set for liquidity reporting.")
         self.add_edge("data_item:COR011", "USES_INSTRUCTIONS", "instruction_set:AnnexXXV", instr_span, 0.98, "deterministic", "accepted_candidate", "Annex XXV provides instructions for liquidity reporting.")
         for code, concept, term in [

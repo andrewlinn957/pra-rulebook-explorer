@@ -45,15 +45,18 @@ test('reporting graph navigation and inspector match the main graph conventions'
   assert.match(source, /Drag to pan · scroll to zoom · click to inspect · double-click to open/);
 });
 
-test('reporting inspector opens with understandable metadata and original data links', () => {
+test('reporting inspector opens with a URLs card and minimal details', () => {
   assert.match(source, /function ReportingMetadata\(\{node,edges,graph\}\)/);
-  assert.match(source, /Useful links/);
+  assert.match(source, /title="URLs"/);
   assert.match(source, /reportingMetadataRows\(node\)/);
-  assert.match(source, /reportingUsefulLinks\(node,edges,graph\)/);
+  assert.match(source, /reportingSourceUrls\(node,edges,graph\)/);
   assert.match(source, /Data item code/);
+  assert.match(source, /Reporting domain/);
+  assert.match(source, /Template explanation/);
   assert.match(source, /Open source/);
   assert.match(source, /function reportingSourceLinkLabel\(node\)/);
   assert.match(source, /function sourceFileName\(value\)/);
+  assert.doesNotMatch(source, /Useful links/);
   assert.doesNotMatch(source, /local degree/);
 });
 
@@ -72,21 +75,54 @@ test('reporting overview rail groups returns by reporting estate', () => {
   assert.match(source, /PRA returns/);
   assert.match(source, /function compareReturnCode\(a,b\)/);
   assert.match(source, /className="reporting-return-groups"/);
-  assert.match(source, /reportingReturnSummary\(n\)/);
-  assert.match(source, /function reportingReturnSummary\(node\)/);
-  assert.match(source, /template_count/);
-  assert.match(source, /source_document_count/);
+  assert.doesNotMatch(source, /reportingReturnSummary\(n\)/);
+  assert.doesNotMatch(source, /function reportingReturnSummary\(node\)/);
   assert.match(styles, /\.reporting-return-group h4/);
 });
 
 test('reporting drilldown rail groups related artefacts by role', () => {
   assert.match(source, /function reportingRailGroups\(node,graph\)/);
   assert.match(source, /Templates/);
-  assert.match(source, /Instructions/);
-  assert.match(source, /Sources/);
+  assert.match(source, /Instructions and guidance/);
+  assert.match(source, /Taxonomies/);
   assert.match(source, /Rules and legal basis/);
   assert.match(source, /Concepts and scope/);
   assert.match(source, /group\.items\.map/);
+});
+
+test('reporting rail keeps descriptions out of navigation rows', () => {
+  assert.doesNotMatch(source, /reportingReturnSummary\(n\)/);
+  assert.doesNotMatch(source, /group\.items\.map\(n=>.*reportingNodeSummary\(n\)/s);
+  assert.match(source, /add\('template_summary','Template explanation'\)/);
+});
+
+test('reporting inspector shows rich user-facing template details without LLM plumbing or audit metadata', () => {
+  assert.match(source, /title="URLs"/);
+  assert.match(source, /function reportingSourceUrls\(node,edges,graph\)/);
+  assert.match(source, /!\['USES_TEMPLATE','USES_INSTRUCTIONS','EVIDENCED_BY'\]\.includes/);
+  assert.match(source, /add\('template_code','Template code'\)/);
+  assert.match(source, /add\('annex','Annex'\)/);
+  assert.match(source, /add\('template_summary','Template explanation'\)/);
+  assert.match(source, /add\('template_quality_notes','Quality notes'\)/);
+  assert.match(source, /add\('source_title','Source title'\)/);
+  assert.match(source, /add\('data_item_code','Data item code'\)/);
+  assert.match(source, /add\('reporting_domain','Reporting domain'\)/);
+  assert.doesNotMatch(source, /audit_cleanup/);
+  assert.doesNotMatch(source, /addAuditCleanupRows/);
+  assert.doesNotMatch(source, /add\('template_enrichment_model'/);
+  assert.doesNotMatch(source, /add\('template_enrichment_prompt_version'/);
+  assert.doesNotMatch(source, /add\('template_enrichment_input_hash'/);
+});
+
+test('reporting rail groups source artefacts by useful file category and dedupes URLs', () => {
+  assert.match(source, /label:'Templates',match:n=>/);
+  assert.match(source, /label:'Instructions and guidance',match:n=>/);
+  assert.match(source, /label:'Taxonomies',match:n=>/);
+  assert.match(source, /function reportingRailDedupeKey\(node\)/);
+  assert.match(source, /function normaliseSourceUrl\(url\)/);
+  assert.match(source, /function compareReportingRailCandidates\(a,b\)/);
+  assert.match(source, /node\?\.node_type==='InstructionSet'\) return 2/);
+  assert.doesNotMatch(source, /isTaxonomySourceDocument\(n\)\|\|n\.node_type==='TemplateSet'/);
 });
 
 test('reporting graph keeps return as selected graph root while inspecting child nodes', () => {
