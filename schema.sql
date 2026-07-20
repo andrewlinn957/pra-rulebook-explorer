@@ -276,3 +276,34 @@ CREATE INDEX IF NOT EXISTS idx_permission_provision_id
 
 CREATE INDEX IF NOT EXISTS idx_validation_rule_source_id
   ON validation_rule(source_id);
+
+-- User-facing enrichment belongs to the reporting graph template projection.
+-- template_id remains the stable enrichment key; graph_node_id supplies the
+-- enforceable lifecycle relationship used when reporting projections are rebuilt.
+CREATE TABLE IF NOT EXISTS reporting_template_enrichment (
+  template_id TEXT PRIMARY KEY,
+  graph_node_id TEXT NOT NULL,
+  model TEXT NOT NULL,
+  prompt_version TEXT NOT NULL,
+  input_hash TEXT NOT NULL,
+  status TEXT NOT NULL,
+  purpose TEXT,
+  contents TEXT,
+  summary TEXT,
+  key_rows_json TEXT NOT NULL DEFAULT '[]',
+  quality_notes TEXT,
+  response_json TEXT,
+  error TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (graph_node_id) REFERENCES graph_node(node_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_reporting_template_enrichment_status
+  ON reporting_template_enrichment(status);
+
+CREATE INDEX IF NOT EXISTS idx_reporting_template_enrichment_prompt
+  ON reporting_template_enrichment(prompt_version,input_hash);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_reporting_template_enrichment_graph_node
+  ON reporting_template_enrichment(graph_node_id);

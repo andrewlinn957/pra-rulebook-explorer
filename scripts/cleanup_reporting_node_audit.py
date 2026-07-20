@@ -23,10 +23,16 @@ import hashlib
 import json
 import re
 import sqlite3
+import sys
 from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from backend.app.db import connect as connect_db
+
 DB_PATH = ROOT / "backend" / "data" / "rulebook.sqlite3"
 
 CATEGORY_TO_NODE_TYPE = {
@@ -65,9 +71,7 @@ TEMPLATE_TEXT_RE = re.compile(r"\b(template|templates|workbook|data item)\b", re
 
 
 def connect(path: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(path)
-    conn.row_factory = sqlite3.Row
-    return conn
+    return connect_db(path)
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
@@ -449,6 +453,82 @@ def upsert_proposal(conn: sqlite3.Connection, proposal: dict[str, Any], *, appli
     )
 
 
+def family_classification(row: sqlite3.Row) -> str:
+    current = row["current_node_type"] or ""
+    proposed = row["proposed_node_type"] or ""
+    issue_type = row["issue_type"] or ""
+    expected = (row["expected_category"] or "").lower()
+    decision = row["decision"] or ""
+
+    if current == "ExternalReference" and proposed == "LegalInstrument":
+        return "valid and implementable now" if decision in {"pending_apply", "implemented"} else "ambiguous and needs source inspection"
+    if current == "SourceDocument" and proposed == "InstructionSet":
+        return "valid symptom, but needs a different graph operation"
+    if current == "TemplateSet" and proposed == "InstructionSet":
+        return "valid symptom, but needs a different graph operation"
+    if current == "Template" and proposed == "TemplateSet":
+        return "valid symptom, but needs a different graph operation"
+    if current in {"ReportingObligation", "Template"} and proposed in {"InstructionSet", "ReportingObligation"}:
+        return "valid symptom, but needs a different graph operation"
+    if current == "Provision" and proposed in {"InstructionSet", "LegalInstrument", "ReportingObligation"}:
+        return "invalid because it conflicts with the target graph model"
+    if current in {"Concept", "PolicyStatement", "ExternalReference"} and proposed == "InstructionSet":
+        return "invalid because it conflicts with the target graph model"
+    if current == "LegalInstrument" and proposed == "LegalInstrument":
+        return "ambiguous and needs source inspection"
+    if issue_type in REVIEW_ONLY_ISSUES:
+        return "ambiguous and needs source inspection"
+    if "legal" in expected and current not in {"ExternalReference", "LegalInstrument"}:
+        return "invalid because it conflicts with the target graph model"
+    return "ambiguous and needs source inspection"
+
+
+def write_family_report(conn: sqlite3.Connection, path: Path) -> dict[str, Any]:
+    rows = conn.execute(
+        """
+        SELECT
+          current_node_type,
+          proposed_node_type,
+          expected_category,
+          issue_type,
+          decision,
+          decision_reason,
+          COUNT(*) AS count,
+          GROUP_CONCAT(node_id, '|') AS node_ids
+        FROM reporting_node_cleanup
+        GROUP BY current_node_type, proposed_node_type, expected_category, issue_type, decision, decision_reason
+        ORDER BY count DESC, current_node_type, proposed_node_type, expected_category, issue_type, decision
+        """
+    ).fetchall()
+    families: list[dict[str, Any]] = []
+    for row in rows:
+        sample_node_ids = [node_id for node_id in (row["node_ids"] or "").split("|") if node_id][:20]
+        families.append(
+            {
+                "current_node_type": row["current_node_type"],
+                "proposed_node_type": row["proposed_node_type"],
+                "expected_category": row["expected_category"],
+                "issue_type": row["issue_type"],
+                "decision": row["decision"],
+                "decision_reason": row["decision_reason"],
+                "count": row["count"],
+                "family_classification": family_classification(row),
+                "sample_node_ids": sample_node_ids,
+            }
+        )
+    report = {
+        "status": "ok",
+        "families": families,
+        "summary": {
+            "families": len(families),
+            "findings": sum(item["count"] for item in families),
+        },
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+    return report
+
+
 def apply_decision(conn: sqlite3.Connection, row: sqlite3.Row, proposal: dict[str, Any], *, apply_reclassifications: bool) -> tuple[bool, bool]:
     props = parse_props(row["properties_json"])
     props.pop("audit_cleanup", None)
@@ -476,7 +556,13 @@ def apply_decision(conn: sqlite3.Connection, row: sqlite3.Row, proposal: dict[st
     return reclassify, repaired
 
 
-def run_cleanup(db_path: Path = DB_PATH, *, apply: bool = False, apply_reclassifications: bool = False) -> dict[str, Any]:
+def run_cleanup(
+    db_path: Path = DB_PATH,
+    *,
+    apply: bool = False,
+    apply_reclassifications: bool = False,
+    family_report_path: Path | None = None,
+) -> dict[str, Any]:
     conn = connect(db_path)
     ensure_schema(conn)
     rows = finding_rows(conn)
@@ -499,8 +585,9 @@ def run_cleanup(db_path: Path = DB_PATH, *, apply: bool = False, apply_reclassif
     by_safety = dict(conn.execute("SELECT safety, COUNT(*) FROM reporting_node_cleanup GROUP BY safety").fetchall())
     by_decision = dict(conn.execute("SELECT decision, COUNT(*) FROM reporting_node_cleanup GROUP BY decision").fetchall())
     implemented = by_decision.get("implemented", 0)
+    family_report = write_family_report(conn, family_report_path) if family_report_path else None
     conn.close()
-    return {
+    result = {
         "status": "applied" if apply else "dry_run",
         "findings": len(rows),
         "would_mark_nodes": len(rows),
@@ -514,6 +601,10 @@ def run_cleanup(db_path: Path = DB_PATH, *, apply: bool = False, apply_reclassif
         "by_safety": by_safety,
         "by_decision": by_decision,
     }
+    if family_report_path:
+        result["family_report"] = str(family_report_path)
+        result["family_report_families"] = family_report["summary"]["families"] if family_report else 0
+    return result
 
 
 def main() -> int:
@@ -521,10 +612,21 @@ def main() -> int:
     ap.add_argument("--db", type=Path, default=DB_PATH)
     ap.add_argument("--apply", action="store_true", help="Annotate graph nodes and mark them needs_cleanup")
     ap.add_argument("--apply-reclassifications", action="store_true", help="Also change graph_node.node_type for proposed reclassifications")
+    ap.add_argument("--family-report", type=Path, help="Write grouped family classification JSON report")
     args = ap.parse_args()
     if args.apply_reclassifications and not args.apply:
         ap.error("--apply-reclassifications requires --apply")
-    print(json.dumps(run_cleanup(args.db, apply=args.apply, apply_reclassifications=args.apply_reclassifications), indent=2))
+    print(
+        json.dumps(
+            run_cleanup(
+                args.db,
+                apply=args.apply,
+                apply_reclassifications=args.apply_reclassifications,
+                family_report_path=args.family_report,
+            ),
+            indent=2,
+        )
+    )
     return 0
 
 

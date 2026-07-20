@@ -10,7 +10,8 @@ test('quality tab is a queue-first workbench rather than a dashboard of cards', 
   assert.match(source, /quality-queue-rail/);
   assert.match(source, /FeedbackQueueWorksurface/);
   assert.match(source, /UnverifiedLinksWorksurface/);
-  assert.match(source, /Process queue/);
+  assert.doesNotMatch(source, /Process queue/);
+  assert.doesNotMatch(source, /\/feedback\/process/);
   assert.match(source, /Save finding/);
   assert.doesNotMatch(source, /Can I trust the explorer\?/);
   assert.doesNotMatch(source, /What needs attention/);
@@ -30,83 +31,97 @@ test('quality workbench styles reserve most of the screen for the workflow', () 
   assert.doesNotMatch(styles, /\.audit-cockpit/);
 });
 
-test('reporting tab uses compact side panels around the graph', () => {
-  assert.match(styles, /\.reporting-layout\{[^}]*grid-template-columns:248px minmax\(0,1fr\) 320px/);
+test('reporting tab uses the graph canvas with navigation and information side panels', () => {
+  assert.match(styles, /\.reporting-graph-layout\{[^}]*grid-template-columns:290px minmax\(0,1fr\) 340px/);
   assert.match(styles, /\.reporting-toolbar\{[^}]*padding:8px 10px/);
-  assert.match(styles, /\.reporting-rail\{[^}]*padding:8px/);
-  assert.match(styles, /\.reporting-nav-back\{/);
+  assert.match(source, /className="reporting-catalog-list reporting-graph-nav"/);
+  assert.match(source, /className="reporting-graph-canvas"/);
+  assert.match(source, /className="reporting-graph-inspector"/);
+  assert.match(source, /<Graph graph=\{activeGraph\}/);
 });
 
-test('reporting graph navigation and inspector match the main graph conventions', () => {
-  assert.match(source, /function inspectReportingNode\(node\)/);
-  assert.match(source, /function drillReportingNode\(node\)/);
-  assert.match(source, /onSelect=\{inspectReportingNode\} onOpen=\{drillReportingNode\}/);
-  assert.match(source, /Click to inspect · double-click to open\/drill/);
-  assert.match(source, /Drag to pan · scroll to zoom · click to inspect · double-click to open/);
+test('a single click on a reporting overview node loads its child navigation', () => {
+  assert.match(source, /onSelect=\{openGraphNode\} onOpen=\{openGraphNode\}/);
+  assert.match(source, /if\(!selectedId && node\?\.metadata\?\.return_id\)/);
+  assert.match(source, /<ReportingChildNavigation node=\{nodeDetail\}/);
+});
+
+test('reporting graph defaults to one hop and combined relationship categories', () => {
+  assert.match(source, /reportingOneHopGraph\(filtered,nodeDetail\?\.id\)/);
+  assert.match(source, /new Set\(\['structure','documents','rules'\]\)/);
+  assert.match(source, /relationshipFilters=\{REPORTING_EDGE_GROUPS\.map/);
+  assert.doesNotMatch(source, /relationshipFilters=\{REPORTING_EDGE_TYPES\}/);
+});
+
+test('reporting catalogue separates returns from Pillar 3 disclosures', () => {
+  assert.match(source, /setEstate\('supervisory_reporting'\)/);
+  assert.match(source, /setEstate\('pillar3_disclosure'\)/);
+  assert.match(source, /Regulatory returns/);
+  assert.match(source, /Pillar 3 disclosures/);
+  assert.match(source, /disclosure sets/);
 });
 
 test('reporting inspector opens with a URLs card and minimal details', () => {
-  assert.match(source, /function ReportingMetadata\(\{node,edges,graph\}\)/);
-  assert.match(source, /title="URLs"/);
-  assert.match(source, /reportingMetadataRows\(node\)/);
+  assert.match(source, /function ReportingGraphInfo\(\{node,catalogDetail,edges,graph,onSelect,onFeedback\}\)/);
+  assert.match(source, /title="Source files"/);
   assert.match(source, /reportingSourceUrls\(node,edges,graph\)/);
-  assert.match(source, /Data item code/);
-  assert.match(source, /Reporting domain/);
-  assert.match(source, /Template explanation/);
+  assert.match(source, /Connected nodes/);
+  assert.match(source, /Flag an issue with this node/);
   assert.match(source, /Open source/);
   assert.match(source, /function reportingSourceLinkLabel\(node\)/);
   assert.match(source, /function sourceFileName\(value\)/);
+  assert.doesNotMatch(source, /function ReportingMetadata\(\{node,edges,graph\}\)/);
   assert.doesNotMatch(source, /Useful links/);
   assert.doesNotMatch(source, /local degree/);
 });
 
-test('reporting drilldown rail is contextual rather than useless summary counts', () => {
+test('reporting drilldown navigation uses the active child-navigation component', () => {
   assert.doesNotMatch(source, /className="reporting-stats"/);
-  assert.match(source, /function ReportingRail\(\{roots,selectedReturn,detail,graph,onOpen,onDrill,onBackToOverview\}\)/);
-  assert.match(source, /Back to returns overview/);
-  assert.match(source, /Back to return/);
-  assert.match(source, /Sample datapoints/);
+  assert.match(source, /function ReportingChildNavigation\(\{node,root,groups,parents,onSelect\}\)/);
+  assert.match(source, /Return root/);
+  assert.match(source, /Child nodes/);
+  assert.match(source, /This is a leaf node/);
+  assert.doesNotMatch(source, /function ReportingRail\(/);
+  assert.doesNotMatch(source, /Back to returns overview/);
+  assert.doesNotMatch(source, /Sample datapoints/);
 });
 
-test('reporting overview rail groups returns by reporting estate', () => {
-  assert.match(source, /function groupReportingReturns\(roots\)/);
-  assert.match(source, /function reportingEstateForReturn\(node\)/);
-  assert.match(source, /COREP returns/);
-  assert.match(source, /PRA returns/);
-  assert.match(source, /function compareReturnCode\(a,b\)/);
-  assert.match(source, /className="reporting-return-groups"/);
+test('reporting overview groups catalog rows by official collection', () => {
+  assert.match(source, /const families=useMemo/);
+  assert.match(source, /row\.collection_name\|\|row\.family/);
+  assert.match(source, /className="reporting-catalog-list reporting-graph-nav"/);
+  assert.match(source, /return versions/);
+  assert.doesNotMatch(source, /function groupReportingReturns\(roots\)/);
+  assert.doesNotMatch(source, /function reportingEstateForReturn\(node\)/);
+  assert.doesNotMatch(source, /function compareReturnCode\(a,b\)/);
+  assert.doesNotMatch(source, /className="reporting-return-groups"/);
   assert.doesNotMatch(source, /reportingReturnSummary\(n\)/);
   assert.doesNotMatch(source, /function reportingReturnSummary\(node\)/);
-  assert.match(styles, /\.reporting-return-group h4/);
+  assert.match(styles, /\.reporting-catalog-list h3/);
 });
 
-test('reporting drilldown rail groups related artefacts by role', () => {
-  assert.match(source, /function reportingRailGroups\(node,graph\)/);
-  assert.match(source, /Templates/);
-  assert.match(source, /Instructions and guidance/);
-  assert.match(source, /Taxonomies/);
-  assert.match(source, /Rules and legal basis/);
-  assert.match(source, /Concepts and scope/);
-  assert.match(source, /group\.items\.map/);
+test('reporting child navigation groups related artefacts by relationship role', () => {
+  assert.match(source, /reportingChildGroups\(nodeDetail,graph\)/);
+  assert.match(source, /REPORTING_EDGE_GROUPS\.map/);
+  assert.match(source, /group\.children\.map/);
+  assert.doesNotMatch(source, /function reportingRailGroups\(node,graph\)/);
+  assert.doesNotMatch(source, /Rules and legal basis/);
+  assert.doesNotMatch(source, /Concepts and scope/);
 });
 
-test('reporting rail keeps descriptions out of navigation rows', () => {
+test('reporting child navigation keeps descriptions out of navigation rows', () => {
   assert.doesNotMatch(source, /reportingReturnSummary\(n\)/);
   assert.doesNotMatch(source, /group\.items\.map\(n=>.*reportingNodeSummary\(n\)/s);
-  assert.match(source, /add\('template_summary','Template explanation'\)/);
+  assert.doesNotMatch(source, /function reportingNodeSummary\(node\)/);
 });
 
 test('reporting inspector shows rich user-facing template details without LLM plumbing or audit metadata', () => {
-  assert.match(source, /title="URLs"/);
+  assert.match(source, /title="Source files"/);
   assert.match(source, /function reportingSourceUrls\(node,edges,graph\)/);
-  assert.match(source, /!\['USES_TEMPLATE','USES_INSTRUCTIONS','EVIDENCED_BY'\]\.includes/);
-  assert.match(source, /add\('template_code','Template code'\)/);
-  assert.match(source, /add\('annex','Annex'\)/);
-  assert.match(source, /add\('template_summary','Template explanation'\)/);
-  assert.match(source, /add\('template_quality_notes','Quality notes'\)/);
-  assert.match(source, /add\('source_title','Source title'\)/);
-  assert.match(source, /add\('data_item_code','Data item code'\)/);
-  assert.match(source, /add\('reporting_domain','Reporting domain'\)/);
+  assert.match(source, /function ReportingInfoLinks\(\{title,items\}\)/);
+  assert.match(source, /item\.resolved_display_name\|\|item\.display_title/);
+  assert.match(source, /item\.sheet_names/);
+  assert.match(source, /Connected nodes/);
   assert.doesNotMatch(source, /audit_cleanup/);
   assert.doesNotMatch(source, /addAuditCleanupRows/);
   assert.doesNotMatch(source, /add\('template_enrichment_model'/);
@@ -114,41 +129,44 @@ test('reporting inspector shows rich user-facing template details without LLM pl
   assert.doesNotMatch(source, /add\('template_enrichment_input_hash'/);
 });
 
-test('reporting rail groups source artefacts by useful file category and dedupes URLs', () => {
-  assert.match(source, /label:'Templates',match:n=>/);
-  assert.match(source, /label:'Instructions and guidance',match:n=>/);
-  assert.match(source, /label:'Taxonomies',match:n=>/);
-  assert.match(source, /function reportingRailDedupeKey\(node\)/);
-  assert.match(source, /function normaliseSourceUrl\(url\)/);
-  assert.match(source, /function compareReportingRailCandidates\(a,b\)/);
-  assert.match(source, /node\?\.node_type==='InstructionSet'\) return 2/);
+test('reporting source links classify useful file categories without the old rail helpers', () => {
+  assert.match(source, /function reportingUrlKind\(node\)/);
+  assert.match(source, /Template workbook/);
+  assert.match(source, /Instructions and guidance/);
+  assert.match(source, /Taxonomy/);
+  assert.doesNotMatch(source, /function reportingRailDedupeKey\(node\)/);
+  assert.doesNotMatch(source, /function normaliseSourceUrl\(url\)/);
+  assert.doesNotMatch(source, /function compareReportingRailCandidates\(a,b\)/);
   assert.doesNotMatch(source, /isTaxonomySourceDocument\(n\)\|\|n\.node_type==='TemplateSet'/);
 });
 
-test('reporting graph keeps return as selected graph root while inspecting child nodes', () => {
-  assert.match(source, /const reportingRoot=useMemo/);
-  assert.match(source, /selected=\{reportingRoot\} detail=\{detail\}/);
-  assert.match(source, /function reportingMaterialFilters\(graph\)/);
+test('reporting catalogue exposes templates, workbook sheets, instructions and Rulebook references', () => {
+  assert.match(source, /function ReportingGraphInfo\(\{node,catalogDetail,edges,graph,onSelect,onFeedback\}\)/);
+  assert.match(source, /function ReportingInfoLinks\(\{title,items\}\)/);
+  assert.match(source, /item\.sheet_names/);
+  assert.match(source, /title="Instructions"/);
+  assert.match(source, /Connected nodes/);
 });
 
-test('reporting drilldown resets filters and warns when filters hide graph content', () => {
-  assert.match(source, /function resetReportingFilters\(\)/);
-  assert.match(source, /resetReportingFilters\(\);\s*\n\s*await loadReportingGraph\('', returnCode\(node\), \{resetFilters:false\}\)/);
-  assert.match(source, /const hiddenByFilters=useMemo/);
-  assert.match(source, /Some reporting nodes or links are hidden by filters/);
-  assert.match(source, /Reset filters/);
-  assert.match(styles, /\.reporting-filter-notice/);
+test('reporting catalogue keeps the legacy public return page removed', () => {
+  assert.doesNotMatch(source, /function ReportingReturnPage\(/);
+  assert.doesNotMatch(source, /function ReportingArtifactCard\(/);
+  assert.doesNotMatch(source, /function ReportingReference\(/);
+  assert.doesNotMatch(source, /function dedupeReportingReferences\(/);
+  assert.match(source, /Open official file/);
+  assert.doesNotMatch(source, /View this return in the official PRA reporting catalogue/);
 });
 
-test('reporting rail dedupes source documents by URL without hiding parsed templates', () => {
-  assert.match(source, /if\(node\?\.node_type==='Template'\) return `template:\$\{node\.id\}`/);
-  assert.match(source, /if\(node\?\.node_type==='TemplateSet'\) return `template-set:\$\{node\.id\}`/);
-  assert.match(source, /return `url:\$\{normaliseSourceUrl\(url\)\}`/);
+test('legacy reporting rail source-dedupe helpers are removed', () => {
+  assert.doesNotMatch(source, /if\(node\?\.node_type==='Template'\) return `template:\$\{node\.id\}`/);
+  assert.doesNotMatch(source, /if\(node\?\.node_type==='TemplateSet'\) return `template-set:\$\{node\.id\}`/);
+  assert.doesNotMatch(source, /return `url:\$\{normaliseSourceUrl\(url\)\}`/);
 });
 
-test('reporting template inspector opens details by default', () => {
-  assert.match(source, /const openDetails=node\?\.node_type==='Template' \|\| rows\.length<=6/);
-  assert.match(source, /<Collapsible title="Details" count=\{`\$\{rows\.length\} fields`\} open=\{openDetails\}>/);
+test('legacy reporting metadata-details panel is removed', () => {
+  assert.doesNotMatch(source, /const openDetails=node\?\.node_type==='Template' \|\| rows\.length<=6/);
+  assert.doesNotMatch(source, /<Collapsible title="Details" count=\{`\$\{rows\.length\} fields`\} open=\{openDetails\}>/);
+  assert.doesNotMatch(source, /function reportingMetadataRows\(node\)/);
 });
 
 test('reporting graph distinguishes templates instructions and XBRL sources visually', () => {
@@ -157,7 +175,7 @@ test('reporting graph distinguishes templates instructions and XBRL sources visu
   assert.match(source, /visual==='instruction'/);
   assert.match(source, /visual==='xbrl_source'/);
   assert.match(source, /function isXbrlSourceDocument\(n\)/);
-  assert.match(source, /reporting_xbrl_source:'XBRL source'/);
+  assert.match(source, /reporting_xbrl_source:'XBRL taxonomy'/);
   assert.match(styles, /\.legend i\.legend-node\.template/);
   assert.match(styles, /\.legend i\.legend-node\.instruction/);
   assert.match(styles, /\.legend i\.legend-node\.xbrl-source/);

@@ -55,6 +55,10 @@ CODE_RE = re.compile(r"\b(COR\s*\d{3}|PRA\s*\d{3}|FSA\s*\d{3}|RFB\s*\d{3}|REP\s*
 C_TEMPLATE_RE = re.compile(r"\bC\s*([0-9]{2,3})[._ ]([0-9]{2})\b", re.I)
 ROW_RE = re.compile(r"^(?:r)?\s*([0-9]{3,5}|[A-Z]{1,3}[0-9]{1,4})$", re.I)
 COL_RE = re.compile(r"^(?:c)?\s*([0-9]{3,5}|[A-Z]{1,3})$", re.I)
+COR011_TEMPLATE_CODES = ["C72.00", "C73.00", "C74.00", "C75.01", "C76.00"]
+MAX_PARSED_TEMPLATE_ROWS = 50
+MAX_PARSED_TEMPLATE_COLUMNS = 8
+MAX_WORKSHEET_ROWS_READ = 80
 
 DOMAIN_RULES = [
     ("liquidity", re.compile(r"liquidity|lcr|nsfr|stable funding|pra110|fsa047|fsa048|idy", re.I)),
@@ -101,6 +105,18 @@ def edge_id(src: str, typ: str, tgt: str, span: str | None, method: str) -> str:
 
 def norm_code(text: str) -> str:
     return re.sub(r"\s+", "", text.upper())
+
+
+def mandatory_cor011_edge_specs() -> set[tuple[str, str, str]]:
+    edges = {
+        ("data_item:COR011", "USES_TEMPLATE", "template_set:AnnexXXIV"),
+        ("data_item:COR011", "USES_INSTRUCTIONS", "instruction_set:AnnexXXV"),
+    }
+    for code in COR011_TEMPLATE_CODES:
+        tid = f"template:{code}"
+        edges.add(("template_set:AnnexXXIV", "CONTAINS", tid))
+        edges.add((tid, "USES_INSTRUCTIONS", "instruction_set:AnnexXXV"))
+    return edges
 
 
 def rel(path: str | None) -> Path | None:
@@ -162,6 +178,7 @@ class Builder:
         self.low_conf: list[dict[str, Any]] = []
         self.packages: dict[str, DataItemPackage] = {}
         self.source_span_cache: dict[str, str] = {}
+        self.source_hay_cache: dict[tuple[str, bool], str] = {}
         self.direct_legal_review = self.load_direct_legal_review()
 
     def load_direct_legal_review(self) -> dict[tuple[str, str, str], dict[str, str]]:
@@ -291,24 +308,65 @@ class Builder:
                 OR url LIKE 'https://www.eba.europa.eu/%'
                 OR url LIKE 'https://www.legislation.gov.uk/%'
               )
+              AND lower(coalesce(file_type,'')) NOT IN ('xml','xsd','xbrl')
               AND lower(coalesce(title,'') || ' ' || coalesce(url,'') || ' ' || coalesce(local_path,'')) GLOB '*[a-z0-9]*'
             """
         ).fetchall()
 
+    def source_hay(self, d: sqlite3.Row, include_spans: bool = False) -> str:
+        key = (d["source_id"], include_spans)
+        if key in self.source_hay_cache:
+            return self.source_hay_cache[key]
+        local_name = Path(d["local_path"] or "").name
+        parts = [d["title"] or "", d["url"] or "", local_name]
+        if include_spans:
+            rows = self.conn.execute(
+                """
+                SELECT normalised_text
+                FROM source_span
+                WHERE source_id=?
+                  AND normalised_text IS NOT NULL
+                ORDER BY length(normalised_text) DESC
+                LIMIT 5
+                """,
+                (d["source_id"],),
+            ).fetchall()
+            parts.extend(r["normalised_text"] or "" for r in rows)
+        hay = " ".join(parts)
+        self.source_hay_cache[key] = hay
+        return hay
+
+    def is_cor011_liquidity_source(self, hay: str) -> bool:
+        return bool(
+            re.search(r"\bCOR\s*011\b", hay, re.I)
+            or (
+                re.search(r"Annex\s+XXIV|Annex\s+XXV|C\s*75[._ ]01|corep-liquidity", hay, re.I)
+                and re.search(r"liquidity|LCR|coverage", hay, re.I)
+            )
+        )
+
     def classify_docs(self) -> dict[str, list[sqlite3.Row]]:
         by_code: dict[str, list[sqlite3.Row]] = defaultdict(list)
         for d in self.source_docs():
-            hay = f"{d['title'] or ''} {d['url'] or ''} {d['local_path'] or ''}"
+            hay = self.source_hay(d)
+            if re.search(r"\bCOR\s*011\b|corep-liquidity|Annex\s+XXIV|Annex\s+XXV|liquidity coverage", hay, re.I):
+                hay = self.source_hay(d, include_spans=True)
+            cor011_source = self.is_cor011_liquidity_source(hay)
+            if cor011_source:
+                by_code["COR011"].append(d)
             # C-template annexes are handled via template-set packages, not as standalone data items.
             for m in CODE_RE.finditer(hay):
                 code = norm_code(m.group(1))
-                if code == "COR011":
-                    # COR011 is already complete; leave it as pilot baseline but include source link evidence below.
-                    continue
                 by_code[code].append(d)
             # Annex/corep files without item code: create family packages so they are not lost.
-            if not CODE_RE.search(hay):
-                if re.search(r"corep|finrep|pillar3|taxonomy|dpm|validation|sample instances|large exposures|asset encumbrance", hay, re.I):
+            if not CODE_RE.search(hay) and not cor011_source:
+                # Pillar 3 is a disclosure estate, not a synthetic COREP return.
+                # It is projected from the authoritative reporting catalogue by
+                # rebuild_reporting_catalog.py and must not enter this legacy
+                # filename-family fallback.
+                if re.search(r"pillar[ -]?3|pillar3", hay, re.I):
+                    continue
+                if re.search(r"corep|finrep|taxonomy|dpm|validation|sample instances|large exposures|asset encumbrance", hay, re.I):
                     fam = self.family_code(hay)
                     by_code[fam].append(d)
             # The official interim intraday liquidity instruction PDF names IDY001/2/3
@@ -341,6 +399,8 @@ class Builder:
 
     def family_code(self, hay: str) -> str:
         h = hay.lower()
+        if "pillar3" in h or "pillar 3" in h:
+            return "PILLAR3-DISCLOSURE"
         if "corep-own-funds" in h or "reporting on own funds" in h:
             return "COREP-OWN-FUNDS"
         if "corep-losses-immovable-property" in h or "losses immovable property" in h:
@@ -359,8 +419,6 @@ class Builder:
             return "COREP-CREDIT-RISK"
         if "market-risk" in h or "market risk" in h:
             return "COREP-MARKET-RISK"
-        if "pillar3" in h:
-            return "PILLAR3-DISCLOSURE"
         if "finrep" in h or "asset encumbrance" in h or "financial information" in h:
             return "FINREP"
         if "taxonomy" in h or "dpm" in h or "sample" in h or "validation" in h:
@@ -396,6 +454,8 @@ class Builder:
                 rows = []
                 for row in root.findall(f".//{NS_MAIN}sheetData/{NS_MAIN}row"):
                     rnum = int(float(row.attrib.get("r", "0") or 0))
+                    if rnum > MAX_WORKSHEET_ROWS_READ:
+                        continue
                     vals = []
                     for c in row.findall(f"{NS_MAIN}c"):
                         ref = c.attrib.get("r", "")
@@ -462,22 +522,40 @@ class Builder:
             if not explicit_rows and len(rows) > 15:
                 continue
             tid = f"template:{code}:{re.sub(r'[^A-Za-z0-9_.-]+','_',template_code + '_' + sheet)[:120]}"
+            existing = self.conn.execute(
+                "SELECT template_id FROM template WHERE template_code=? ORDER BY template_id LIMIT 1",
+                (template_code,),
+            ).fetchone()
+            if existing:
+                tid = existing["template_id"]
             title = re.sub(r"\s+", " ", sheet_context).strip()[:240] or template_code
-            self.conn.execute(
-                "INSERT OR REPLACE INTO template(template_id,template_code,title,annex,source_id) VALUES (?,?,?,?,?)",
-                (tid, template_code, title, self.annex_label(d), d["source_id"]),
-            )
+            if existing:
+                self.conn.execute(
+                    """
+                    UPDATE template
+                    SET title=COALESCE(title, ?),
+                        annex=COALESCE(annex, ?),
+                        source_id=COALESCE(source_id, ?)
+                    WHERE template_id=?
+                    """,
+                    (title, self.annex_label(d), d["source_id"], tid),
+                )
+            else:
+                self.conn.execute(
+                    "INSERT INTO template(template_id,template_code,title,annex,source_id) VALUES (?,?,?,?,?)",
+                    (tid, template_code, title, self.annex_label(d), d["source_id"]),
+                )
             self.node(tid, "Template", f"{template_code} {sheet}", "template", tid, {"data_item_code": code, "domain": domain, "source_id": d["source_id"]})
             template_ids.append(tid)
             span = self.doc_span(d["source_id"])
             # infer columns from explicit column code rows, otherwise use the first non-empty header row bounded.
             cols = self.infer_columns(rows)
-            for col_code, col_label in list(cols.items())[:80]:
+            for col_code, col_label in list(cols.items())[:MAX_PARSED_TEMPLATE_COLUMNS]:
                 cid = f"column:{tid}:{col_code}"
                 self.conn.execute("INSERT OR REPLACE INTO template_column(column_id,template_id,column_code,column_order,label) VALUES (?,?,?,?,?)", (cid, tid, col_code, self.sort_num(col_code), col_label[:500]))
                 self.node(cid, "TemplateColumn", f"{template_code} column {col_code} {col_label[:120]}", "template_column", cid, {"template_id": tid})
                 self.edge(tid, "HAS_COLUMN", cid, span, 0.88, "deterministic_xlsx_parse", "candidate", "Column code/header parsed from official template workbook.")
-            for rr in explicit_rows[:1500]:
+            for rr in explicit_rows[:MAX_PARSED_TEMPLATE_ROWS]:
                 row_code = None
                 for c in rr["cells"][:4]:
                     m = ROW_RE.match(str(c["value"]).strip())
@@ -491,7 +569,7 @@ class Builder:
                 self.conn.execute("INSERT OR REPLACE INTO template_row(row_id,template_id,row_code,row_order,label) VALUES (?,?,?,?,?)", (rid, tid, row_code, self.sort_num(row_code), label))
                 self.node(rid, "TemplateRow", f"{template_code} row {row_code} {label[:120]}", "template_row", rid, {"template_id": tid})
                 self.edge(tid, "HAS_ROW", rid, span, 0.90, "deterministic_xlsx_parse", "candidate", "Row code parsed from official template workbook.")
-                for col_code in list(cols.keys())[:40] or ["value"]:
+                for col_code in list(cols.keys())[:MAX_PARSED_TEMPLATE_COLUMNS] or ["value"]:
                     did = f"datapoint:{tid}:r{row_code}:c{col_code}"
                     cid = f"column:{tid}:{col_code}"
                     self.conn.execute("INSERT OR REPLACE INTO datapoint(datapoint_id,template_id,row_id,column_id,data_type,concept_label) VALUES (?,?,?,?,?,?)", (did, tid, rid, cid if cols else None, "reported_value", label or title))
@@ -547,6 +625,78 @@ class Builder:
         self.node(cid, "Concept", label, "concept", cid, {"domain": domain})
         return cid
 
+    def template_set_id(self, code: str, docs: list[sqlite3.Row]) -> str:
+        hay = " ".join(self.source_hay(d, include_spans=True) for d in docs)
+        if code == "COR011" and re.search(r"Annex\s+XXIV", hay, re.I):
+            return "template_set:AnnexXXIV"
+        return f"template_set:{code}"
+
+    def instruction_set_id(self, code: str, docs: list[sqlite3.Row]) -> str:
+        hay = " ".join(self.source_hay(d, include_spans=True) for d in docs)
+        if code == "COR011" and re.search(r"Annex\s+XXV", hay, re.I):
+            return "instruction_set:AnnexXXV"
+        return f"instruction_set:{code}"
+
+    def template_set_label(self, code: str, template_set_id: str) -> str:
+        if template_set_id == "template_set:AnnexXXIV":
+            return "Annex XXIV reporting templates"
+        return f"{code} template set"
+
+    def instruction_set_label(self, code: str, instruction_set_id: str) -> str:
+        if instruction_set_id == "instruction_set:AnnexXXV":
+            return "Annex XXV instructions"
+        return f"{code} instruction set"
+
+    def template_codes_from_docs(self, code: str, docs: list[sqlite3.Row]) -> list[str]:
+        hay = " ".join(self.source_hay(d, include_spans=True) for d in docs)
+        found = [f"C{m.group(1)}.{m.group(2)}" for m in C_TEMPLATE_RE.finditer(hay)]
+        if code == "COR011" and re.search(r"Annex\s+XXIV|corep-liquidity", hay, re.I):
+            found.extend(COR011_TEMPLATE_CODES)
+        out: list[str] = []
+        for template_code in found:
+            if template_code not in out:
+                out.append(template_code)
+        return out
+
+    def ensure_template_stub(self, code: str, template_code: str, source_id: str | None, domain: str) -> str:
+        tid = f"template:{template_code}" if code == "COR011" else f"template:{code}:{template_code}"
+        existing = self.conn.execute(
+            "SELECT template_id FROM template WHERE template_code=? ORDER BY template_id LIMIT 1",
+            (template_code,),
+        ).fetchone()
+        if existing:
+            tid = existing["template_id"]
+        title = f"{template_code} reporting template"
+        annex = "Annex XXIV" if code == "COR011" else "official template/data item"
+        if existing:
+            self.conn.execute(
+                """
+                UPDATE template
+                SET title=COALESCE(title, ?),
+                    annex=COALESCE(annex, ?),
+                    source_id=COALESCE(source_id, ?)
+                WHERE template_id=?
+                """,
+                (title, annex, source_id, tid),
+            )
+        else:
+            self.conn.execute(
+                """
+                INSERT INTO template(template_id,template_code,title,annex,source_id)
+                VALUES (?,?,?,?,?)
+                """,
+                (tid, template_code, title, annex, source_id),
+            )
+        self.node(
+            tid,
+            "Template",
+            f"{template_code} {title}",
+            "template",
+            tid,
+            {"data_item_code": code, "domain": domain, "source_id": source_id},
+        )
+        return tid
+
     def submission_system(self, docs: list[sqlite3.Row]) -> str | None:
         # Prefer actual source spans around the docs; fallback to title/url hints.
         doc_ids = [d["source_id"] for d in docs[:20]]
@@ -592,7 +742,7 @@ class Builder:
         for code, docs in sorted(by_code.items()):
             # Keep packages meaningful: require either a template/instruction/taxonomy source or an explicit item code.
             docs = list({d["source_id"]: d for d in docs}.values())
-            hay = " ".join((d["title"] or "") + " " + (d["url"] or "") + " " + (d["local_path"] or "") for d in docs)
+            hay = " ".join(self.source_hay(d, include_spans=True) for d in docs)
             domain = domain_for(hay, code)
             title = title_for_code(code, docs)
             first_span = self.doc_span(docs[0]["source_id"]) if docs else None
@@ -620,17 +770,18 @@ class Builder:
             # mention COREP/templates in the URL/title. Treating those PDFs as
             # template sources creates bogus "template set" nodes that duplicate
             # the instruction set and annex PDF source document.
-            template_docs = [d for d in docs if d["file_type"] in {"xlsx", "xlsm", "xltx", "xls"} and re.search(r"template|data[- ]item|annex|reporting-on|pillar3|corep|finrep|lvr", f"{d['title']} {d['url']} {d['local_path']}", re.I)]
-            instr_docs = [d for d in docs if re.search(r"instruction|guidance|notes|manual|q&a|qa", f"{d['title']} {d['url']} {d['local_path']}", re.I)]
-            tax_docs = [d for d in docs if re.search(r"taxonomy|dpm|sample instance|xbrl|filing manual|release note|change log", f"{d['title']} {d['url']} {d['local_path']}", re.I)]
-            val_docs = [d for d in docs if re.search(r"validation|known issues", f"{d['title']} {d['url']} {d['local_path']}", re.I)]
-            template_set = f"template_set:{code}"
-            instruction_set = f"instruction_set:{code}"
+            doc_hay = {d["source_id"]: self.source_hay(d, include_spans=True) for d in docs}
+            template_docs = [d for d in docs if d["file_type"] in {"xlsx", "xlsm", "xltx", "xls"} and re.search(r"template|data[- ]item|annex|reporting-on|pillar3|corep|finrep|lvr", doc_hay[d["source_id"]], re.I)]
+            instr_docs = [d for d in docs if re.search(r"instruction|guidance|notes|manual|q&a|qa", doc_hay[d["source_id"]], re.I)]
+            tax_docs = [d for d in docs if re.search(r"taxonomy|dpm|sample instance|xbrl|filing manual|release note|change log", doc_hay[d["source_id"]], re.I)]
+            val_docs = [d for d in docs if re.search(r"validation|known issues", doc_hay[d["source_id"]], re.I)]
+            template_set = self.template_set_id(code, template_docs or docs)
+            instruction_set = self.instruction_set_id(code, instr_docs or docs)
             if template_docs:
-                self.node(template_set, "TemplateSet", f"{code} template set", props={"source_document_ids": [d["source_id"] for d in template_docs]})
+                self.node(template_set, "TemplateSet", self.template_set_label(code, template_set), props={"source_document_ids": [d["source_id"] for d in template_docs]})
                 self.edge(data_node, "USES_TEMPLATE", template_set, self.doc_span(template_docs[0]["source_id"]), 0.90, "deterministic_package", "candidate", "Official template/data-item source document linked to package.")
             if instr_docs:
-                self.node(instruction_set, "InstructionSet", f"{code} instruction set", props={"source_document_ids": [d["source_id"] for d in instr_docs]})
+                self.node(instruction_set, "InstructionSet", self.instruction_set_label(code, instruction_set), props={"source_document_ids": [d["source_id"] for d in instr_docs]})
                 self.edge(data_node, "USES_INSTRUCTIONS", instruction_set, self.doc_span(instr_docs[0]["source_id"]), 0.90, "deterministic_package", "candidate", "Official instruction/guidance source document linked to package.")
             parsed_template_ids = []
             for d in template_docs[:8]:
@@ -648,6 +799,15 @@ class Builder:
                             self.edge(data_node, "USES_TEMPLATE", tid, span, 0.86, "deterministic_xlsx_parse", "candidate", "Data item uses parsed official template.")
                         if instr_docs:
                             self.edge(tid, "USES_INSTRUCTIONS", instruction_set, self.doc_span(instr_docs[0]["source_id"]), 0.78, "document_pairing", "candidate", "Instruction document paired with template by data-item/package code.")
+            for template_code in self.template_codes_from_docs(code, template_docs):
+                tid = self.ensure_template_stub(code, template_code, template_docs[0]["source_id"] if template_docs else None, domain)
+                if tid in parsed_template_ids:
+                    continue
+                span = self.doc_span(template_docs[0]["source_id"]) if template_docs else first_span
+                self.edge(template_set, "CONTAINS", tid, span, 0.92, "deterministic_annex_template_code", "candidate", "Template code appears in the official template annex source.")
+                self.edge(data_node, "USES_TEMPLATE", tid, span, 0.86, "deterministic_annex_template_code", "candidate", "Data item uses template identified from official annex/template source.")
+                if instr_docs:
+                    self.edge(tid, "USES_INSTRUCTIONS", instruction_set, self.doc_span(instr_docs[0]["source_id"]), 0.78, "document_pairing", "candidate", "Instruction document paired with template by annex and data-item package evidence.")
             for d in instr_docs[:8]:
                 span = self.doc_span(d["source_id"])
                 sd_node = f"source_document:{d['source_id']}"
@@ -682,7 +842,6 @@ class Builder:
                 legal_basis_node_ids=legal_basis,
             )
             self.write_package(code)
-            self.conn.commit()
         self.write_reports()
         self.conn.commit()
 

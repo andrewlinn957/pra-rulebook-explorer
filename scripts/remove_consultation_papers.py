@@ -82,6 +82,7 @@ def main() -> None:
         ("reporting_llm_reference_resolution", "DELETE FROM reporting_llm_reference_resolution WHERE source_id IN (SELECT source_id FROM temp_cp_sources) OR span_id IN (SELECT span_id FROM temp_cp_spans)"),
         ("reporting_llm_reference_extraction", "DELETE FROM reporting_llm_reference_extraction WHERE source_id IN (SELECT source_id FROM temp_cp_sources) OR span_id IN (SELECT span_id FROM temp_cp_spans)"),
         ("graph_edge", "DELETE FROM graph_edge WHERE evidence_span_id IN (SELECT span_id FROM temp_cp_spans) OR source_node_id IN (SELECT node_id FROM temp_cp_graph_nodes) OR target_node_id IN (SELECT node_id FROM temp_cp_graph_nodes)"),
+        ("reporting_template_enrichment", "DELETE FROM reporting_template_enrichment WHERE graph_node_id IN (SELECT node_id FROM temp_cp_graph_nodes)"),
         ("graph_node", "DELETE FROM graph_node WHERE node_id IN (SELECT node_id FROM temp_cp_graph_nodes)"),
         ("edge", "DELETE FROM edge WHERE lower(source_url) LIKE '%/prudential-regulation/consultation-paper/%' OR lower(metadata_json) LIKE '%/prudential-regulation/consultation-paper/%' OR from_node_id IN (SELECT id FROM temp_cp_nodes) OR to_node_id IN (SELECT id FROM temp_cp_nodes)"),
         ("llm_reference_resolution", "DELETE FROM llm_reference_resolution WHERE source_node_id IN (SELECT id FROM temp_cp_nodes) OR target_node_id IN (SELECT id FROM temp_cp_nodes)"),

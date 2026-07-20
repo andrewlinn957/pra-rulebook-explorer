@@ -1,5 +1,6 @@
 import sqlite3
 import sys
+import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -104,6 +105,13 @@ def test_neighbourhood_deduplicates_multiple_references_to_same_ss_document():
     assert graph['edges'][0]['metadata']['rolled_up_from_node_ids'] == ['sop-para-1', 'sop-para-2']
 
 
+def load_tests(loader, tests, pattern):
+    return unittest.TestSuite(
+        unittest.FunctionTestCase(value)
+        for name, value in sorted(globals().items())
+        if name.startswith("test_") and callable(value)
+    )
+
+
 if __name__ == '__main__':
-    test_neighbourhood_rolls_guidance_paragraph_reference_up_to_ss_document()
-    test_neighbourhood_deduplicates_multiple_references_to_same_ss_document()
+    unittest.main()

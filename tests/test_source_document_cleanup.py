@@ -1,8 +1,11 @@
+import json
 import sqlite3
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
+from scripts.inspect_reporting_sources import inspect_reporting_sources
 from scripts.source_document_cleanup import classify_source_document, run_source_cleanup
 
 
@@ -80,6 +83,10 @@ class SourceDocumentCleanupTests(unittest.TestCase):
             "template_pdf",
         )
         self.assertEqual(
+            classify_source_document({"title": "Statement of Policy - Pillar 2 liquidity", "url": "https://example.test/pillar-2-liquidity-sop-update.pdf", "file_type": "pdf", "local_path": ""})[0],
+            "policy_pdf",
+        )
+        self.assertEqual(
             classify_source_document({"title": "PRA101", "url": "https://example.test/pra101.xlsx", "file_type": "xlsx", "local_path": ""})[0],
             "template_workbook",
         )
@@ -126,6 +133,100 @@ class SourceDocumentCleanupTests(unittest.TestCase):
         decisions = dict(conn.execute("SELECT source_id,decision FROM source_document_cleanup").fetchall())
         self.assertEqual(decisions["a"], "canonical")
         self.assertEqual(decisions["b"], "canonical")
+
+    def test_source_inspection_records_workbook_sheet_names_as_internal_hints(self):
+        db = self.make_db()
+        root = db.parent
+        workbook = root / "files" / "pra101.xlsx"
+        workbook.parent.mkdir()
+        with zipfile.ZipFile(workbook, "w") as zf:
+            zf.writestr(
+                "xl/workbook.xml",
+                """<?xml version="1.0" encoding="UTF-8"?>
+                <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+                  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+                  <sheets>
+                    <sheet name="PRA101" sheetId="1" r:id="rId1"/>
+                    <sheet name="Instructions" sheetId="2" r:id="rId2"/>
+                  </sheets>
+                </workbook>
+                """,
+            )
+        conn = sqlite3.connect(db)
+        self.add_source(conn, "workbook", "PRA101 template", "https://example.test/pra101.xlsx", "xlsx", local_path="files/pra101.xlsx")
+        conn.commit()
+        conn.close()
+
+        result = inspect_reporting_sources(db, root=root, apply=True)
+
+        self.assertEqual(result["inspected"], 1)
+        conn = sqlite3.connect(db)
+        row = conn.execute(
+            "SELECT workbook_sheets_json,classification_hint FROM source_document_inspection WHERE source_id='workbook'"
+        ).fetchone()
+        self.assertEqual(json.loads(row[0]), ["PRA101", "Instructions"])
+        self.assertEqual(row[1], "template_workbook")
+
+    def test_source_inspection_records_taxonomy_zip_lineage_without_dedupe(self):
+        db = self.make_db()
+        root = db.parent
+        package = root / "files" / "taxonomy.zip"
+        package.parent.mkdir(exist_ok=True)
+        with zipfile.ZipFile(package, "w") as zf:
+            zf.writestr("META-INF/taxonomyPackage.xml", "<taxonomyPackage><name>BoE taxonomy</name></taxonomyPackage>")
+            zf.writestr("taxonomy/pra101.xsd", "<xsd:schema xmlns:xsd='http://www.w3.org/2001/XMLSchema'/>")
+        conn = sqlite3.connect(db)
+        self.add_source(conn, "zip", "BoE taxonomy", "https://example.test/taxonomy.zip", "zip", local_path="files/taxonomy.zip")
+        conn.commit()
+        conn.close()
+
+        result = inspect_reporting_sources(db, root=root, apply=True)
+
+        self.assertEqual(result["inspected"], 1)
+        conn = sqlite3.connect(db)
+        manifest, lineage, hint = conn.execute(
+            "SELECT taxonomy_manifest_json,lineage_json,classification_hint FROM source_document_inspection WHERE source_id='zip'"
+        ).fetchone()
+        self.assertIn("META-INF/taxonomyPackage.xml", json.loads(manifest)["files"])
+        self.assertEqual(json.loads(lineage)["source_id"], "zip")
+        self.assertEqual(hint, "taxonomy_package")
+
+    def test_source_cleanup_uses_inspection_hint_when_metadata_is_weak(self):
+        db = self.make_db()
+        conn = sqlite3.connect(db)
+        self.add_source(conn, "ambiguous-pdf", "Annex XXV", "https://example.test/annex-xxv.pdf", "pdf")
+        conn.execute(
+            """
+            CREATE TABLE source_document_inspection (
+              source_id TEXT PRIMARY KEY,
+              inspection_method TEXT NOT NULL,
+              extracted_title TEXT,
+              extracted_summary TEXT,
+              first_page_text TEXT,
+              workbook_sheets_json TEXT,
+              taxonomy_manifest_json TEXT,
+              lineage_json TEXT,
+              classification_hint TEXT,
+              confidence REAL NOT NULL,
+              created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO source_document_inspection(source_id,inspection_method,classification_hint,confidence) VALUES (?,?,?,?)",
+            ("ambiguous-pdf", "pypdf_first_3_pages", "instruction_pdf", 0.84),
+        )
+        conn.commit()
+        conn.close()
+
+        run_source_cleanup(db, apply=True)
+
+        conn = sqlite3.connect(db)
+        self.assertEqual(
+            conn.execute("SELECT source_kind FROM source_document_cleanup WHERE source_id='ambiguous-pdf'").fetchone()[0],
+            "instruction_pdf",
+        )
 
 
 if __name__ == "__main__":

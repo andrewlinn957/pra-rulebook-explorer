@@ -25,6 +25,161 @@ REPORTING_OVERVIEW_CHILD_EDGES = {
 }
 
 REPORTING_OVERVIEW_REFERENCE_EDGES = REPORTING_REFERENCE_EDGE_TYPES | {"REFERENCES_TEMPLATE"}
+REPORTING_ONTOLOGY_EDGE_TYPES = {
+    "HAS_REGIME", "HAS_COLLECTION", "BELONGS_TO_REGIME", "BELONGS_TO_COLLECTION",
+    "HAS_EDITION", "SUPERSEDES", "HAS_TEMPLATE_RESOURCE", "HAS_INSTRUCTION_RESOURCE",
+    "HAS_RESOURCE", "CONTAINS_SHEET", "IMPLEMENTS_TEMPLATE", "SUPPORTED_BY_TAXONOMY",
+    "CONTAINS_INSTRUCTION_SECTION", "HAS_TAXONOMY_RESOURCE", "HAS_ENTRY_POINT",
+    "ENCODES_REQUIREMENT", "REFERENCES_RULE", "REFERENCES_SOURCE", "REFERENCES_EXTERNAL",
+}
+
+
+def reporting_catalog(
+    conn: sqlite3.Connection,
+    *,
+    q: str | None = None,
+    estate: str | None = None,
+    include_historic: bool = False,
+) -> dict[str, Any]:
+    """Return the normalized, user-facing reporting estate.
+
+    This endpoint intentionally omits ingestion/audit fields.  The official
+    source page and direct artifact links are the useful provenance for normal
+    users; internal hashes, model names and extraction methods remain in the
+    database for maintainers.
+    """
+    where = ["1=1"]
+    params: list[Any] = []
+    if not include_historic:
+        where.append("r.status <> 'historic'")
+    if estate:
+        where.append("r.estate=?")
+        params.append(estate)
+    if q:
+        where.append("(r.return_code LIKE ? OR r.name LIKE ? OR r.description LIKE ? OR r.family LIKE ?)")
+        needle = f"%{q}%"
+        params.extend([needle, needle, needle, needle])
+    rows = conn.execute(
+        f"""
+        SELECT r.*,oe.edition_id,oq.requirement_id,oq.requirement_type,
+               oc.collection_id,oc.name AS collection_name,
+               og.regime_id,og.name AS regime_name,
+               oen.resolved_display_name AS edition_display_name,
+               oen.display_name_source AS edition_display_name_source,
+               COUNT(DISTINCT CASE WHEN ra.relationship='template' THEN ra.artifact_id END) AS template_count,
+               COUNT(DISTINCT CASE WHEN ra.relationship='instructions' THEN ra.artifact_id END) AS instruction_count
+        FROM reporting_return_catalog r
+        LEFT JOIN reporting_return_artifact ra ON ra.return_id=r.return_id
+        LEFT JOIN reporting_requirement_edition oe ON oe.legacy_return_id=r.return_id
+        LEFT JOIN reporting_requirement oq ON oq.requirement_id=oe.requirement_id
+        LEFT JOIN reporting_collection oc ON oc.collection_id=oq.collection_id
+        LEFT JOIN reporting_regime og ON og.regime_id=oc.regime_id
+        LEFT JOIN reporting_edition_names oen ON oen.edition_id=oe.edition_id
+        WHERE {' AND '.join(where)}
+        GROUP BY r.return_id
+        ORDER BY CASE r.estate WHEN 'supervisory_reporting' THEN 1 WHEN 'pillar3_disclosure' THEN 2 ELSE 9 END,
+                 r.family,r.return_code,r.effective_from
+        """,
+        params,
+    ).fetchall()
+    returns = [_public_catalog_return(row) for row in rows]
+    technical = conn.execute(
+        """
+        SELECT artifact_id,url,display_title,artifact_role,estate,file_type,
+               sheet_names_json,description,taxonomy_version
+        FROM reporting_artifact
+        WHERE estate='technical'
+        ORDER BY artifact_role,display_title
+        """
+    ).fetchall()
+    return {
+        "source_page_url": rows[0]["source_page_url"] if rows else "",
+        "returns": returns,
+        "technical_artifacts": [_public_artifact(row) for row in technical],
+        "counts": {
+            "returns": len(returns),
+            "supervisory_reporting": sum(r["estate"] == "supervisory_reporting" for r in returns),
+            "pillar3_disclosure": sum(r["estate"] == "pillar3_disclosure" for r in returns),
+            "technical_artifacts": len(technical),
+        },
+    }
+
+
+def reporting_catalog_return(conn: sqlite3.Connection, return_id: str) -> dict[str, Any] | None:
+    row = conn.execute(
+        """SELECT r.*,oe.edition_id,oq.requirement_id,oq.requirement_type,
+                  oc.collection_id,oc.name AS collection_name,
+                  og.regime_id,og.name AS regime_name,
+                  oen.resolved_display_name AS edition_display_name,
+                  oen.display_name_source AS edition_display_name_source
+           FROM reporting_return_catalog r
+           LEFT JOIN reporting_requirement_edition oe ON oe.legacy_return_id=r.return_id
+           LEFT JOIN reporting_requirement oq ON oq.requirement_id=oe.requirement_id
+           LEFT JOIN reporting_collection oc ON oc.collection_id=oq.collection_id
+           LEFT JOIN reporting_regime og ON og.regime_id=oc.regime_id
+           LEFT JOIN reporting_edition_names oen ON oen.edition_id=oe.edition_id
+           WHERE r.return_id=? OR oe.edition_id=?""",
+        (return_id, return_id),
+    ).fetchone()
+    if not row:
+        return None
+    result = _public_catalog_return(row)
+    artifacts = conn.execute(
+        """
+        SELECT a.artifact_id,a.url,a.display_title,a.artifact_role,a.estate,a.file_type,
+               a.sheet_names_json,a.description,a.taxonomy_version,
+               ra.relationship,ra.is_primary,ra.display_order,
+               ores.resource_id,orn.resolved_display_name,orn.display_name_source,
+               orn.inherited_requirement_name
+        FROM reporting_return_artifact ra
+        JOIN reporting_artifact a ON a.artifact_id=ra.artifact_id
+        LEFT JOIN reporting_resource ores ON ores.legacy_artifact_id=a.artifact_id
+        LEFT JOIN reporting_requirement_edition oe ON oe.legacy_return_id=ra.return_id
+        LEFT JOIN reporting_edition_resource_names orn
+          ON orn.edition_id=oe.edition_id AND orn.resource_id=ores.resource_id
+        WHERE ra.return_id=?
+        ORDER BY ra.display_order,a.display_title
+        """,
+        (row["return_id"],),
+    ).fetchall()
+    result["artifacts"] = [_public_artifact(artifact) for artifact in artifacts]
+    code = result["return_code"]
+    references = return_references(conn, code, limit=250)
+    result["rulebook_references"] = (references or {}).get("references", [])
+    result["reference_summary"] = (references or {}).get("summary", {})
+    return result
+
+
+def _public_catalog_return(row: sqlite3.Row) -> dict[str, Any]:
+    fields = {
+        "return_id", "return_code", "name", "description", "estate", "family",
+        "effective_from", "effective_to", "effective_text", "status", "source_page_url",
+        "template_count", "instruction_count", "edition_id", "requirement_id", "requirement_type",
+        "collection_id", "collection_name", "regime_id", "regime_name",
+        "edition_display_name", "edition_display_name_source",
+    }
+    return {key: row[key] for key in fields if key in row.keys()}
+
+
+def _public_artifact(row: sqlite3.Row) -> dict[str, Any]:
+    result = {
+        key: row[key]
+        for key in (
+            "artifact_id", "url", "display_title", "artifact_role", "estate", "file_type",
+            "description", "taxonomy_version", "relationship", "is_primary", "display_order",
+            "resource_id", "resolved_display_name", "display_name_source", "inherited_requirement_name",
+        )
+        if key in row.keys()
+    }
+    if "sheet_names_json" in row.keys():
+        try:
+            parsed = json.loads(row["sheet_names_json"] or "[]")
+            result["sheet_names"] = parsed if isinstance(parsed, list) else []
+        except json.JSONDecodeError:
+            result["sheet_names"] = []
+    else:
+        result["sheet_names"] = []
+    return result
 
 
 def reporting_stats(conn: sqlite3.Connection) -> dict[str, Any]:
@@ -51,12 +206,14 @@ def reporting_overview_graph(
 ) -> dict[str, Any]:
     """Build a reporting-first graph for the UI.
 
-    DataItem nodes are the top-level parents. The default graph includes their
+    Return and disclosure-set nodes are the top-level parents. The default graph includes their
     main reporting artefacts and source-document cross-references, but avoids
     the full datapoint explosion unless explicitly requested.
     """
     ensure_reporting_graph_indexes(conn)
     roots = _reporting_root_data_items(conn, q=selected_return or q, limit=limit, exact=bool(selected_return))
+    if selected_return and roots and roots[0].get("node_type") == "RequirementEdition":
+        return _reporting_ontology_graph(conn, roots[0], limit=child_limit)
     root_ids = [r["node_id"] for r in roots]
     nodes: dict[str, dict[str, Any]] = {r["node_id"]: _ui_reporting_node(r, role="return") for r in roots}
     edges: dict[str, dict[str, Any]] = {}
@@ -88,6 +245,50 @@ def reporting_overview_graph(
     }
 
 
+def _reporting_ontology_graph(conn: sqlite3.Connection, root: dict[str, Any], *, limit: int) -> dict[str, Any]:
+    """Build the edition-centred graph from the normalized reporting ontology."""
+    root_id = root["node_id"]
+    nodes: dict[str, dict[str, Any]] = {root_id: _ui_reporting_node(root, role="requirement_edition")}
+    edges: dict[str, dict[str, Any]] = {}
+
+    first = _reporting_edges_for_sources(conn, [root_id], sorted(REPORTING_ONTOLOGY_EDGE_TYPES), limit)
+    first += _reporting_edges_for_targets(conn, [root_id], ["HAS_EDITION"], limit)
+    _add_reporting_edges(conn, first, nodes, edges)
+
+    requirement_ids = [edge["source_node_id"] for edge in first if edge["edge_type"] == "HAS_EDITION"]
+    resource_ids = [
+        edge["target_node_id"] for edge in first
+        if edge["edge_type"] in {"HAS_TEMPLATE_RESOURCE", "HAS_INSTRUCTION_RESOURCE", "HAS_RESOURCE", "SUPPORTED_BY_TAXONOMY"}
+    ]
+    second_sources = sorted(set(requirement_ids + resource_ids))
+    if second_sources:
+        second = _reporting_edges_for_sources(
+            conn,
+            second_sources,
+            sorted(REPORTING_ONTOLOGY_EDGE_TYPES),
+            limit,
+        )
+        _add_reporting_edges(conn, second, nodes, edges)
+        component_ids = [
+            edge["target_node_id"] for edge in second
+            if edge["edge_type"] in {"CONTAINS_SHEET", "CONTAINS_INSTRUCTION_SECTION", "HAS_ENTRY_POINT"}
+        ]
+        if component_ids:
+            third = _reporting_edges_for_sources(conn, component_ids, ["IMPLEMENTS_TEMPLATE", "ENCODES_REQUIREMENT"], limit)
+            _add_reporting_edges(conn, third, nodes, edges)
+
+    available = _count_by(list(edges.values()), "edge_type")
+    _ensure_reporting_node_source_urls(nodes, edges)
+    return {
+        "level": "reporting_ontology",
+        "root_count": 1,
+        "centre_id": root_id,
+        "nodes": list(nodes.values()),
+        "edges": list(edges.values()),
+        "available_edge_types": available,
+    }
+
+
 def ensure_reporting_graph_indexes(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_graph_edge_source_type ON graph_edge(source_node_id, edge_type)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_graph_edge_target_type ON graph_edge(target_node_id, edge_type)")
@@ -96,12 +297,12 @@ def ensure_reporting_graph_indexes(conn: sqlite3.Connection) -> None:
 
 def _reporting_root_data_items(conn: sqlite3.Connection, *, q: str | None, limit: int, exact: bool = False) -> list[dict[str, Any]]:
     params: list[Any] = []
-    where = "WHERE n.node_type='DataItem'"
+    where = "WHERE n.node_type IN ('RequirementEdition','DataItem','ReportingReturn','DisclosureSet')"
     if q:
         if exact:
-            where += " AND (n.node_id=? OR n.node_id=? OR n.label=? OR n.source_pk=?)"
+            where += " AND (n.node_id=? OR n.node_id=? OR n.node_id=? OR n.node_id=? OR n.label=? OR n.source_pk=?)"
             code = q.removeprefix("data_item:")
-            params.extend([q, f"data_item:{code}", code, q])
+            params.extend([q, f"data_item:{code}", f"return_version:{q}", f"disclosure_set:{q}", code, q])
         else:
             where += " AND (n.node_id LIKE ? OR n.label LIKE ? OR n.properties_json LIKE ?)"
             needle = f"%{q}%"
@@ -140,6 +341,23 @@ def _reporting_edges_for_sources(conn: sqlite3.Connection, source_ids: list[str]
         LIMIT ?
         """,
         [*source_ids, *edge_types, limit],
+    ).fetchall()
+    return [_graph_edge(row) for row in rows]
+
+
+def _reporting_edges_for_targets(conn: sqlite3.Connection, target_ids: list[str], edge_types: list[str], limit: int) -> list[dict[str, Any]]:
+    if not target_ids:
+        return []
+    rows = conn.execute(
+        f"""
+        SELECT edge_id,source_node_id,target_node_id,edge_type,properties_json,evidence_span_id,confidence,extraction_method,review_status
+        FROM graph_edge
+        WHERE target_node_id IN ({','.join('?' for _ in target_ids)})
+          AND edge_type IN ({','.join('?' for _ in edge_types)})
+        ORDER BY edge_type,source_node_id
+        LIMIT ?
+        """,
+        [*target_ids, *edge_types, limit],
     ).fetchall()
     return [_graph_edge(row) for row in rows]
 
@@ -449,6 +667,32 @@ def _is_http_url(value: Any) -> bool:
     return isinstance(value, str) and value.startswith(("http://", "https://"))
 
 
+FORBIDDEN_REPORTING_METADATA_KEYS = {
+    "audit_cleanup",
+    "cleanup_decision",
+    "cleanup_reason",
+    "decision",
+    "decision_reason",
+    "model",
+    "model_name",
+    "prompt_version",
+    "template_enrichment_model",
+    "template_enrichment_prompt_version",
+    "template_enrichment_input_hash",
+}
+
+
+def _public_reporting_metadata(props: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in props.items()
+        if key not in FORBIDDEN_REPORTING_METADATA_KEYS
+        and not key.endswith("_model")
+        and not key.endswith("_prompt_version")
+        and not key.endswith("_input_hash")
+    }
+
+
 def _sample_datapoint_labels(conn: sqlite3.Connection, template_id: str, *, limit: int = 8) -> list[str]:
     rows = conn.execute(
         """
@@ -591,9 +835,6 @@ def _latest_template_enrichment(conn: sqlite3.Connection, template_ids: list[str
         if not isinstance(key_rows, list):
             key_rows = []
         enrichment[row["template_id"]] = {
-            "template_enrichment_model": row["model"],
-            "template_enrichment_prompt_version": row["prompt_version"],
-            "template_enrichment_input_hash": row["input_hash"],
             "template_purpose": row["purpose"],
             "template_contents": row["contents"],
             "template_summary": row["summary"],
@@ -659,8 +900,8 @@ def _template_source_urls(conn: sqlite3.Connection, node_ids: list[str]) -> dict
 
 
 def _ui_reporting_node(node: dict[str, Any], *, role: str | None = None) -> dict[str, Any]:
-    props = node.get("properties") or {}
-    text_parts = [props.get("title"), props.get("reporting_domain"), props.get("submission_system")]
+    props = _public_reporting_metadata(dict(node.get("properties") or {}))
+    text_parts = [props.get("description"), props.get("title"), props.get("reporting_domain"), props.get("submission_system")]
     return {
         "id": node["node_id"],
         "node_type": node["node_type"],

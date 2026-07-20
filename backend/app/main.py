@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated
@@ -8,8 +9,8 @@ from typing import Annotated
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-from .db import DEFAULT_DB, connect, get_node
-from .feedback import create_feedback, list_feedback, process_feedback_queue
+from .db import DEFAULT_DB, connect, ensure_indexes, get_node
+from .feedback import create_feedback, list_feedback
 from .graph import betweenness, centrality, common_neighbours, communities, components, contents_tree, interesting, list_nodes, neighbourhood, search, semantic_map, shortest_path, stats
 from .reporting import (
     datapoint_detail,
@@ -17,6 +18,8 @@ from .reporting import (
     list_templates,
     relationship_evidence,
     reporting_neighbourhood,
+    reporting_catalog,
+    reporting_catalog_return,
     reporting_overview_graph,
     reporting_stats,
     return_detail,
@@ -28,16 +31,24 @@ from .reporting import (
 )
 from .unified import unified_edge, unified_edges, unified_neighbourhood, unified_node, unified_nodes, unified_schema, unified_search, unified_stats, unified_table_rows
 from .validation import validation_dashboard
+from .migrations import apply_migrations, schema_version
 
 DB_PATH = DEFAULT_DB
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 app = FastAPI(title="PRA Rulebook Explorer API", version="0.2.0")
+allowed_origins = [
+    origin.strip()
+    for origin in os.environ.get(
+        "PRA_RULEBOOK_CORS_ORIGINS", "http://127.0.0.1:5173,http://localhost:5173"
+    ).split(",")
+    if origin.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=allowed_origins,
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
 )
 
 
@@ -52,15 +63,26 @@ def _offset(value: int) -> int:
 
 @app.on_event("startup")
 def startup() -> None:
-    # Search/FTS indexes are maintained by the explicit build-indexes command.
-    # Avoid rebuilding them during service startup because long embedding rebuilds
-    # can hold the SQLite database busy for extended periods.
-    return None
+    conn = connect(DB_PATH)
+    try:
+        apply_migrations(conn)
+        dirty_row = conn.execute(
+            "SELECT dirty FROM search_projection_state WHERE singleton=1"
+        ).fetchone()
+        if dirty_row is None or dirty_row[0]:
+            ensure_indexes(conn)
+    finally:
+        conn.close()
 
 
 @app.get("/health")
 def health() -> dict:
-    return {"ok": True, "db": str(DB_PATH), "exists": DB_PATH.exists()}
+    conn = connect(DB_PATH)
+    try:
+        version = schema_version(conn)
+    finally:
+        conn.close()
+    return {"ok": True, "db": str(DB_PATH), "exists": DB_PATH.exists(), "schema_version": version}
 
 
 @app.get("/stats")
@@ -96,16 +118,6 @@ async def api_node_feedback(request: Request) -> dict:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True, "item": item}
-
-
-@app.post("/feedback/process")
-async def api_process_feedback_queue(request: Request) -> dict:
-    try:
-        payload = await request.json()
-    except Exception:
-        payload = {}
-    limit = _limit(int(payload.get("limit", 3)), 10)
-    return process_feedback_queue(PROJECT_ROOT, limit=limit)
 
 
 @app.post("/validation/suspect-403-review")
@@ -262,6 +274,31 @@ def api_unified_neighbourhood(
 def api_reporting_stats() -> dict:
     conn = connect(DB_PATH)
     return reporting_stats(conn)
+
+
+@app.get("/reporting/catalog")
+def api_reporting_catalog(
+    q: str | None = None,
+    estate: str | None = None,
+    include_historic: bool = False,
+) -> dict:
+    conn = connect(DB_PATH)
+    try:
+        return reporting_catalog(conn, q=q, estate=estate, include_historic=include_historic)
+    finally:
+        conn.close()
+
+
+@app.get("/reporting/catalog/{return_id}")
+def api_reporting_catalog_return(return_id: str) -> dict:
+    conn = connect(DB_PATH)
+    try:
+        result = reporting_catalog_return(conn, return_id)
+    finally:
+        conn.close()
+    if not result:
+        raise HTTPException(status_code=404, detail="Reporting catalogue entry not found")
+    return result
 
 
 @app.get("/reporting/returns")

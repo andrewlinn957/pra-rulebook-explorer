@@ -5,6 +5,16 @@ import { forceCollide, forceX, forceY } from 'd3-force';
 import { filterGraph, isInsuranceNode } from './graphFilters.js';
 import { buildQualityQueues, filterQueueRows, summariseQueue } from './qualityWorkbench.js';
 import { displayNodeTitle, documentBadge, relativeNodeRole, edgeDirectionGlyph, edgeDirectionLabel } from './graphPresentation.js';
+import {
+  REPORTING_EDGE_GROUPS,
+  reportingChildGroups,
+  reportingEdgeGroup,
+  reportingEdgeGroupCounts,
+  reportingEdgeTypesForGroups,
+  reportingOneHopGraph,
+  reportingParentNodes,
+  reportingSourceNodes,
+} from './reportingNavigation.js';
 import './styles.css';
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/pra-rulebook-api';
@@ -20,16 +30,15 @@ const REPRESENTATIONS = {
   obligations: { label:'Obligations', hint:'Detected obligation statements, obligation patterns, and provisions with similar obligation patterns.', types:['has_obligation_pattern','has_structured_obligation','shares_obligation_pattern'], depth:1, explicitOnly:false },
 };
 const EXPLICIT = new Set(['site_structure','html_link','html_anchor_resolved','html_glossary_link','glossary_source','crr_terms_source','legal_instrument_listing','regex_reference','regex_named_reference','llm_extracted_reference','resolved_part_reference','fca_waivers_list']);
-const RELATION_LABELS = { contains:'contains / child', references:'Cross-references', uses_defined_term:'Definitions used', defines:'Definitions provided', shares_defined_term:'Shared defined terms', has_obligation_pattern:'Obligation themes', shares_obligation_pattern:'Similar obligations', has_structured_obligation:'Extracted obligations', amends:'Amendments', has_permission:'Firms with permissions', USES_TEMPLATE:'Uses template', USES_INSTRUCTIONS:'Uses instructions', EVIDENCED_BY:'Evidenced by', LEGAL_BASIS:'Legal basis', APPLIES_TO:'Applies to', HAS_SCOPE_RULE:'Scope rule', MAY_BE_AFFECTED_BY_PERMISSION:'Affected by permission', REFERENCES_RULE:'References rule', REFERENCES_SOURCE:'References source', REFERENCES_EXTERNAL:'References external', REFERENCES_RETURN:'References return', REFERENCES_TEMPLATE:'References template', SUMMARISES_DATAPOINTS:'Summarises datapoints', HAS_DATAPOINT:'Has datapoint', REPORTS_CONCEPT:'Reports concept' };
+const RELATION_LABELS = { contains:'contains / child', references:'Cross-references', uses_defined_term:'Definitions used', defines:'Definitions provided', shares_defined_term:'Shared defined terms', has_obligation_pattern:'Obligation themes', shares_obligation_pattern:'Similar obligations', has_structured_obligation:'Extracted obligations', amends:'Amendments', has_permission:'Firms with permissions', HAS_REGIME:'Has regime', HAS_COLLECTION:'Has collection', BELONGS_TO_REGIME:'Belongs to regime', BELONGS_TO_COLLECTION:'Belongs to collection', HAS_EDITION:'Has edition', SUPERSEDES:'Supersedes', HAS_TEMPLATE_RESOURCE:'Has template resource', HAS_INSTRUCTION_RESOURCE:'Has instruction resource', HAS_RESOURCE:'Has resource', CONTAINS_SHEET:'Contains worksheet', IMPLEMENTS_TEMPLATE:'Implements template', SUPPORTED_BY_TAXONOMY:'Supported by taxonomy', HAS_TAXONOMY_RESOURCE:'Has taxonomy resource', USES_TEMPLATE:'Uses template', USES_INSTRUCTIONS:'Uses instructions', EVIDENCED_BY:'Evidenced by', LEGAL_BASIS:'Legal basis', APPLIES_TO:'Applies to', HAS_SCOPE_RULE:'Scope rule', MAY_BE_AFFECTED_BY_PERMISSION:'Affected by permission', REFERENCES_RULE:'References rule', REFERENCES_SOURCE:'References source', REFERENCES_EXTERNAL:'References external', REFERENCES_RETURN:'References return', REFERENCES_TEMPLATE:'References template', SUMMARISES_DATAPOINTS:'Summarises datapoints', HAS_DATAPOINT:'Has datapoint', REPORTS_CONCEPT:'Reports concept' };
 const EVIDENCE_LABELS = { references:'Cross-references', uses_defined_term:'Definitions used by this provision', defines:'Definitions provided here', shares_defined_term:'Provisions sharing defined terms', has_obligation_pattern:'Obligation themes found here', shares_obligation_pattern:'Provisions with similar obligations', has_structured_obligation:'Extracted obligation statements', amends:'Legal instruments amending this material', has_permission:'Firms with active permissions' };
 const ORIGIN_FILTERS = { all:'All links', explicit:'Direct links', inferred:'Inferred / derived links' };
-const EDGE_COLOURS = { contains:'#94a3b8', references:'#2563eb', uses_defined_term:'#d97706', defines:'#ca8a04', shares_defined_term:'#0f766e', has_obligation_pattern:'#db2777', shares_obligation_pattern:'#ea580c', has_structured_obligation:'#be123c', amends:'#dc2626', has_permission:'#8b5cf6', USES_TEMPLATE:'#2563eb', USES_INSTRUCTIONS:'#0f766e', EVIDENCED_BY:'#7c3aed', LEGAL_BASIS:'#dc2626', APPLIES_TO:'#0891b2', HAS_SCOPE_RULE:'#0d9488', MAY_BE_AFFECTED_BY_PERMISSION:'#8b5cf6', REFERENCES_RULE:'#be123c', REFERENCES_SOURCE:'#9333ea', REFERENCES_EXTERNAL:'#64748b', REFERENCES_RETURN:'#ea580c', REFERENCES_TEMPLATE:'#4f46e5', SUMMARISES_DATAPOINTS:'#475569', HAS_DATAPOINT:'#94a3b8', REPORTS_CONCEPT:'#0f766e' };
-const MATERIAL_COLOURS = { rule:'#2563eb', supervisory_statement:'#16a34a', statement_of_policy:'#0f766e', definition:'#b45309', permission:'#8b5cf6', external_reference:'#64748b', legal_instrument:'#b91c1c', obligation_pattern:'#db2777', obligation_statement:'#be123c', analysis:'#9333ea', rulebook:'#6d28d9', reporting_return:'#2457d6', reporting_template:'#0f766e', reporting_instruction:'#d97706', reporting_source:'#7c3aed', reporting_xbrl_source:'#6d28d9', reporting_datapoint:'#64748b', reporting_provision:'#be123c', reporting_concept:'#0891b2' };
+const EDGE_COLOURS = { contains:'#94a3b8', references:'#2563eb', uses_defined_term:'#d97706', defines:'#ca8a04', shares_defined_term:'#0f766e', has_obligation_pattern:'#db2777', shares_obligation_pattern:'#ea580c', has_structured_obligation:'#be123c', amends:'#dc2626', has_permission:'#8b5cf6', HAS_REGIME:'#1d4ed8', HAS_COLLECTION:'#0284c7', BELONGS_TO_REGIME:'#1d4ed8', BELONGS_TO_COLLECTION:'#0284c7', HAS_EDITION:'#4f46e5', SUPERSEDES:'#64748b', HAS_TEMPLATE_RESOURCE:'#0f766e', HAS_INSTRUCTION_RESOURCE:'#d97706', HAS_RESOURCE:'#7c3aed', CONTAINS_SHEET:'#0891b2', IMPLEMENTS_TEMPLATE:'#0f766e', SUPPORTED_BY_TAXONOMY:'#6d28d9', HAS_TAXONOMY_RESOURCE:'#7c3aed', USES_TEMPLATE:'#2563eb', USES_INSTRUCTIONS:'#0f766e', EVIDENCED_BY:'#7c3aed', LEGAL_BASIS:'#dc2626', APPLIES_TO:'#0891b2', HAS_SCOPE_RULE:'#0d9488', MAY_BE_AFFECTED_BY_PERMISSION:'#8b5cf6', REFERENCES_RULE:'#be123c', REFERENCES_SOURCE:'#9333ea', REFERENCES_EXTERNAL:'#64748b', REFERENCES_RETURN:'#ea580c', REFERENCES_TEMPLATE:'#4f46e5', SUMMARISES_DATAPOINTS:'#475569', HAS_DATAPOINT:'#94a3b8', REPORTS_CONCEPT:'#0f766e' };
+const MATERIAL_COLOURS = { rule:'#2563eb', supervisory_statement:'#16a34a', statement_of_policy:'#0f766e', definition:'#b45309', permission:'#8b5cf6', external_reference:'#64748b', legal_instrument:'#b91c1c', obligation_pattern:'#db2777', obligation_statement:'#be123c', analysis:'#9333ea', rulebook:'#6d28d9', reporting_estate:'#172554', reporting_regime:'#1d4ed8', reporting_collection:'#0284c7', reporting_requirement:'#2457d6', reporting_edition:'#4f46e5', reporting_resource:'#7c3aed', reporting_template:'#0f766e', reporting_instruction:'#d97706', reporting_source:'#7c3aed', reporting_xbrl_source:'#6d28d9', reporting_datapoint:'#64748b', reporting_provision:'#be123c', reporting_concept:'#0891b2' };
 const CLUSTER_COLOURS = ['#4f7cff','#d28b24','#58a978','#d35cff','#cc5c5c','#35b6b4','#d7ff64','#a78bfa','#fb7185','#60a5fa','#f59e0b','#34d399'];
 const MATERIAL_FILTERS = ['rule','supervisory_statement','statement_of_policy','definition','permission','legal_instrument','external_reference'];
 const RELATIONSHIP_ORDER = TYPES;
-const REPORTING_NODE_TYPES = ['DataItem','ReportingObligation','Template','InstructionSet','SourceDocument','Provision','ExternalReference','LegalInstrument','PolicyStatement','TemplateSet','DataPointGroup','DataPoint','TemplateRow','TemplateColumn','Concept','ScopeRule','FirmType','Permission','ValidationRule'];
-const REPORTING_EDGE_TYPES = ['USES_TEMPLATE','USES_INSTRUCTIONS','EVIDENCED_BY','LEGAL_BASIS','APPLIES_TO','HAS_SCOPE_RULE','MAY_BE_AFFECTED_BY_PERMISSION','REFERENCES_RULE','REFERENCES_SOURCE','REFERENCES_EXTERNAL','REFERENCES_RETURN','REFERENCES_TEMPLATE','SUMMARISES_DATAPOINTS','HAS_DATAPOINT','REPORTS_CONCEPT'];
+const REPORTING_NODE_TYPES = ['ReportingEstate','ReportingRegime','ReportingCollection','ReportingRequirement','RequirementEdition','ReportingResource','Worksheet','LogicalTemplate','InstructionSection','TaxonomyRelease','TaxonomyEntryPoint','DataItem','ReportingReturn','DisclosureSet','ReportingObligation','Template','InstructionSet','SourceDocument','Provision','ExternalReference','LegalInstrument','PolicyStatement','TemplateSet','DataPointGroup','DataPoint','TemplateRow','TemplateColumn','Concept','ScopeRule','FirmType','Permission','ValidationRule'];
 const REPORTING_DEFAULT_EDGE_TYPES = new Set(['USES_TEMPLATE','USES_INSTRUCTIONS','EVIDENCED_BY','LEGAL_BASIS','APPLIES_TO','HAS_SCOPE_RULE','MAY_BE_AFFECTED_BY_PERMISSION','SUMMARISES_DATAPOINTS']);
 
 async function fetchJson(url,options){
@@ -199,7 +208,7 @@ function App(){
       permission:['permission','Permission'],
       legal_instrument:['legal_instrument','LegalInstrument'],
       external_reference:['external_reference','rule_reference','ExternalReference'],
-      reporting_return:['DataItem'],
+      reporting_return:['ReportingRequirement','RequirementEdition','DataItem','ReportingReturn','DisclosureSet'],
       reporting_template:['Template','TemplateSet'],
       reporting_instruction:['InstructionSet'],
       reporting_source:['SourceDocument'],
@@ -271,218 +280,138 @@ function NodeFeedbackModal({node,text,setText,saving,onClose,onSubmit}){
 
 function ReportingGraphView({onFeedback}){
   const [query,setQuery]=useState('');
-  const [submitted,setSubmitted]=useState('');
-  const [selectedReturn,setSelectedReturn]=useState('');
-  const [includeDatapoints,setIncludeDatapoints]=useState(false);
-  const [edgeTypes,setEdgeTypes]=useState(new Set(REPORTING_DEFAULT_EDGE_TYPES));
-  const [nodeTypes,setNodeTypes]=useState(new Set(REPORTING_NODE_TYPES.filter(t=>t!=='DataPoint'&&t!=='TemplateRow'&&t!=='TemplateColumn')));
+  const [estate,setEstate]=useState('supervisory_reporting');
+  const [includeHistoric,setIncludeHistoric]=useState(false);
+  const [catalog,setCatalog]=useState({returns:[],technical_artifacts:[],counts:{}});
+  const [selectedId,setSelectedId]=useState('');
+  const [catalogDetail,setCatalogDetail]=useState(null);
   const [graph,setGraph]=useState({nodes:[],edges:[],available_edge_types:{}});
-  const [detail,setDetail]=useState(null);
+  const [nodeDetail,setNodeDetail]=useState(null);
+  const [edgeGroups,setEdgeGroups]=useState(new Set(['structure','documents','rules']));
+  const [nodeTypes,setNodeTypes]=useState(new Set(REPORTING_NODE_TYPES.filter(t=>!['DataPoint','TemplateRow','TemplateColumn'].includes(t))));
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
-  const activeGraph=useMemo(()=>filterGraph(graph,nodeTypes,edgeTypes,'all',detail?.id,true),[graph,nodeTypes,edgeTypes,detail?.id]);
-  const selectedEdges=useMemo(()=>activeGraph.edges.filter(e=>detail&&(e.from_node_id===detail.id||e.to_node_id===detail.id)),[activeGraph,detail]);
-  const reportingRoot=useMemo(()=>graph.nodes?.find(n=>n.node_type==='DataItem')||detail||null,[graph.nodes,detail?.id]);
-  const hiddenByFilters=useMemo(()=>selectedReturn && (activeGraph.nodes.length<(graph.nodes||[]).length || activeGraph.edges.length<(graph.edges||[]).length),[selectedReturn,activeGraph.nodes.length,activeGraph.edges.length,graph.nodes,graph.edges]);
-  useEffect(()=>{ loadReportingGraph(selectedReturn?'':submitted, selectedReturn); },[includeDatapoints]);
+  useEffect(()=>{ loadCatalog(); },[estate,includeHistoric]);
+  const visibleEdgeTypes=useMemo(()=>reportingEdgeTypesForGroups(edgeGroups),[edgeGroups]);
+  const edgeGroupCounts=useMemo(()=>reportingEdgeGroupCounts(graph),[graph]);
+  const activeGraph=useMemo(()=>{
+    if(!selectedId) return graph;
+    const filtered=filterGraph(graph,nodeTypes,visibleEdgeTypes,'all',nodeDetail?.id,true);
+    return reportingOneHopGraph(filtered,nodeDetail?.id);
+  },[graph,nodeTypes,visibleEdgeTypes,nodeDetail?.id,selectedId]);
+  const graphRoot=useMemo(()=>graph.nodes?.find(n=>['RequirementEdition','DataItem','ReportingReturn','DisclosureSet'].includes(n.node_type))||null,[graph]);
+  const selectedEdges=useMemo(()=>activeGraph.edges.filter(edge=>nodeDetail&&(edge.from_node_id===nodeDetail.id||edge.to_node_id===nodeDetail.id)),[activeGraph,nodeDetail]);
+  const childGroups=useMemo(()=>reportingChildGroups(nodeDetail,graph),[graph,nodeDetail]);
+  const parentNodes=useMemo(()=>reportingParentNodes(nodeDetail,graph),[graph,nodeDetail]);
 
-  function resetReportingFilters(){
-    setEdgeTypes(new Set(REPORTING_DEFAULT_EDGE_TYPES));
-    setNodeTypes(new Set(REPORTING_NODE_TYPES.filter(t=>t!=='DataPoint'&&t!=='TemplateRow'&&t!=='TemplateColumn')));
-  }
-  async function loadReportingGraph(q=submitted, returnCode='', options={}){
-    if(options.resetFilters) resetReportingFilters();
+  async function loadCatalog(search=query){
     setBusy(true); setError('');
     try{
-      const p=new URLSearchParams({limit:'80',child_limit:includeDatapoints?'1400':'900',include_datapoints:String(includeDatapoints)});
-      if(returnCode) p.set('selected_return',returnCode);
-      else if(q.trim()) p.set('q',q.trim());
-      const data=await fetchJson(API_BASE+`/reporting/graph/overview?${p}`);
-      setGraph(data);
-      setSubmitted(returnCode||q.trim());
-      setSelectedReturn(returnCode);
-      const first=returnCode ? (data.nodes?.find(n=>n.node_type==='DataItem')||data.nodes?.[0]||null) : null;
-      setDetail(first);
+      const p=new URLSearchParams({estate,include_historic:String(includeHistoric)});
+      if(search.trim()) p.set('q',search.trim());
+      const data=await fetchJson(API_BASE+`/reporting/catalog?${p}`);
+      setCatalog(data);
+      if(selectedId && !data.returns.some(row=>row.return_id===selectedId)){ setSelectedId(''); setCatalogDetail(null); setNodeDetail(null); }
+      if(!selectedId) setGraph(reportingCatalogOverviewGraph(data.returns||[]));
     }catch(err){ setError(err.message||String(err)); }
     finally{ setBusy(false); }
   }
-  function submit(e){ e?.preventDefault(); loadReportingGraph(query,''); }
-  function returnCode(node){ return node?.metadata?.data_item_code || String(node?.title||node?.id||'').replace(/^data_item:/,''); }
-  function inspectReportingNode(node){ setDetail(node); }
-  async function drillReportingNode(node){ if(node?.node_type==='DataItem'){ resetReportingFilters();
-    await loadReportingGraph('', returnCode(node), {resetFilters:false}); } else setDetail(node); }
-  function openReturn(node){ drillReportingNode(node); }
-  function showAllReturns(){ setQuery(''); loadReportingGraph('', ''); }
-  function toggleEdge(t){ const next=new Set(edgeTypes); next.has(t)?next.delete(t):next.add(t); setEdgeTypes(next); }
-  function toggleNode(t){ const next=new Set(nodeTypes); const group=reportingNodeTypeGroup(t); const allOn=group.every(x=>next.has(x)); group.forEach(x=>allOn?next.delete(x):next.add(x)); setNodeTypes(next); }
-  const roots=graph.nodes.filter(n=>n.node_type==='DataItem');
-  const visibleEdgeTypes=REPORTING_EDGE_TYPES.filter(t=>(graph.available_edge_types?.[t]||0)>0 || edgeTypes.has(t));
-  const visibleMaterialFilters=reportingMaterialFilters(graph);
+  async function openReturn(row){
+    setSelectedId(row.return_id); setBusy(true); setError('');
+    try{
+      const graphKey=row.edition_id||row.return_id;
+      const [detailData,graphData]=await Promise.all([
+        fetchJson(API_BASE+`/reporting/catalog/${encodeURIComponent(row.return_id)}`),
+        fetchJson(API_BASE+`/reporting/graph/overview?selected_return=${encodeURIComponent(graphKey)}&limit=1&child_limit=360`),
+      ]);
+      setCatalogDetail(detailData); setGraph(graphData);
+      setNodeDetail(graphData.nodes?.find(n=>['RequirementEdition','DataItem','ReportingReturn','DisclosureSet'].includes(n.node_type))||graphData.nodes?.[0]||null);
+    }
+    catch(err){ setError(err.message||String(err)); }
+    finally{ setBusy(false); }
+  }
+  function showOverview(){ setSelectedId(''); setCatalogDetail(null); setNodeDetail(null); setGraph(reportingCatalogOverviewGraph(catalog.returns||[])); }
+  function inspectNode(node){ setNodeDetail(node); }
+  function openGraphNode(node){
+    if(!selectedId && node?.metadata?.return_id){ const row=(catalog.returns||[]).find(item=>item.return_id===node.metadata.return_id); if(row) openReturn(row); return; }
+    setNodeDetail(node);
+  }
+  function submit(e){ e.preventDefault(); loadCatalog(query); }
+  function toggleEdge(group){ const next=new Set(edgeGroups); next.has(group)?next.delete(group):next.add(group); setEdgeGroups(next); }
+  function toggleNode(type){ const next=new Set(nodeTypes); const group=reportingNodeTypeGroup(type); const on=group.every(item=>next.has(item)); group.forEach(item=>on?next.delete(item):next.add(item)); setNodeTypes(next); }
+  const families=useMemo(()=>{
+    const groups=new Map();
+    for(const row of catalog.returns||[]){ const group=row.collection_name||row.family;if(!groups.has(group)) groups.set(group,[]); groups.get(group).push(row); }
+    return [...groups].map(([name,rows])=>({name,rows}));
+  },[catalog.returns]);
 
   return <section className="reporting-view">
     <div className="reporting-toolbar">
-      <div><span className="eyebrow">Reporting estate</span><h2>{selectedReturn?'Return drilldown':'Returns overview'}</h2></div>
-      <form onSubmit={submit}><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Filter returns, e.g. COR011, PRA110, liquidity…"/><button>{busy?'Loading…':'Load'}</button></form>
-      <label className="check"><input type="checkbox" checked={includeDatapoints} onChange={e=>setIncludeDatapoints(e.target.checked)}/> Summarise datapoints</label>
-      {selectedReturn&&<button className="ghost" onClick={showAllReturns}>Show all returns</button>}
+      <div><span className="eyebrow">Reporting estate</span><h2>Returns, templates and instructions</h2></div>
+      <form onSubmit={submit}><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Find a return, e.g. PRA115, capital forecast, liquidity…"/><button>{busy?'Loading…':'Search'}</button></form>
+      <div className="reporting-estate-tabs"><button className={estate==='supervisory_reporting'?'active':''} onClick={()=>{setEstate('supervisory_reporting');setSelectedId('');setCatalogDetail(null);setNodeDetail(null);}}>Regulatory returns</button><button className={estate==='pillar3_disclosure'?'active':''} onClick={()=>{setEstate('pillar3_disclosure');setSelectedId('');setCatalogDetail(null);setNodeDetail(null);}}>Pillar 3 disclosures</button></div>
+      <label className="check"><input type="checkbox" checked={includeHistoric} onChange={e=>setIncludeHistoric(e.target.checked)}/> Include superseded versions</label>
     </div>
     {error&&<div className="error">{error}</div>}
-    <div className="reporting-layout">
-      <ReportingRail roots={roots} selectedReturn={selectedReturn} detail={detail} graph={activeGraph} onOpen={inspectReportingNode} onDrill={drillReportingNode} onBackToOverview={showAllReturns}/>
-      <main className="reporting-canvas">
-        <div className="canvas-meta reporting-meta"><strong>{selectedReturn?`Reporting graph: ${selectedReturn}`:submitted?`Returns matching: ${submitted}`:'Reporting returns overview'}</strong><span>{activeGraph.nodes.length} shown · {activeGraph.edges.length} visible links · {selectedReturn?(includeDatapoints?'datapoints summarised':'datapoints hidden'):'click to inspect · double-click to drill'}</span></div>
-        {hiddenByFilters&&<div className="reporting-filter-notice">Some reporting nodes or links are hidden by filters. <button type="button" onClick={resetReportingFilters}>Reset filters</button></div>}
-        <Graph graph={activeGraph} selected={reportingRoot} detail={detail} nodeTypes={nodeTypes} relationshipTypes={edgeTypes} relationshipFilters={visibleEdgeTypes} materialFilters={visibleMaterialFilters} availableEdgeTypes={graph.available_edge_types||{}} onToggleNodeType={toggleNode} onToggleRelationship={toggleEdge} onSelect={inspectReportingNode} onOpen={drillReportingNode} onFeedback={onFeedback}/>
-      </main>
-      <aside className="reporting-inspector"><ReportingInspector node={detail} edges={selectedEdges} graph={activeGraph}/></aside>
+    <div className="reporting-graph-layout">
+      <aside className="reporting-catalog-list reporting-graph-nav">
+        <div className="reporting-list-summary"><strong>{catalog.returns?.length||0}</strong><span>{estate==='pillar3_disclosure'?'disclosure sets':'return versions'}</span></div>{selectedId&&<button className="reporting-overview-button" onClick={showOverview}>‹ Entire reporting estate</button>}
+        {selectedId&&nodeDetail&&<ReportingChildNavigation node={nodeDetail} root={graphRoot} groups={childGroups} parents={parentNodes} onSelect={inspectNode}/>}
+        {selectedId&&<h3 className="reporting-browse-heading">Browse returns</h3>}
+        {families.map(group=><section key={group.name}><h3>{group.name}<span>{group.rows.length}</span></h3>{group.rows.map(row=><button key={row.return_id} className={selectedId===row.return_id?'active':''} onClick={()=>openReturn(row)}><strong>{row.return_code}</strong><span>{row.name}</span>{row.status==='future'&&<em>Future</em>}</button>)}</section>)}
+      </aside>
+      <main className="reporting-graph-canvas"><div className="canvas-meta reporting-meta"><strong>{catalogDetail?`${catalogDetail.return_code}: ${catalogDetail.name}`:estate==='pillar3_disclosure'?'Pillar 3 disclosure graph':'Regulatory returns graph'}</strong><span>{activeGraph.nodes.length} nodes · {activeGraph.edges.length} links</span></div><Graph graph={activeGraph} selected={nodeDetail||graphRoot} detail={nodeDetail} nodeTypes={nodeTypes} relationshipTypes={edgeGroups} relationshipFilters={REPORTING_EDGE_GROUPS.map(group=>group.key)} materialFilters={reportingMaterialFilters(graph)} availableEdgeTypes={edgeGroupCounts} onToggleNodeType={toggleNode} onToggleRelationship={toggleEdge} onSelect={openGraphNode} onOpen={openGraphNode} onFeedback={onFeedback}/></main>
+      <aside className="reporting-graph-inspector"><ReportingGraphInfo node={nodeDetail} catalogDetail={catalogDetail} edges={selectedEdges} graph={activeGraph} onSelect={inspectNode} onFeedback={onFeedback}/></aside>
     </div>
   </section>;
 }
 
-function ReportingRail({roots,selectedReturn,detail,graph,onOpen,onDrill,onBackToOverview}){
-  if(!selectedReturn) return <aside className="reporting-rail">
-    <h3>Returns</h3>
-    <div className="reporting-return-groups">{groupReportingReturns(roots).map(group=><section className="reporting-return-group" key={group.key}>
-      <h4>{group.label}<span>{group.returns.length}</span></h4>
-      <div className="reporting-return-list">{group.returns.map(n=><button key={n.id} className={detail?.id===n.id?'active':''} onClick={()=>onDrill(n)}><strong>{n.title}</strong></button>)}</div>
-    </section>)}</div>
-  </aside>;
-  const root=graph.nodes.find(n=>n.node_type==='DataItem')||roots[0];
-  const railGroups=reportingRailGroups(detail||root,graph);
-  const sampleDatapoints=reportingSampleDatapoints(detail,graph);
-  return <aside className="reporting-rail">
-    <button type="button" className="reporting-nav-back" onClick={onBackToOverview}>‹ Back to returns overview</button>
-    {root&&detail?.id!==root.id&&<button type="button" className="reporting-nav-back secondary" onClick={()=>onOpen(root)}>↑ Back to return</button>}
-    <h3>{selectedReturn}</h3>
-    <div className="reporting-return-list">{root&&<button className={detail?.id===root.id?'active':''} onClick={()=>onOpen(root)}><strong>{displayNodeTitle(root)}</strong><small>Return root</small></button>}</div>
-    {railGroups.map(group=><section className="reporting-return-group" key={group.key}>
-      <h4>{group.label}<span>{group.items.length}</span></h4>
-      <div className="reporting-return-list">{group.items.map(n=><button key={n.id} className={detail?.id===n.id?'active':''} onClick={()=>onOpen(n)}><strong>{displayNodeTitle(n)}</strong></button>)}</div>
+function ReportingChildNavigation({node,root,groups,parents,onSelect}){
+  const childCount=groups.reduce((count,group)=>count+group.children.length,0);
+  const backTargets=parents.filter(parent=>parent.id!==root?.id);
+  return <nav className="reporting-child-nav" aria-label="Selected node children">
+    <div className="reporting-child-current"><span>Selected node</span><strong>{displayNodeTitle(node)}</strong><small>{materialLabel(materialType(node))}</small></div>
+    <div className="reporting-child-actions">
+      {root&&node.id!==root.id&&<button type="button" onClick={()=>onSelect(root)}>↑ Return root</button>}
+      {backTargets.slice(0,2).map(parent=><button type="button" key={parent.id} onClick={()=>onSelect(parent)}>↑ {displayNodeTitle(parent)}</button>)}
+    </div>
+    <h3>Child nodes <span>{childCount}</span></h3>
+    {groups.map(group=><section key={group.edgeType}>
+      <h4>{group.label||relationLabel(group.edgeType)}<span>{group.children.length}</span></h4>
+      <div className="reporting-child-list">{group.children.map(child=><button type="button" key={child.id} onClick={()=>onSelect(child)}><strong>{displayNodeTitle(child)}</strong><small>{materialLabel(materialType(child))}</small></button>)}</div>
     </section>)}
-    {sampleDatapoints.length>0&&<>
-      <h3>Sample datapoints</h3>
-      <div className="reporting-sample-list">{sampleDatapoints.map((text,i)=><button type="button" key={`${text}-${i}`} onClick={()=>{}}><strong>{text.split('|')[0]?.trim()||`Row ${i+1}`}</strong><small>{text.includes('|')?text.split('|').slice(1).join('|').trim():text}</small></button>)}</div>
-    </>}
-  </aside>;
+    {childCount===0&&<p className="reporting-child-empty">This is a leaf node. Use Return root or the graph to continue navigating.</p>}
+  </nav>;
 }
 
-function groupReportingReturns(roots){
-  const groups=new Map();
-  for(const node of roots||[]){
-    const estate=reportingEstateForReturn(node);
-    if(!groups.has(estate.key)) groups.set(estate.key,{...estate,returns:[]});
-    groups.get(estate.key).returns.push(node);
-  }
-  return [...groups.values()]
-    .sort((a,b)=>a.order-b.order||a.label.localeCompare(b.label))
-    .map(g=>({...g,returns:g.returns.sort(compareReportingReturns)}));
-}
-function appendCountSummary(bits,value,label){
-  if(value===undefined || value===null || value==='') return;
-  const count=Number(value);
-  if(!Number.isFinite(count)) return;
-  bits.push(`${fmt(count)} ${label}${count===1?'':'s'}`);
-}
-function reportingEstateForReturn(node){
-  const code=reportingReturnCode(node);
-  if(/^COR\d+/.test(code)||/^COREP(?:-|$)/.test(code)) return {key:'corep',label:'COREP returns',order:10};
-  if(/^PRA\d+/.test(code)) return {key:'pra',label:'PRA returns',order:20};
-  if(/^FSA\d+/.test(code)) return {key:'fsa',label:'FSA returns',order:30};
-  if(/^FINREP(?:-|$)/.test(code)) return {key:'finrep',label:'FINREP returns',order:40};
-  if(/^LVR\d+/.test(code)) return {key:'lvr',label:'Leverage ratio returns',order:50};
-  if(/^MLAR(?:-|$)/.test(code)) return {key:'mlar',label:'MLAR returns',order:60};
-  if(/^RFB\d+/.test(code)) return {key:'rfb',label:'Ring-fencing returns',order:70};
-  if(/^REP\d+/.test(code)) return {key:'rep',label:'REP returns',order:80};
-  if(/^IDY\d+/.test(code)) return {key:'idy',label:'Identity returns',order:90};
-  if(/PILLAR3|DISCLOSURE/.test(code)) return {key:'pillar3',label:'Pillar 3 disclosure',order:100};
-  if(/TAXONOMY|DPM|XBRL/.test(code)) return {key:'taxonomy',label:'Taxonomy and XBRL',order:110};
-  return {key:'other',label:'Other reporting',order:999};
-}
-function reportingReturnCode(node){
-  return String(node?.metadata?.data_item_code||node?.title||node?.id||'').replace(/^data_item:/,'').toUpperCase();
-}
-function compareReportingReturns(a,b){
-  const ac=reportingReturnCode(a), bc=reportingReturnCode(b);
-  return compareReturnCode(ac,bc)||displayNodeTitle(a).localeCompare(displayNodeTitle(b));
-}
-function compareReturnCode(a,b){
-  const ap=returnCodeParts(a), bp=returnCodeParts(b);
-  const prefix=ap.prefix.localeCompare(bp.prefix);
-  if(prefix) return prefix;
-  if(ap.number!==bp.number) return ap.number-bp.number;
-  return ap.suffix.localeCompare(bp.suffix,undefined,{numeric:true,sensitivity:'base'});
-}
-function returnCodeParts(code){
-  const m=String(code||'').match(/^([A-Z]+)(\d+)?(.*)$/);
-  return {prefix:m?.[1]||String(code||''),number:m?.[2]?Number(m[2]):Number.MAX_SAFE_INTEGER,suffix:m?.[3]||''};
+function reportingCatalogOverviewGraph(returns){
+  return {level:'reporting_ontology',nodes:returns.map(row=>({id:row.edition_id||row.return_id,node_type:'RequirementEdition',title:row.edition_display_name||`${row.return_code} — ${row.name}`,text:row.description||'',url:row.source_page_url||'',metadata:{...row,return_id:row.return_id,data_item_code:row.return_code}})),edges:[],available_edge_types:{}};
 }
 
-function reportingNeighbours(node,graph){
-  if(!node) return [];
-  const byId=new Map((graph.nodes||[]).map(n=>[n.id,n]));
-  const seen=new Set();
-  const rows=[];
-  for(const edge of graph.edges||[]){
-    if(edge.from_node_id!==node.id && edge.to_node_id!==node.id) continue;
-    const other=byId.get(edge.from_node_id===node.id?edge.to_node_id:edge.from_node_id);
-    if(other && !seen.has(other.id)){ seen.add(other.id); rows.push(other); }
-  }
-  return rows.sort((a,b)=>materialLabel(materialType(a)).localeCompare(materialLabel(materialType(b)))||displayNodeTitle(a).localeCompare(displayNodeTitle(b)));
+function ReportingGraphInfo({node,catalogDetail,edges,graph,onSelect,onFeedback}){
+  if(!node) return <div className="pane reporting-graph-info"><span className="eyebrow">Node information</span><h2>Select a node</h2><p className="muted">Click a return, template, instruction, taxonomy or Rulebook node to inspect it here.</p></div>;
+  const isRoot=['RequirementEdition','DataItem','ReportingReturn','DisclosureSet'].includes(node.node_type);
+  const neighbours=new Map((graph.nodes||[]).map(item=>[item.id,item]));
+  const links=reportingSourceUrls(node,edges,graph);
+  const templates=(catalogDetail?.artifacts||[]).filter(a=>a.relationship==='template');
+  const instructions=(catalogDetail?.artifacts||[]).filter(a=>a.relationship==='instructions');
+  const contextualName=(edges||[]).map(edge=>edge.metadata?.display_name).find(Boolean);
+  return <div className="pane reporting-graph-info">
+    <span className="kind">{materialLabel(materialType(node))}</span>
+    <h2>{contextualName||displayNodeTitle(node)}</h2>
+    {contextualName&&contextualName!==displayNodeTitle(node)&&<p className="muted">Official resource: {displayNodeTitle(node)}</p>}
+    {(isRoot?catalogDetail?.description:node.text)&&<p className="text">{truncate(isRoot?catalogDetail.description:node.text,1500)}</p>}
+    {isRoot&&catalogDetail?.effective_text&&<span className="reporting-effective">Effective {catalogDetail.effective_text}</span>}
+    {isRoot&&<><ReportingInfoLinks title="Templates" items={templates}/><ReportingInfoLinks title="Instructions" items={instructions}/></>}
+    {!isRoot&&links.length>0&&<Collapsible title="Source files" count={`${links.length}`} open><div className="source-link-list">{links.slice(0,12).map(link=><a key={link.url} href={link.url} target="_blank" rel="noopener noreferrer"><span>{link.kind}</span><strong>{link.label}</strong><em>Open source ↗</em></a>)}</div></Collapsible>}
+    {edges.length>0&&<Collapsible title="Connected nodes" count={`${edges.length}`} open><div className="edge-list">{edges.slice(0,30).map(edge=>{const other=neighbours.get(edge.from_node_id===node.id?edge.to_node_id:edge.from_node_id);return <button key={edge.id} type="button" onClick={()=>other&&onSelect(other)}><span>{relationLabel(edge.edge_type)}</span><strong>{displayNodeTitle(other||{})}</strong></button>})}</div></Collapsible>}
+    <button className="reporting-info-feedback" onClick={()=>onFeedback(node)}>Flag an issue with this node</button>
+  </div>;
 }
 
-function reportingRailGroups(node,graph){
-  const candidates=node?.node_type==='DataItem'
-    ? (graph.nodes||[]).filter(n=>n.id!==node.id)
-    : reportingNeighbours(node,graph);
-  const sections=[
-    {key:'templates',label:'Templates',match:n=>['Template'].includes(n.node_type)||isWorkbookSourceDocument(n)},
-    {key:'instructions',label:'Instructions and guidance',match:n=>['InstructionSet'].includes(n.node_type)||isPdfSourceDocument(n)},
-    {key:'taxonomies',label:'Taxonomies',match:n=>isTaxonomySourceDocument(n)},
-    {key:'rules',label:'Rules and legal basis',types:['Provision','LegalInstrument','PolicyStatement','Permission']},
-    {key:'concepts',label:'Concepts and scope',types:['Concept','ScopeRule','FirmType','Metric','CalculationRule','ValidationRule']},
-    {key:'datapoints',label:'Datapoints',types:['DataPointGroup','DataPoint','TemplateRow','TemplateColumn']},
-  ];
-  const seen=new Set();
-  return sections.map(section=>({
-    ...section,
-    items:candidates.slice().sort(compareReportingRailCandidates).filter(n=>{
-      const matches=section.match ? section.match(n) : section.types.includes(n.node_type);
-      const key=reportingRailDedupeKey(n);
-      if(!matches || seen.has(key)) return false;
-      seen.add(key);
-      seen.add(n.id);
-      return true;
-    }).sort(compareReportingRailNodes),
-  })).filter(section=>section.items.length>0);
-}
-
-function reportingRailDedupeKey(node){
-  if(node?.node_type==='Template') return `template:${node.id}`;
-  if(node?.node_type==='TemplateSet') return `template-set:${node.id}`;
-  const meta=node?.metadata||{};
-  const url=firstUrl(node?.url,meta.source_url,meta.url,meta.document_url,meta.original_url,meta.target_url);
-  if(url) return `url:${normaliseSourceUrl(url)}`;
-  return `id:${node?.id}`;
-}
-
-function normaliseSourceUrl(url){
-  return String(url||'').trim().replace(/#.*$/,'').replace(/[?&]download=1$/i,'').replace(/\/$/,'').toLowerCase();
-}
-
-function compareReportingRailCandidates(a,b){
-  return reportingRailNodePriority(a)-reportingRailNodePriority(b) || compareReportingRailNodes(a,b);
-}
-
-function reportingRailNodePriority(node){
-  if(node?.node_type==='Template') return 1;
-  if(node?.node_type==='InstructionSet') return 2;
-  if(node?.node_type==='TemplateSet' && (isWorkbookSourceDocument(node)||isTaxonomySourceDocument(node))) return 3;
-  if(node?.node_type==='SourceDocument') return 4;
-  return 10;
-}
-
-function firstUrl(...values){
-  return values.map(v=>String(v||'').trim()).find(v=>/^https?:\/\//i.test(v))||'';
+function ReportingInfoLinks({title,items}){
+  if(!items.length) return null;
+  return <Collapsible title={title} count={`${items.length}`} open><div className="source-link-list">{items.map(item=><a key={item.artifact_id} href={item.url} target="_blank" rel="noopener noreferrer"><span>{String(item.file_type||'file').toUpperCase()}</span><strong>{item.resolved_display_name||item.display_title}</strong>{item.resolved_display_name&&item.resolved_display_name!==item.display_title&&<small>Official resource: {item.display_title}</small>}{item.sheet_names?.length>0&&<small>{item.sheet_names.join(' · ')}</small>}<em>Open official file ↗</em></a>)}</div></Collapsible>;
 }
 
 function reportingSourceHaystack(node){
@@ -505,43 +434,19 @@ function isTaxonomySourceDocument(node){
   return /\.(xml|xsd|zip|xbrl)(#|\?|$)/i.test(reportingSourceHaystack(node)) || /\b(taxonomy|xbrl|dpm)\b/i.test(reportingSourceHaystack(node));
 }
 
-function compareReportingRailNodes(a,b){
-  return materialLabel(materialType(a)).localeCompare(materialLabel(materialType(b)))||displayNodeTitle(a).localeCompare(displayNodeTitle(b),undefined,{numeric:true,sensitivity:'base'});
-}
-
-function reportingNodeSummary(node){
-  const meta=node?.metadata||{};
-  const enriched=summariseTemplateEnrichment(node);
-  if(enriched) return enriched;
-  const bits=[materialLabel(materialType(node))];
-  appendCountSummary(bits,meta.datapoint_count,'datapoint');
-  appendCountSummary(bits,meta.source_document_count,'source');
-  if(meta.file_type) bits.push(String(meta.file_type).toUpperCase());
-  if(meta.reporting_role) bits.push(String(meta.reporting_role));
-  return bits.filter(Boolean).slice(0,4).join(' · ');
-}
-
-function summariseTemplateEnrichment(node){
-  if(!['Template','TemplateSet'].includes(node?.node_type)) return '';
-  const meta=node?.metadata||{};
-  const text=meta.template_contents || meta.template_purpose || meta.template_summary;
-  if(!text) return '';
-  return truncate(String(text),150);
-}
-
-function reportingSampleDatapoints(node,graph){
-  if(!node) return [];
-  const groups=node.node_type==='DataPointGroup' ? [node] : reportingNeighbours(node,graph).filter(n=>n.node_type==='DataPointGroup');
-  return groups.flatMap(g=>g.metadata?.sample_datapoints||g.metadata?.sample_labels||[]).slice(0,18);
-}
-
 function reportingNodeTypeGroup(t){
   return ({
-    reporting_return:['DataItem'],
-    reporting_template:['Template','TemplateSet'],
+    reporting_estate:['ReportingEstate'],
+    reporting_regime:['ReportingRegime'],
+    reporting_collection:['ReportingCollection'],
+    reporting_requirement:['ReportingRequirement'],
+    reporting_edition:['RequirementEdition','DataItem','ReportingReturn','DisclosureSet'],
+    reporting_resource:['ReportingResource','SourceDocument'],
+    reporting_return:['ReportingRequirement','RequirementEdition','DataItem','ReportingReturn','DisclosureSet'],
+    reporting_template:['LogicalTemplate','Template','TemplateSet'],
     reporting_instruction:['InstructionSet'],
     reporting_source:['SourceDocument'],
-    reporting_xbrl_source:['SourceDocument','TemplateSet'],
+    reporting_xbrl_source:['TaxonomyRelease','ReportingResource','SourceDocument','TemplateSet'],
     reporting_datapoint:['DataPointGroup','DataPoint','TemplateRow','TemplateColumn'],
     reporting_provision:['Provision'],
     reporting_concept:['Concept','ScopeRule','FirmType','Metric','CalculationRule','ValidationRule'],
@@ -552,104 +457,9 @@ function reportingNodeTypeGroup(t){
 }
 
 function reportingMaterialFilters(graph){
-  const order=['reporting_return','reporting_template','reporting_instruction','reporting_xbrl_source','reporting_source','reporting_datapoint','reporting_provision','reporting_concept','legal_instrument','permission','external_reference'];
+  const order=['reporting_estate','reporting_regime','reporting_collection','reporting_requirement','reporting_edition','reporting_resource','reporting_template','reporting_instruction','reporting_xbrl_source','reporting_source','reporting_datapoint','reporting_provision','reporting_concept','legal_instrument','permission','external_reference'];
   const present=new Set((graph.nodes||[]).map(n=>materialType(n)));
   return order.filter(t=>present.has(t));
-}
-
-function ReportingInspector({node,edges,graph}){
-  if(!node) return <div className="pane"><p className="muted">Select a reporting node.</p></div>;
-  const neighbours=new Map(graph.nodes.map(n=>[n.id,n]));
-  const grouped=groupEdges((edges||[]).filter(edge=>!['USES_TEMPLATE','USES_INSTRUCTIONS','EVIDENCED_BY'].includes(edge.edge_type)));
-  return <div className="pane explore-pane reporting-detail-pane">
-    <span className="kind">{materialLabel(materialType(node))}</span>
-    <h2>{displayNodeTitle(node)}</h2>
-    {node.text&&<p className="text">{truncate(node.text,1200)}</p>}
-    <ReportingMetadata node={node} edges={edges} graph={graph}/>
-    {grouped.map(([type,rows],i)=><Collapsible key={type} title={relationLabel(type)} count={`${rows.length} links`} open={i<2}><div className="edge-list">{rows.slice(0,60).map(e=>{const other=neighbours.get(e.from_node_id===node.id?e.to_node_id:e.from_node_id);return <button key={e.id} type="button"><span>{edgeDirectionGlyph(e,node.id)} {edgeDirectionLabel(e,node.id)}</span><strong>{displayNodeTitle(other||{})}</strong>{e.evidence_text&&<small>{truncate(e.evidence_text,160)}</small>}</button>})}</div></Collapsible>)}
-  </div>;
-}
-
-function ReportingMetadata({node,edges,graph}){
-  const rows=reportingMetadataRows(node);
-  const links=reportingSourceUrls(node,edges,graph);
-  const openDetails=node?.node_type==='Template' || rows.length<=6;
-  return <>
-    <Collapsible title="URLs" count={links.length?`${links.length} sources`:'no URL'} open>
-      {links.length?<div className="source-link-list">{links.slice(0,24).map(link=><a key={`${link.url}-${link.label}`} href={link.url} target="_blank" rel="noopener noreferrer"><span>{link.kind}</span><strong>{link.label}</strong><small>{compactUrl(link.url)}</small><em>Open source ↗</em></a>)}</div>:<p className="muted">No source document URL is attached to this node in the current graph.</p>}
-    </Collapsible>
-    {rows.length>0&&<Collapsible title="Details" count={`${rows.length} fields`} open={openDetails}>
-      <dl className="metadata-list">{rows.map(row=><div key={row.key}><dt>{row.label}</dt><dd title={row.raw}>{row.value}</dd></div>)}</dl>
-    </Collapsible>}
-  </>;
-}
-
-function reportingMetadataRows(node){
-  const meta=node?.metadata||{};
-  const rows=[];
-  const add=(key,label,value=meta[key])=>{
-    if(value===undefined || value===null || value==='') return;
-    rows.push({key,label,value:formatReportingMetadataValue(key,value),raw:rawMetadataValue(value)});
-  };
-  if(node?.node_type==='Template'){
-    add('template_code','Template code');
-    add('title','Template title');
-    add('annex','Annex');
-    add('template_purpose','Template purpose');
-    add('template_contents','What it contains');
-    add('template_summary','Template explanation');
-    if(Array.isArray(meta.template_key_rows)&&meta.template_key_rows.length) add('template_key_rows','Key rows or sections',meta.template_key_rows);
-    add('template_quality_notes','Quality notes');
-    add('source_title','Source title');
-    add('source_file_type','Source file type');
-    add('source_status','Source status');
-    add('publication_date','Publication date');
-    add('effective_from','Effective from');
-    add('effective_to','Effective to');
-    add('downloaded_at','Downloaded');
-  }
-  add('data_item_code','Data item code');
-  add('reporting_domain','Reporting domain');
-  add('datapoint_count','Datapoints');
-  add('source_document_count','Source documents');
-  return rows;
-}
-
-function formatReportingMetadataValue(key,value){
-  if(Array.isArray(value)){
-    if(key==='source_document_ids') return `${fmt(value.length)} source document${value.length===1?'':'s'}`;
-    return value.slice(0,5).join(', ')+(value.length>5?` + ${value.length-5} more`: '');
-  }
-  if(value && typeof value==='object') return JSON.stringify(value);
-  if(typeof value==='number') return fmt(value);
-  const text=String(value);
-  if(key==='checksum_sha256') return text.slice(0,12)+'…';
-  return text.length>140?text.slice(0,137)+'…':text;
-}
-
-function rawMetadataValue(value){
-  if(value && typeof value==='object') return JSON.stringify(value);
-  return String(value??'');
-}
-
-function reportingUsefulLinks(node,edges,graph){
-  const byId=new Map((graph?.nodes||[]).map(n=>[n.id,n]));
-  const links=[];
-  const addUrl=(url,label,kind='Source document')=>{ if(url && /^https?:\/\//i.test(String(url)) && !links.some(l=>l.url===url)) links.push({url:String(url),label:label||'Original source',kind}); };
-  const addItem=(label,kind,detail='')=>{ if(label && !links.some(l=>!l.url&&l.label===label&&l.kind===kind)) links.push({label,kind,detail}); };
-  addUrl(node?.url,reportingSourceLinkLabel(node),materialLabel(materialType(node)));
-  for(const key of ['url','source_url','original_url','document_url','target_url']) addUrl(node?.metadata?.[key],displayNodeTitle(node),metricLabel(key));
-  if(node?.node_type==='DataPointGroup') addItem(`${fmt(node.metadata?.datapoint_count||0)} datapoints`, 'Datapoint summary', (node.metadata?.sample_datapoints||[]).slice(0,3).join(' · '));
-  for(const edge of edges||[]){
-    addUrl(edge.source_url,relationLabel(edge.edge_type),relationLabel(edge.edge_type));
-    for(const key of ['url','source_url','original_url','document_url','target_url']) addUrl(edge.metadata?.[key],relationLabel(edge.edge_type),metricLabel(key));
-    const other=byId.get(edge.from_node_id===node?.id?edge.to_node_id:edge.from_node_id);
-    if(!other) continue;
-    addUrl(other.url,reportingSourceLinkLabel(other),materialLabel(materialType(other)));
-    for(const key of ['url','source_url','original_url','document_url','target_url']) addUrl(other.metadata?.[key],displayNodeTitle(other),metricLabel(key));
-    if(['Template','TemplateSet','InstructionSet','SourceDocument','DataPointGroup'].includes(other.node_type)) addItem(displayNodeTitle(other), materialLabel(materialType(other)), edge.edge_type==='SUMMARISES_DATAPOINTS'?`${fmt(other.metadata?.datapoint_count||0)} datapoints`:relationLabel(edge.edge_type));
-  }
-  return links;
 }
 
 function reportingSourceUrls(node,edges,graph){
@@ -663,11 +473,12 @@ function reportingSourceUrls(node,edges,graph){
   const addNode=(candidate)=>{
     if(!candidate) return;
     const md=candidate.metadata||{};
-    if(['SourceDocument','InstructionSet','Template','TemplateSet'].includes(candidate.node_type)){
+    if(['ReportingResource','SourceDocument','InstructionSet','Template','TemplateSet'].includes(candidate.node_type)){
       for(const key of ['source_url','url','document_url','original_url','target_url']) add(md[key]||candidate[key],reportingSourceLinkLabel(candidate),reportingUrlKind(candidate));
     }
   };
   addNode(node);
+  for(const source of reportingSourceNodes(node,graph)) addNode(source);
   for(const edge of edges||[]){
     const other=byId.get(edge.from_node_id===node?.id?edge.to_node_id:edge.from_node_id);
     addNode(other);
@@ -701,7 +512,6 @@ function sourceFileName(value){
 function ValidationDashboard({data,busy}){
   const [activeQueue,setActiveQueue]=useState('feedback');
   const [feedbackQueue,setFeedbackQueue]=useState({items:[],runs:[],counts:{}});
-  const [feedbackBusy,setFeedbackBusy]=useState(false);
   const [query,setQuery]=useState('');
   const [selectedRow,setSelectedRow]=useState(null);
   const [reviewChoices,setReviewChoices]=useState({});
@@ -721,16 +531,6 @@ function ValidationDashboard({data,busy}){
     try{ setFeedbackQueue(await fetchJson(API_BASE+'/feedback')); }
     catch(err){ setFeedbackQueue(prev=>({...prev,last_error:err.message||String(err)})); }
   }
-  async function processFeedbackQueue(){
-    setFeedbackBusy(true);
-    try{
-      const result=await fetchJson(API_BASE+'/feedback/process',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({limit:3})});
-      const refreshed=await fetchJson(API_BASE+'/feedback');
-      setFeedbackQueue({...refreshed,last_process:result});
-    }catch(err){ setFeedbackQueue(prev=>({...prev,last_error:err.message||String(err)})); }
-    finally{ setFeedbackBusy(false); }
-  }
-
   return <section className="quality quality-workbench">
     <div className="quality-topline">
       <div><span>Quality</span><strong>{active.label}</strong></div>
@@ -749,7 +549,7 @@ function ValidationDashboard({data,busy}){
       </nav>
       <main className="quality-workflow" aria-label={`${active.label} workflow`}>
         {active.id==='feedback'
-          ? <FeedbackQueueWorksurface queue={feedbackQueue} busy={feedbackBusy} onRefresh={loadFeedbackQueue} onProcess={processFeedbackQueue}/>
+          ? <FeedbackQueueWorksurface queue={feedbackQueue} onRefresh={loadFeedbackQueue}/>
           : <UnverifiedLinksWorksurface rows={unverifiedRows} query={query} setQuery={setQuery} selected={selected} setSelected={setSelectedRow} choices={reviewChoices} setChoices={setReviewChoices}/>
         }
       </main>
@@ -757,16 +557,15 @@ function ValidationDashboard({data,busy}){
   </section>;
 }
 
-function FeedbackQueueWorksurface({queue,busy,onRefresh,onProcess}){
+function FeedbackQueueWorksurface({queue,onRefresh}){
   const items=(queue?.items||[]).slice().reverse();
   const pending=(queue?.items||[]).filter(item=>['pending','failed'].includes(item.status));
   return <div className="queue-surface feedback-surface">
     <div className="workflow-bar">
-      <div><span>Node feedback queue</span><strong>{fmt(pending.length)} item(s) ready to run</strong></div>
-      <div className="workflow-actions"><button type="button" onClick={onRefresh}>Refresh</button><button type="button" className="primary" onClick={onProcess} disabled={busy||!pending.length}>{busy?'Running…':'Process queue'}</button></div>
+      <div><span>Node feedback queue</span><strong>{fmt(pending.length)} item(s) awaiting review</strong></div>
+      <div className="workflow-actions"><button type="button" onClick={onRefresh}>Refresh</button></div>
     </div>
     {queue?.last_error&&<div className="quality-error">{queue.last_error}</div>}
-    {queue?.last_process&&<div className="quality-runline">Last run processed {fmt(queue.last_process.processed)} item(s).</div>}
     <div className="feedback-ledger">
       <div className="ledger-head"><span>Status</span><span>Node</span><span>Feedback</span><span>Result</span></div>
       {items.length?items.map(item=><article key={item.id} className={`ledger-row ${item.status}`}>
@@ -1418,7 +1217,10 @@ function edgeDirectionColour(e,currentId){
   if(dir==='outgoing') return '#2563eb';
   return e.visual?.colour||edgeColour(e.edge_type);
 }
-function relationLabel(v){return RELATION_LABELS[v]||String(v||'').replaceAll('_',' ')}
+function relationLabel(v){
+  const reportingGroup=reportingEdgeGroup(v)||REPORTING_EDGE_GROUPS.find(group=>group.key===v);
+  return reportingGroup?.label||RELATION_LABELS[v]||String(v||'').replaceAll('_',' ');
+}
 function evidenceLabel(v){return EVIDENCE_LABELS[v]||relationLabel(v)}
 function isInferred(e){return !EXPLICIT.has(e.source_method) && !String(e.source_method||'').startsWith('reporting') && !['manifest','pdf_text_extraction'].includes(e.source_method)}
 function originMatches(e,originFilter){
@@ -1504,7 +1306,15 @@ function materialType(n){
   const meta=(typeof n==='string'?{}:n?.metadata)||{};
   const url=(typeof n==='string'?'':n?.url||'').toLowerCase();
   const doc=(meta.document_type||'').toLowerCase();
-  if(type==='DataItem') return 'reporting_return';
+  if(type==='ReportingEstate') return 'reporting_estate';
+  if(type==='ReportingRegime') return 'reporting_regime';
+  if(type==='ReportingCollection') return 'reporting_collection';
+  if(type==='ReportingRequirement') return 'reporting_requirement';
+  if(type==='RequirementEdition' || type==='DataItem' || type==='ReportingReturn' || type==='DisclosureSet') return 'reporting_edition';
+  if(type==='ReportingResource') return meta.resource_role?.includes('instructions')?'reporting_instruction':meta.resource_role?.includes('taxonomy')?'reporting_xbrl_source':'reporting_resource';
+  if(type==='Worksheet' || type==='LogicalTemplate') return 'reporting_template';
+  if(type==='InstructionSection') return 'reporting_instruction';
+  if(type==='TaxonomyRelease' || type==='TaxonomyEntryPoint') return 'reporting_xbrl_source';
   if(type==='Template') return 'reporting_template';
   if(type==='TemplateSet') return 'reporting_xbrl_source';
   if(type==='InstructionSet') return 'reporting_instruction';
@@ -1532,7 +1342,7 @@ function isXbrlSourceDocument(n){
   const hay=[n?.title,n?.text,n?.url,md.source_url,md.source_local_path,md.source_title,md.file_type,md.source_file_type,md.source_table,md.source_pk].filter(Boolean).join(' ').toLowerCase();
   return /\b(xbrl|taxonomy|dpm|annotated templates|template package|reporting package)\b/.test(hay) || /\.(zip|xbrl|xml|xsd)(#|$)/.test(hay);
 }
-function materialLabel(v){return ({rule:'Rulebook part / rule',supervisory_statement:'Supervisory statement',statement_of_policy:'Statement of policy',definition:'Definition',permission:'Firm permission',external_reference:'External reference',legal_instrument:'Legal instrument',obligation_pattern:'Obligation pattern',obligation_statement:'Structured obligation',analysis:'Obligation marker',reporting_return:'Reporting return',reporting_template:'Reporting template',reporting_instruction:'Reporting instructions',reporting_source:'Source document',reporting_xbrl_source:'XBRL source',reporting_datapoint:'Datapoints',reporting_provision:'Referenced provision',reporting_concept:'Reporting concept',DataItem:'Reporting return',Template:'Reporting template',TemplateSet:'XBRL source',InstructionSet:'Reporting instructions',SourceDocument:'Source document',DataPointGroup:'Datapoint summary',DataPoint:'Datapoint',Provision:'Referenced provision'}[v]||String(v||'').replaceAll('_',' '))}
+function materialLabel(v){return ({rule:'Rulebook part / rule',supervisory_statement:'Supervisory statement',statement_of_policy:'Statement of policy',definition:'Definition',permission:'Firm permission',external_reference:'External reference',legal_instrument:'Legal instrument',obligation_pattern:'Obligation pattern',obligation_statement:'Structured obligation',analysis:'Obligation marker',reporting_estate:'Reporting estate',reporting_regime:'Reporting regime',reporting_collection:'Reporting collection',reporting_requirement:'Reporting requirement',reporting_edition:'Requirement edition',reporting_resource:'Reporting resource',reporting_return:'Reporting requirement',reporting_template:'Reporting template',reporting_instruction:'Reporting instructions',reporting_source:'Source document',reporting_xbrl_source:'XBRL taxonomy',reporting_datapoint:'Datapoints',reporting_provision:'Referenced provision',reporting_concept:'Reporting concept',ReportingEstate:'Reporting estate',ReportingRegime:'Reporting regime',ReportingCollection:'Reporting collection',ReportingRequirement:'Reporting requirement',RequirementEdition:'Requirement edition',ReportingResource:'Reporting resource',Worksheet:'Worksheet',LogicalTemplate:'Logical template',TaxonomyRelease:'XBRL taxonomy release',DataItem:'Reporting return',Template:'Reporting template',TemplateSet:'XBRL source',InstructionSet:'Reporting instructions',SourceDocument:'Source document',DataPointGroup:'Datapoint summary',DataPoint:'Datapoint',Provision:'Referenced provision'}[v]||String(v||'').replaceAll('_',' '))}
 function displayColour(v){return MATERIAL_COLOURS[materialType(v)]||'#64748b'}
 function label(v){return materialLabel(materialType(v))}
 function truncate(s='',n=120){return s&&s.length>n?s.slice(0,n-1)+'…':s}

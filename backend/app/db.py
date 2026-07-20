@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -27,9 +28,16 @@ CREATE INDEX IF NOT EXISTS idx_edge_type ON edge(edge_type);
 
 
 def connect(db_path: Path = DEFAULT_DB) -> sqlite3.Connection:
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=30)
+    return configure_connection(conn)
+
+
+def configure_connection(conn: sqlite3.Connection, *, wal: bool = True) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute("PRAGMA busy_timeout=30000")
+    if wal:
+        conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
 
@@ -56,7 +64,19 @@ def ensure_indexes(conn: sqlite3.Connection) -> None:
         WHERE COALESCE(title,'') || COALESCE(text,'') <> ''
         """
     )
+    if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='search_projection_state'").fetchone():
+        conn.execute(
+            "UPDATE search_projection_state SET dirty=0,refreshed_at=? WHERE singleton=1",
+            (datetime.now(timezone.utc).isoformat(),),
+        )
     conn.commit()
+
+
+def search_projections_dirty(conn: sqlite3.Connection) -> bool:
+    row = conn.execute(
+        "SELECT dirty FROM search_projection_state WHERE singleton=1"
+    ).fetchone()
+    return row is None or bool(row[0])
 
 
 def row_to_node(row: sqlite3.Row | None) -> dict[str, Any] | None:

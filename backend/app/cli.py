@@ -6,10 +6,13 @@ from pathlib import Path
 from .db import DEFAULT_DB, connect, ensure_indexes
 from .embeddings import build_embeddings, derive_similar_edges
 from .graph import stats
+from .integrity import integrity_report
+from .migrations import LATEST_SCHEMA_VERSION, apply_migrations, schema_version
 
 
 def cmd_build_indexes(args: argparse.Namespace) -> None:
     conn = connect(args.db)
+    apply_migrations(conn)
     ensure_indexes(conn)
     print("rebuilt FTS/search indexes")
     if args.embeddings:
@@ -19,6 +22,31 @@ def cmd_build_indexes(args: argparse.Namespace) -> None:
         result = derive_similar_edges(conn, top_k=args.top_k, threshold=args.threshold, max_nodes=args.max_nodes)
         print(result)
     print(stats(conn))
+
+
+def cmd_migrate(args: argparse.Namespace) -> None:
+    conn = connect(args.db)
+    applied = apply_migrations(conn)
+    print({"applied": applied, "schema_version": schema_version(conn), "latest": LATEST_SCHEMA_VERSION})
+
+
+def cmd_check(args: argparse.Namespace) -> None:
+    conn = connect(args.db)
+    apply_migrations(conn)
+    report = integrity_report(conn)
+    print(report)
+    if not report["ok"]:
+        raise SystemExit(1)
+
+
+def cmd_stabilize(args: argparse.Namespace) -> None:
+    conn = connect(args.db)
+    applied = apply_migrations(conn)
+    ensure_indexes(conn)
+    report = integrity_report(conn)
+    print({"applied": applied, "schema_version": schema_version(conn), **report})
+    if not report["ok"]:
+        raise SystemExit(1)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -35,6 +63,12 @@ def build_parser() -> argparse.ArgumentParser:
     idx.add_argument("--top-k", type=int, default=5)
     idx.add_argument("--threshold", type=float, default=0.62)
     idx.set_defaults(func=cmd_build_indexes)
+    migrate = sub.add_parser("migrate", help="Apply ordered database migrations")
+    migrate.set_defaults(func=cmd_migrate)
+    check = sub.add_parser("check-integrity", help="Fail if database invariants or projections have drifted")
+    check.set_defaults(func=cmd_check)
+    stabilize = sub.add_parser("stabilize", help="Migrate, rebuild search projections, and verify integrity")
+    stabilize.set_defaults(func=cmd_stabilize)
     return parser
 
 

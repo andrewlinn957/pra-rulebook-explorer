@@ -25,6 +25,9 @@ import xml.etree.ElementTree as ET
 
 import requests
 
+from backend.app.db import connect as connect_db
+from backend.app.migrations import apply_migrations
+
 ROOT = Path(__file__).resolve().parents[1]
 DB_PATH = ROOT / "backend" / "data" / "rulebook.sqlite3"
 PROMPT_VERSION = "reporting-template-enrichment-v1"
@@ -34,36 +37,11 @@ BATCH_DIR = ROOT / "outputs" / "reporting-template-enrichment-batches"
 
 
 def connect(path: Path = DB_PATH) -> sqlite3.Connection:
-    conn = sqlite3.connect(path)
-    conn.row_factory = sqlite3.Row
-    return conn
+    return connect_db(path)
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS reporting_template_enrichment (
-          template_id TEXT PRIMARY KEY,
-          model TEXT NOT NULL,
-          prompt_version TEXT NOT NULL,
-          input_hash TEXT NOT NULL,
-          status TEXT NOT NULL,
-          purpose TEXT,
-          contents TEXT,
-          summary TEXT,
-          key_rows_json TEXT NOT NULL DEFAULT '[]',
-          quality_notes TEXT,
-          response_json TEXT,
-          error TEXT,
-          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-          FOREIGN KEY (template_id) REFERENCES template(template_id) ON DELETE CASCADE
-        )
-        """
-    )
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_reporting_template_enrichment_status ON reporting_template_enrichment(status)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_reporting_template_enrichment_prompt ON reporting_template_enrichment(prompt_version,input_hash)")
-    conn.commit()
+    apply_migrations(conn)
 
 
 def list_template_ids(conn: sqlite3.Connection, *, q: str = "", missing_only: bool = True, limit: int | None = None) -> list[str]:
@@ -75,7 +53,7 @@ def list_template_ids(conn: sqlite3.Connection, *, q: str = "", missing_only: bo
         needle = f"%{q}%"
         params.extend([needle, needle, needle])
     if missing_only:
-        where += " AND NOT EXISTS (SELECT 1 FROM reporting_template_enrichment e WHERE e.template_id=n.node_id AND e.status='ok')"
+        where += " AND NOT EXISTS (SELECT 1 FROM reporting_template_enrichment e WHERE e.graph_node_id=n.node_id AND e.status='ok')"
     sql = f"""
         SELECT n.node_id AS template_id
         FROM graph_node n
@@ -656,12 +634,23 @@ def store_enrichment(
 ) -> None:
     enrichment = enrichment or {}
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    graph_row = conn.execute(
+        """
+        SELECT node_id FROM graph_node
+        WHERE node_type='Template' AND (node_id=? OR source_pk=?)
+        ORDER BY CASE WHEN node_id=? THEN 0 ELSE 1 END,node_id
+        LIMIT 1
+        """,
+        (template_id, template_id, template_id),
+    ).fetchone()
+    graph_node_id = graph_row[0] if graph_row else template_id
     conn.execute(
         """
         INSERT INTO reporting_template_enrichment(
-          template_id,model,prompt_version,input_hash,status,purpose,contents,summary,key_rows_json,quality_notes,response_json,error,created_at,updated_at
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+          template_id,graph_node_id,model,prompt_version,input_hash,status,purpose,contents,summary,key_rows_json,quality_notes,response_json,error,created_at,updated_at
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(template_id) DO UPDATE SET
+          graph_node_id=excluded.graph_node_id,
           model=excluded.model,
           prompt_version=excluded.prompt_version,
           input_hash=excluded.input_hash,
@@ -677,6 +666,7 @@ def store_enrichment(
         """,
         (
             template_id,
+            graph_node_id,
             model,
             prompt_version,
             input_hash,

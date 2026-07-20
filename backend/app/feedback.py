@@ -14,6 +14,8 @@ QUEUE_FILE = "feedback-queue.jsonl"
 RUNS_FILE = "feedback-runs.jsonl"
 DEFAULT_MODEL = "openai-codex/gpt-5.5"
 DEFAULT_SESSION_ID = "pra-rulebook-feedback"
+MAX_FEEDBACK_CHARS = 2_000
+MAX_PAGE_URL_CHARS = 1_000
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 
@@ -67,6 +69,10 @@ def create_feedback(root: Path, *, node: dict[str, Any], feedback: str, page_url
     feedback = feedback.strip()
     if not feedback:
         raise ValueError("feedback is required")
+    if len(feedback) > MAX_FEEDBACK_CHARS:
+        raise ValueError(f"feedback must be at most {MAX_FEEDBACK_CHARS} characters")
+    if len(page_url) > MAX_PAGE_URL_CHARS:
+        raise ValueError(f"page_url must be at most {MAX_PAGE_URL_CHARS} characters")
     node_id = str(node.get("id") or "").strip()
     if not node_id:
         raise ValueError("node.id is required")

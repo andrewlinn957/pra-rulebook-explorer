@@ -267,6 +267,34 @@ class ReportingNodeAuditCleanupTests(unittest.TestCase):
         self.assertEqual(decision, "implemented")
         self.assertIn("added missing EVIDENCED_BY", reason)
 
+    def test_family_report_groups_discarded_families_without_touching_graph_metadata(self):
+        db = self.make_db()
+        report_path = db.parent / "family-review.json"
+
+        result = run_cleanup(db, apply=True, family_report_path=report_path)
+
+        self.assertEqual(result["family_report"], str(report_path))
+        self.assertTrue(report_path.exists())
+        report = json.loads(report_path.read_text())
+        families = {
+            (
+                item["current_node_type"],
+                item["proposed_node_type"],
+                item["expected_category"],
+                item["issue_type"],
+                item["decision"],
+            ): item
+            for item in report["families"]
+        }
+        family = families[("ExternalReference", "LegalInstrument", "legal_reference", "wrong_node_type", "pending_apply")]
+        self.assertEqual(family["family_classification"], "valid and implementable now")
+        self.assertGreaterEqual(family["count"], 1)
+
+        conn = sqlite3.connect(db)
+        props = json.loads(conn.execute("SELECT properties_json FROM graph_node WHERE node_id='external_reference:1'").fetchone()[0])
+        self.assertNotIn("family_classification", props)
+        self.assertNotIn("audit_cleanup", props)
+
 
 if __name__ == "__main__":
     unittest.main()

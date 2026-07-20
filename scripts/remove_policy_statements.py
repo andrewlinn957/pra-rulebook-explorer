@@ -109,6 +109,7 @@ def main() -> None:
         ("reporting_llm_reference_resolution", "DELETE FROM reporting_llm_reference_resolution WHERE source_id IN (SELECT source_id FROM temp_ps_sources) OR span_id IN (SELECT span_id FROM temp_ps_spans)"),
         ("reporting_llm_reference_extraction", "DELETE FROM reporting_llm_reference_extraction WHERE source_id IN (SELECT source_id FROM temp_ps_sources) OR span_id IN (SELECT span_id FROM temp_ps_spans)"),
         ("graph_edge", "DELETE FROM graph_edge WHERE evidence_span_id IN (SELECT span_id FROM temp_ps_spans) OR source_node_id IN (SELECT node_id FROM temp_ps_graph_nodes) OR target_node_id IN (SELECT node_id FROM temp_ps_graph_nodes)"),
+        ("reporting_template_enrichment", "DELETE FROM reporting_template_enrichment WHERE graph_node_id IN (SELECT node_id FROM temp_ps_graph_nodes)"),
         ("graph_node", "DELETE FROM graph_node WHERE node_id IN (SELECT node_id FROM temp_ps_graph_nodes)"),
         ("edge", f"DELETE FROM edge WHERE {EDGE_WHERE} OR from_node_id IN (SELECT id FROM temp_ps_nodes) OR to_node_id IN (SELECT id FROM temp_ps_nodes)"),
         ("llm_reference_resolution", "DELETE FROM llm_reference_resolution WHERE source_node_id IN (SELECT id FROM temp_ps_nodes) OR target_node_id IN (SELECT id FROM temp_ps_nodes)"),

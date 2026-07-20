@@ -1,5 +1,6 @@
 import importlib.util
 import sqlite3
+import unittest
 from pathlib import Path
 
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "llm_reference_pass.py"
@@ -116,8 +117,13 @@ def test_eu_regulation_article_reference_does_not_resolve_to_same_part_paragraph
     assert target['id'] != 'lcr-article-28-8'
 
 
+def load_tests(loader, tests, pattern):
+    return unittest.TestSuite(
+        unittest.FunctionTestCase(value)
+        for name, value in sorted(globals().items())
+        if name.startswith("test_") and callable(value)
+    )
+
+
 if __name__ == '__main__':
-    test_crr_article_reference_outside_liquidity_parts_resolves_to_uk_crr_external_article()
-    test_explicit_liquidity_rulebook_crr_article_reference_stays_internal_when_target_names_liquidity_part()
-    test_of_crr_article_reference_inside_liquidity_part_still_resolves_to_uk_crr()
-    test_eu_regulation_article_reference_does_not_resolve_to_same_part_paragraph_number()
+    unittest.main()

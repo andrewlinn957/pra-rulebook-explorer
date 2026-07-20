@@ -135,6 +135,10 @@ class ReportingTemplateEnrichmentTests(unittest.TestCase):
     def test_store_enrichment_is_idempotent(self):
         conn = self.make_conn()
         ensure_schema(conn)
+        conn.execute(
+            "INSERT INTO graph_node(node_id,node_type,label,source_table,source_pk) VALUES (?,?,?,?,?)",
+            ("template:FINREP:1.1", "Template", "FINREP 1.1", "template", "template:FINREP:1.1"),
+        )
         store_enrichment(
             conn,
             template_id="template:FINREP:1.1",

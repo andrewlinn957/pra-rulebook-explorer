@@ -1,4 +1,5 @@
 import sqlite3
+import unittest
 
 from scripts.dedupe_rulebook_edges import (
     count_exact_duplicates,
@@ -55,3 +56,11 @@ def test_deletes_regex_reference_when_html_anchor_resolved_same_reference():
     assert delete_html_regex_reference_duplicates(conn) == 1
     remaining = [row[0] for row in conn.execute('SELECT id FROM edge ORDER BY id')]
     assert remaining == ['html', 'other']
+
+
+def load_tests(loader, tests, pattern):
+    return unittest.TestSuite(
+        unittest.FunctionTestCase(value)
+        for name, value in sorted(globals().items())
+        if name.startswith("test_") and callable(value)
+    )

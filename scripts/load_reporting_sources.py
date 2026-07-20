@@ -15,6 +15,8 @@ from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree as ET
 
+from backend.app.migrations import apply_migrations
+
 from bs4 import BeautifulSoup
 from pypdf import PdfReader
 
@@ -31,6 +33,9 @@ NS_REL = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
 PKG_REL = "{http://schemas.openxmlformats.org/package/2006/relationships}"
 
 TABLE_DELETE_ORDER = [
+    "reporting_edition_taxonomy", "reporting_taxonomy_resource", "reporting_taxonomy_release",
+    "reporting_resource_component", "reporting_edition_resource", "reporting_resource",
+    "reporting_requirement_edition", "reporting_requirement", "reporting_collection", "reporting_regime",
     "graph_edge", "graph_node", "validation_rule", "calculation_rule", "permission", "concept",
     "instruction", "datapoint", "template_column", "template_row", "template",
     "reporting_obligation", "provision", "rulebook_part", "source_span", "source_document",
@@ -94,6 +99,7 @@ class Loader:
 
     def apply_schema_and_clear(self) -> None:
         self.conn.executescript(SCHEMA_PATH.read_text())
+        apply_migrations(self.conn)
         for table in TABLE_DELETE_ORDER:
             self.conn.execute(f"DELETE FROM {table}")
         self.conn.commit()

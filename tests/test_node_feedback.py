@@ -4,18 +4,25 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from fastapi.testclient import TestClient
+import httpx
 
 from backend.app.feedback import create_feedback, list_feedback, process_feedback_queue
 from backend.app.main import app
 
 
-class NodeFeedbackApiTests(unittest.TestCase):
-    def test_malformed_feedback_request_returns_400_not_500(self):
-        client = TestClient(app)
-        response = client.post("/feedback/node", content="", headers={"Content-Type": "application/json"})
+class NodeFeedbackApiTests(unittest.IsolatedAsyncioTestCase):
+    async def test_malformed_feedback_request_returns_400_not_500(self):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post("/feedback/node", content="", headers={"Content-Type": "application/json"})
         self.assertEqual(response.status_code, 400)
         self.assertIn("JSON", response.text)
+
+    async def test_feedback_processing_is_not_exposed_over_http(self):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post("/feedback/process", json={"limit": 3})
+        self.assertEqual(response.status_code, 404)
 
 
 class NodeFeedbackTests(unittest.TestCase):

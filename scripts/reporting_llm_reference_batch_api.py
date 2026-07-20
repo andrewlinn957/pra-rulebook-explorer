@@ -22,6 +22,16 @@ API_BASE = "https://api.openai.com/v1"
 PROMPT_VERSION = "reporting-reference-extract-v1"
 DEFAULT_MODEL = os.environ.get("PRA_REPORTING_LLM_REFERENCE_MODEL") or "gpt-4.1-nano"
 
+PRA110_INSTRUCTIONS_SOURCE_ID = "f7fbf3051852a59a"
+EBA_ANNEX_XXIII_MATURITY_LADDER = {
+    "canonical_key": "external:eba:annex-xxiii:almm-maturity-ladder",
+    "label": "EBA Annex XXIII — Maturity ladder (PDF)",
+    "node_type": "ExternalReference",
+    "url": "https://www.eba.europa.eu/sites/default/files/document_library/Publications/Draft%20Technical%20Standards/2021/ITS%20on%20OF%20GSII%20ALMM/1025608/Annex%20X%20%28Annex%2023%20-%20AMM%20-%20Maturity%20ladder%29.pdf",
+    "corrected_from": "Annex XXII",
+    "correction_reason": "The PRA110 instructions contain an Annex XXII typo; the referenced EBA Maturity Ladder instructions are Annex XXIII.",
+}
+
 REF_RX = re.compile(
     r"\b(article|rule|chapter|annex|template|table|paragraph|regulation|directive|CRR|UK CRR|FSMA|SS\s*\d|SoP\s*\d|statement of policy|supervisory statement|PRA\d{3}|COR\d{3}|LVR\d{3}|FSA\d{3}|REP\d{3}|MLAR)\b",
     re.I,
@@ -421,6 +431,55 @@ def canonical_external_ref(ref: dict[str, Any]) -> tuple[str, str, str] | None:
     return None
 
 
+def curated_reference_correction(source_id: str, ref: dict[str, Any]) -> dict[str, str] | None:
+    """Return a reviewed correction where the source document itself is wrong."""
+    if source_id != PRA110_INSTRUCTIONS_SOURCE_ID:
+        return None
+    hay = " ".join(
+        str(ref.get(k) or "")
+        for k in ("reference_text", "target_title_or_identifier", "target_part_or_document", "evidence_quote")
+    )
+    if not re.search(r"\bEBA\b", hay, re.I):
+        return None
+    if not re.search(r"\bMaturity\s+Ladder\b", hay, re.I):
+        return None
+    if not re.search(r"\bAnnex\s+XXII\b", hay, re.I):
+        return None
+    return EBA_ANNEX_XXIII_MATURITY_LADDER
+
+
+def ensure_curated_reference_targets(conn: sqlite3.Connection) -> None:
+    correction = EBA_ANNEX_XXIII_MATURITY_LADDER
+    node_id = f"external_reference:curated:{sha1(correction['canonical_key'])[:16]}"
+    props = {
+        "canonical_key": correction["canonical_key"],
+        "url": correction["url"],
+        "reference_target_only": True,
+        "curated_correction": True,
+        "corrected_from": correction["corrected_from"],
+        "correction_reason": correction["correction_reason"],
+        "source_document_id": PRA110_INSTRUCTIONS_SOURCE_ID,
+    }
+    conn.execute(
+        """
+        INSERT INTO graph_node (node_id,node_type,label,source_table,source_pk,properties_json,review_status)
+        VALUES (?,?,?,?,?,?,?)
+        ON CONFLICT(node_id) DO UPDATE SET
+          node_type=excluded.node_type,label=excluded.label,source_table=excluded.source_table,
+          source_pk=excluded.source_pk,properties_json=excluded.properties_json,review_status=excluded.review_status
+        """,
+        (
+            node_id,
+            correction["node_type"],
+            correction["label"],
+            "reporting_curated_reference",
+            correction["canonical_key"],
+            json.dumps(props, ensure_ascii=False),
+            "accepted_candidate",
+        ),
+    )
+
+
 def classify_deliberately_unresolved(ref: dict[str, Any]) -> str | None:
     kind = norm(str(ref.get("target_kind") or ""))
     text = str(ref.get("reference_text") or "")
@@ -462,6 +521,8 @@ def request(method: str, path: str, **kwargs: Any) -> requests.Response:
 def connect(path: Path = DB) -> sqlite3.Connection:
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute("PRAGMA busy_timeout=30000")
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(SCHEMA_SQL)
     return conn
@@ -793,12 +854,20 @@ class Resolver:
         matches.sort(key=lambda x: x[0], reverse=True)
         return matches[0][1], "reporting_return_alias", 0.89
 
-    def resolve(self, ref: dict[str, Any]):
+    def resolve(self, ref: dict[str, Any], source_id: str = ""):
         text = str(ref.get("reference_text") or "")
         ident = str(ref.get("target_title_or_identifier") or "")
         doc = str(ref.get("target_part_or_document") or "")
         kind = norm(str(ref.get("target_kind") or ""))
         hay = " ".join([text, ident, doc])
+
+        # Apply reviewed source corrections before literal annex matching. The
+        # original quote remains on the edge as evidence of what the source says.
+        correction = curated_reference_correction(source_id, ref)
+        if correction:
+            target = self.external_refs_by_key.get(correction["canonical_key"])
+            if target:
+                return target, "curated_source_correction", 1.0
 
         # Data item / return codes.
         for m in re.finditer(r"\b(?:PRA|COR|LVR|FSA|REP|MLAR)\s*-?\s*(\d{3})\b", hay, re.I):
@@ -892,6 +961,7 @@ class Resolver:
 
 def command_resolve(args: argparse.Namespace) -> None:
     conn = connect(args.db)
+    ensure_curated_reference_targets(conn)
     resolver = Resolver(conn)
     conn.execute("DELETE FROM reporting_llm_reference_resolution")
     rows = conn.execute("SELECT span_id,source_id,response_json FROM reporting_llm_reference_extraction WHERE status='ok' AND prompt_version=? ORDER BY span_id", (PROMPT_VERSION,)).fetchall()
@@ -911,7 +981,7 @@ def command_resolve(args: argparse.Namespace) -> None:
             if not isinstance(ref, dict):
                 continue
             total += 1
-            target, method, rconf = resolver.resolve(ref)
+            target, method, rconf = resolver.resolve(ref, row["source_id"])
             extracted = float(ref.get("confidence") or 0)
             target_id = target["node_id"] if target else ""
             if target_id:
@@ -933,6 +1003,11 @@ def command_resolve(args: argparse.Namespace) -> None:
                     etype = "REFERENCES_EXTERNAL"
                 eid = edge_id(source_node_id, etype, target_id, row["span_id"], str(idx), PROMPT_VERSION)
                 props = {"llm_reference": ref, "resolver_method": method, "prompt_version": PROMPT_VERSION, "decision": "accepted_by_reporting_llm_reference_pass"}
+                if method == "curated_source_correction":
+                    props["curated_correction"] = {
+                        "corrected_from": target["props"].get("corrected_from"),
+                        "correction_reason": target["props"].get("correction_reason"),
+                    }
                 edge_rows[eid] = (eid, source_node_id, target_id, etype, json.dumps(props, ensure_ascii=False), row["span_id"], min(0.93, extracted * rconf), "reporting_llm_reference", "accepted_candidate")
                 added += 1
             rid = sha1("|".join([row["span_id"], str(idx), str(ref.get("reference_text") or "")]))

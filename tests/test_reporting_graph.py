@@ -122,6 +122,19 @@ class ReportingOverviewGraphTests(unittest.TestCase):
         self.assertEqual(graph["available_edge_types"]["USES_TEMPLATE"], 1)
         self.assertEqual(graph["available_edge_types"]["REFERENCES_RULE"], 1)
 
+    def test_selected_catalog_version_uses_exact_reporting_return_root(self):
+        conn = self.make_conn()
+        return_id = "reporting_return:future-version"
+        self.add_node(conn, f"return_version:{return_id}", "ReportingReturn", "PRA114 — Capital forecast")
+        self.add_node(conn, "source:future-template", "SourceDocument", "PRA114 future template")
+        self.add_edge(conn, "future-edge", f"return_version:{return_id}", "source:future-template", "EVIDENCED_BY")
+
+        graph = reporting_overview_graph(conn, selected_return=return_id)
+
+        self.assertEqual(graph["root_count"], 1)
+        self.assertEqual(graph["nodes"][0]["node_type"], "ReportingReturn")
+        self.assertIn("source:future-template", {node["id"] for node in graph["nodes"]})
+
     def test_selected_return_suppresses_source_document_duplicate_of_instruction_set(self):
         conn = self.make_conn()
         url = "https://www.bankofengland.co.uk/example/corep-ccr-instructions.pdf"
@@ -319,6 +332,28 @@ class ReportingOverviewGraphTests(unittest.TestCase):
         self.assertEqual(template["metadata"]["template_purpose"], "Captures balance sheet financial assets by accounting portfolio.")
         self.assertEqual(template["metadata"]["template_summary"], "FINREP 1.1 explains the asset side of the statement of financial position.")
         self.assertEqual(template["metadata"]["template_key_rows"], ["Cash and cash balances", "Financial assets held for trading"])
+        self.assertNotIn("template_enrichment_model", template["metadata"])
+        self.assertNotIn("template_enrichment_prompt_version", template["metadata"])
+        self.assertNotIn("template_enrichment_input_hash", template["metadata"])
+
+    def test_reporting_nodes_strip_llm_and_audit_plumbing_from_metadata(self):
+        conn = self.make_conn()
+        self.add_node(conn, "data_item:PRA101", "DataItem", "PRA101")
+        self.add_node(
+            conn,
+            "source_document:ref",
+            "SourceDocument",
+            "Reference",
+            '{"prompt_version":"reporting-reference-extract-v1","audit_cleanup":{"decision":"discarded"},"source_url":"https://example.test/ref"}',
+        )
+        self.add_edge(conn, "e1", "data_item:PRA101", "source_document:ref", "EVIDENCED_BY")
+
+        graph = reporting_overview_graph(conn, selected_return="PRA101")
+
+        ref = next(n for n in graph["nodes"] if n["id"] == "source_document:ref")
+        self.assertNotIn("prompt_version", ref["metadata"])
+        self.assertNotIn("audit_cleanup", ref["metadata"])
+        self.assertEqual(ref["metadata"]["source_url"], "https://example.test/ref")
 
 
 if __name__ == "__main__":

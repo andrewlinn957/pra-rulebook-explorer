@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+import argparse
 import hashlib
 import json
 import os
@@ -377,5 +378,54 @@ class Extractor:
         self.write_csvs_and_load()
         print(json.dumps({"nodes":len(self.nodes),"edges":len(self.edges),"missing":len(self.missing),"low":sum(1 for e in self.edges.values() if e.confidence < 0.75),"llm_calls":self.llm_calls,"llm_edges":self.llm_edges,"llm_errors":self.llm_errors}, indent=2))
 
-if __name__ == "__main__":
+
+def check_cor011_parity(db: Path | None = None) -> dict[str, Any]:
+    """Check that the general package builder has emitted COR011's required semantics.
+
+    This keeps the legacy COR011 semantic script usable as a parity wrapper while
+    the accepted deterministic Annex XXIV/XXV edges live in the general builder.
+    """
+    try:
+        from scripts.build_reporting_graph_packages import mandatory_cor011_edge_specs
+    except ModuleNotFoundError:
+        from build_reporting_graph_packages import mandatory_cor011_edge_specs
+
+    conn = sqlite3.connect(db or DB)
+    try:
+        actual_edges = {
+            (source, edge_type, target)
+            for source, edge_type, target in conn.execute(
+                "SELECT source_node_id,edge_type,target_node_id FROM graph_edge"
+            )
+        }
+        mandatory = mandatory_cor011_edge_specs()
+        missing = sorted(mandatory - actual_edges)
+        result = {
+            "status": "pass" if not missing else "fail",
+            "mandatory_edges": len(mandatory),
+            "missing_mandatory_edges": [
+                {"source_node_id": source, "edge_type": edge_type, "target_node_id": target}
+                for source, edge_type, target in missing
+            ],
+        }
+        return result
+    finally:
+        conn.close()
+
+
+def main() -> None:
+    global DB
+    parser = argparse.ArgumentParser(description="COR011 semantic extraction compatibility wrapper")
+    parser.add_argument("--check-parity", action="store_true", help="check general package-builder COR011 parity and exit")
+    parser.add_argument("--db", type=Path, default=DB)
+    args = parser.parse_args()
+    if args.check_parity:
+        result = check_cor011_parity(args.db)
+        print(json.dumps(result, indent=2))
+        raise SystemExit(0 if result["status"] == "pass" else 1)
+    DB = args.db
     Extractor().run()
+
+
+if __name__ == "__main__":
+    main()

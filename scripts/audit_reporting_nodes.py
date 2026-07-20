@@ -19,6 +19,8 @@ from typing import Any
 
 import requests
 
+from backend.app.db import connect as connect_db
+
 ROOT = Path(__file__).resolve().parents[1]
 DB_PATH = ROOT / "backend" / "data" / "rulebook.sqlite3"
 BATCH_DIR = ROOT / "outputs" / "reporting-node-audit-batches"
@@ -34,9 +36,7 @@ LLM_NODE_TYPES = {
 
 
 def connect(path: Path = DB_PATH) -> sqlite3.Connection:
-    conn = sqlite3.connect(path)
-    conn.row_factory = sqlite3.Row
-    return conn
+    return connect_db(path)
 
 
 def api_headers(*, json_body: bool = False) -> dict[str, str]:

@@ -8,7 +8,7 @@ Install dependencies:
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
+.venv/bin/pip install -r requirements-dev.txt
 ```
 
 Run the full corpus scrape:
@@ -120,6 +120,73 @@ cd frontend
 npm install
 npm run build
 ```
+
+## Stabilization and verification
+
+The database authority and projection lifecycle are documented in
+[`docs/data-lifecycle.md`](docs/data-lifecycle.md).
+
+After any bulk ingestion or cleaning pass, apply migrations, rebuild canonical
+search projections, and fail on integrity drift:
+
+```bash
+.venv/bin/python -m backend.app.cli stabilize
+```
+
+For a read-only integrity gate after stabilization:
+
+```bash
+.venv/bin/python -m backend.app.cli check-integrity
+```
+
+Run the complete backend and frontend verification with one command:
+
+```bash
+scripts/test.sh
+```
+
+## Reporting estate catalogue
+
+The public reporting view is built from the authoritative PRA reporting tables,
+not from filename-family guesses. Rebuild it, inspect workbook sheet names,
+download any newly published official files, and refresh its graph projection:
+
+```bash
+.venv/bin/python scripts/rebuild_reporting_catalog.py --download-missing
+.venv/bin/python scripts/project_reporting_ontology.py
+```
+
+Useful catalogue endpoints are `GET /reporting/catalog` and
+`GET /reporting/catalog/{return_id}`. Pillar 3 disclosures are deliberately a
+separate estate from regulatory returns.
+
+The ontology and naming conventions are documented in
+[`docs/reporting-estate-ontology.md`](docs/reporting-estate-ontology.md). The
+projection separates stable requirements from dated editions, resources and
+their components. Contextual resource names inherit from their associated
+requirement unless an edition, resource or component supplies an explicit
+`display_name` override.
+
+Set or clear a durable human-readable name without editing the database
+directly:
+
+```bash
+.venv/bin/python scripts/set_reporting_display_name.py requirement requirement:pra115 "PRA115 — Step-in risk assessment"
+.venv/bin/python scripts/set_reporting_display_name.py requirement requirement:pra115 --clear
+```
+
+Optional descriptions can be generated cheaply through OpenAI Batch. Create
+the input, submit it, then import the completed result:
+
+```bash
+.venv/bin/python scripts/enrich_reporting_catalog.py --create --model gpt-5-nano
+.venv/bin/python scripts/enrich_reporting_catalog.py --submit PATH.jsonl --model gpt-5-nano
+.venv/bin/python scripts/enrich_reporting_catalog.py --import-batch BATCH_ID --manifest PATH.manifest.json
+```
+
+Feedback submitted in the UI is stored in the feedback queue. The public API
+does not expose queue execution; processing, if needed, is an explicit local
+maintenance operation.
 
 Run the local UI, with the API running separately on port 8100:
 

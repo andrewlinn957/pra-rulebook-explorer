@@ -13,11 +13,17 @@ import hashlib
 import json
 import re
 import sqlite3
+import sys
 from pathlib import Path
 from typing import Any, Mapping
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from backend.app.db import connect as connect_db
+
 DB_PATH = ROOT / "backend" / "data" / "rulebook.sqlite3"
 
 HUMAN_FACING_TYPES = {"pdf", "xlsx", "xlsm", "xltx", "xls", "html", "txt"}
@@ -26,9 +32,7 @@ TAXONOMY_FILE_TYPES = {"xml", "xsd", "xbrl", "zip"}
 
 
 def connect(path: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(path)
-    conn.row_factory = sqlite3.Row
-    return conn
+    return connect_db(path)
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
@@ -69,17 +73,25 @@ def classify_source_document(row: Mapping[str, Any]) -> tuple[str, str]:
         return "taxonomy_schema", "XSD taxonomy schema."
     if file_type in {"xbrl", "zip"} or "taxonomy" in text or "xbrl" in text or "dpm" in text:
         return "taxonomy_package", "Taxonomy, XBRL or DPM source artefact."
+    inspection_hint = str(row_value(row, "inspection_classification_hint") or "").strip()
+    inspection_confidence = row_value(row, "inspection_confidence")
+    try:
+        inspection_confidence = float(inspection_confidence or 0.0)
+    except (TypeError, ValueError):
+        inspection_confidence = 0.0
+    if inspection_hint and inspection_confidence >= 0.70:
+        return inspection_hint, f"Source inspection classified this source as {inspection_hint}."
     if file_type in TEMPLATE_FILE_TYPES:
         return "template_workbook", "Spreadsheet template or workbook source."
     if file_type == "pdf":
+        if re.search(r"\b(cp|ps|ss|sop)\d+/?\d+\b", text) or re.search(r"\b(statement of policy|policy statement|consultation paper|supervisory statement)\b", text) or "sop-" in text or "-sop" in text:
+            return "policy_pdf", "PDF title or URL identifies a PRA policy or supervisory publication."
         has_instruction = bool(re.search(r"\b(instruction|instructions|guidance|guidelines|notes)\b", text))
         has_template = bool(re.search(r"\b(template|templates|workbook|data item)\b", text))
         if has_instruction:
             return "instruction_pdf", "PDF title or URL identifies instructions or guidance."
         if has_template:
             return "template_pdf", "PDF title or URL identifies a reporting template or data item."
-        if re.search(r"\b(cp|ps|ss|sop)\d+/?\d+\b", text):
-            return "policy_pdf", "PDF title or URL identifies a PRA policy or supervisory publication."
         return "pdf_document", "PDF source document."
     if file_type == "html":
         if "prarulebook.co.uk/pra-rules" in text:
@@ -194,7 +206,24 @@ def rewire_graph_source(conn: sqlite3.Connection, duplicate_source_id: str, cano
 def run_source_cleanup(db_path: Path = DB_PATH, *, apply: bool = False) -> dict[str, Any]:
     conn = connect(db_path)
     ensure_schema(conn)
-    rows = conn.execute("SELECT * FROM source_document ORDER BY source_id").fetchall()
+    has_inspection = bool(
+        conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='source_document_inspection'"
+        ).fetchone()
+    )
+    if has_inspection:
+        rows = conn.execute(
+            """
+            SELECT sd.*,
+                   si.classification_hint AS inspection_classification_hint,
+                   si.confidence AS inspection_confidence
+            FROM source_document sd
+            LEFT JOIN source_document_inspection si ON si.source_id=sd.source_id
+            ORDER BY sd.source_id
+            """
+        ).fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM source_document ORDER BY source_id").fetchall()
     classified: list[tuple[sqlite3.Row, str, str, str]] = []
     for row in rows:
         kind, reason = classify_source_document(row)
