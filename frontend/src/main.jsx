@@ -37,6 +37,7 @@ import {
   assignReferencesToParagraphs,
   paragraphCitationSegments,
   readerReferences,
+  referenceDisplayTitle,
   referenceShelfDensity,
   splitLegalParagraphs,
 } from './readingMode.js';
@@ -54,7 +55,7 @@ const REPRESENTATIONS = {
   definitions: { label:'Definitions', hint:'Definitions, glossary/CRR term usage, and provisions sharing defined terms.', types:['uses_defined_term','defines','shares_defined_term'], depth:2, explicitOnly:false },
   obligations: { label:'Obligations', hint:'Detected obligation statements, obligation patterns, and provisions with similar obligation patterns.', types:['has_obligation_pattern','has_structured_obligation','shares_obligation_pattern'], depth:1, explicitOnly:false },
 };
-const EXPLICIT = new Set(['site_structure','html_link','html_anchor_resolved','html_glossary_link','glossary_source','crr_terms_source','legal_instrument_listing','regex_reference','regex_named_reference','llm_extracted_reference','resolved_part_reference','fca_waivers_list']);
+const EXPLICIT = new Set(['site_structure','html_link','html_anchor_resolved','html_glossary_link','glossary_source','crr_terms_source','legal_instrument_listing','legal_reference_occurrence_v1','regex_reference','regex_named_reference','llm_extracted_reference','resolved_part_reference','fca_waivers_list']);
 const RELATION_LABELS = { contains:'contains / child', references:'Cross-references', uses_defined_term:'Definitions used', defines:'Definitions provided', shares_defined_term:'Shared defined terms', has_obligation_pattern:'Obligation themes', shares_obligation_pattern:'Similar obligations', has_structured_obligation:'Extracted obligations', amends:'Amendments', has_permission:'Firms with permissions', HAS_REGIME:'Has regime', HAS_COLLECTION:'Has collection', BELONGS_TO_REGIME:'Belongs to regime', BELONGS_TO_COLLECTION:'Belongs to collection', HAS_EDITION:'Has edition', SUPERSEDES:'Supersedes', HAS_TEMPLATE_RESOURCE:'Has template resource', HAS_INSTRUCTION_RESOURCE:'Has instruction resource', HAS_RESOURCE:'Has resource', CONTAINS_SHEET:'Contains worksheet', IMPLEMENTS_TEMPLATE:'Implements template', SUPPORTED_BY_TAXONOMY:'Supported by taxonomy', HAS_TAXONOMY_RESOURCE:'Has taxonomy resource', USES_TEMPLATE:'Uses template', USES_INSTRUCTIONS:'Uses instructions', EVIDENCED_BY:'Evidenced by', LEGAL_BASIS:'Legal basis', APPLIES_TO:'Applies to', HAS_SCOPE_RULE:'Scope rule', MAY_BE_AFFECTED_BY_PERMISSION:'Affected by permission', REFERENCES_RULE:'References rule', REFERENCES_SOURCE:'References source', REFERENCES_EXTERNAL:'References external', REFERENCES_RETURN:'References return', REFERENCES_TEMPLATE:'References template', SUMMARISES_DATAPOINTS:'Summarises datapoints', HAS_DATAPOINT:'Has datapoint', REPORTS_CONCEPT:'Reports concept' };
 const EVIDENCE_LABELS = { references:'Cross-references', uses_defined_term:'Definitions used by this provision', defines:'Definitions provided here', shares_defined_term:'Provisions sharing defined terms', has_obligation_pattern:'Obligation themes found here', shares_obligation_pattern:'Provisions with similar obligations', has_structured_obligation:'Extracted obligation statements', amends:'Legal instruments amending this material', has_permission:'Firms with active permissions' };
 const ORIGIN_FILTERS = { all:'All links', explicit:'Direct links', inferred:'Inferred / derived links' };
@@ -376,6 +377,10 @@ function ProvisionReader({rootNode,api,onClose}){
     return placed;
   },[references]);
   const unmatched=references.filter(reference=>reference.paragraphIndex<0);
+  const linkedProvisionCount=references.reduce(
+    (total,reference)=>total+Math.max(1,reference.members?.length||0),
+    0,
+  );
   const pinnedReferences=pinned.map(reference=>referenceById.get(reference.id)||reference);
   const pinnedIds=useMemo(
     ()=>new Set(pinnedReferences.map(reference=>reference.id)),
@@ -458,7 +463,7 @@ function ProvisionReader({rootNode,api,onClose}){
             <span className="provision-kicker">Reading spine · {sourceHeading}</span>
             <h1>{displayNodeTitle(root)}</h1>
             <div className="provision-byline">
-              <span>{references.length} linked provision{references.length===1?'':'s'} · one reference level</span>
+              <span>{linkedProvisionCount} linked provision{linkedProvisionCount===1?'':'s'} across {references.length} citation{references.length===1?'':'s'} · one reference level</span>
               {root?.url&&<a href={root.url} target="_blank" rel="noopener noreferrer">Open original source ↗</a>}
             </div>
           </header>
@@ -501,7 +506,7 @@ function ProvisionReader({rootNode,api,onClose}){
               <div>
                 <h2>Other linked provisions</h2>
                 <p>These relationships are recorded for this provision but are not anchored to a unique phrase in the source text.</p>
-                <div className="reader-reference-links">{unmatched.map(reference=><button type="button" key={reference.id} onClick={()=>activateReference(reference)}><b>{reference.relationship.code}</b>{reference.citation||displayNodeTitle(reference.node)}</button>)}</div>
+                <div className="reader-reference-links">{unmatched.map(reference=><button type="button" key={reference.id} onClick={()=>activateReference(reference)}><b>{reference.relationship.code}</b>{referenceDisplayTitle(reference)}</button>)}</div>
                 {unmatched.find(reference=>reference.id===expandedId)&&<InlineLegalReference
                   reference={unmatched.find(reference=>reference.id===expandedId)}
                   onCollapse={()=>setExpandedId('')}
@@ -528,17 +533,41 @@ function ProvisionReader({rootNode,api,onClose}){
 }
 
 function InlineLegalReference({reference,onCollapse,onPin}){
-  const paragraphs=splitLegalParagraphs(reference.node?.text||'');
-  const sourceUrl=reference.node?.url||reference.edge?.source_url;
+  const members=reference.members?.length
+    ?reference.members
+    :[{id:reference.id,node:reference.node,edge:reference.edge,citation:reference.citation}];
+  const [selectedMemberId,setSelectedMemberId]=useState(members[0]?.id||'');
+  useEffect(()=>setSelectedMemberId(members[0]?.id||''),[reference.id]);
+  const selectedMember=members.find(member=>member.id===selectedMemberId)||members[0];
+  const selectedNode=selectedMember?.node||reference.node;
+  const selectedEdge=selectedMember?.edge||reference.edge;
+  const paragraphs=splitLegalParagraphs(selectedNode?.text||'');
+  const sourceUrl=selectedNode?.url||selectedEdge?.source_url;
+  const applicabilityNote=selectedNode?.metadata?.applicability_note;
+  const relatedProvisions=selectedNode?.metadata?.related_provisions||[];
   return <aside className={`inline-legal-reference relationship-${reference.relationship.code.toLowerCase()}`}>
     <header>
       <div><span>{reference.relationship.code} · {reference.relationship.label}</span><small>{reference.sourceHeading}</small></div>
       <button type="button" onClick={onCollapse} aria-label="Collapse reference">Collapse ↑</button>
     </header>
-    <h2>{displayNodeTitle(reference.node)}</h2>
+    <h2>{referenceDisplayTitle(reference)}</h2>
+    {members.length>1&&<div className="inline-reference-members" aria-label="Provisions in this citation">
+      {members.map((member,index)=><button
+        type="button"
+        key={member.id}
+        className={member.id===selectedMember?.id?'is-selected':''}
+        onClick={()=>setSelectedMemberId(member.id)}
+      ><span>{String(index+1).padStart(2,'0')}</span>{member.citation||displayNodeTitle(member.node)}</button>)}
+    </div>}
+    {members.length>1&&<h3 className="inline-reference-selected-title">{displayNodeTitle(selectedNode)}</h3>}
     <div className="inline-reference-text">{paragraphs.length
       ?paragraphs.map((paragraph,index)=><p key={index}>{paragraph}</p>)
       :<p>No body text is available for this reference.</p>}</div>
+    {applicabilityNote&&<aside className="inline-reference-applicability">
+      <strong>UK applicability</strong>
+      <p>{applicabilityNote}</p>
+      {relatedProvisions.length>0&&<ul>{relatedProvisions.map(item=><li key={`${item.category}-${item.citation}`}><a href={item.url} target="_blank" rel="noopener noreferrer">{item.category}</a><span>{item.citation}</span></li>)}</ul>}
+    </aside>}
     <footer>
       {sourceUrl&&<a href={sourceUrl} target="_blank" rel="noopener noreferrer">Open original source ↗</a>}
       <button type="button" onClick={onPin}>Pin to shelf</button>
@@ -570,7 +599,10 @@ function ReferenceShelf({references,activeId,mobileOpen,onMobileClose,onActivate
       {!references.length&&<div className="reference-shelf-empty"><span>PIN</span><strong>Keep provisions in view</strong><p>Pin an expanded reference and it will remain here while the main reading spine stays fixed.</p></div>}
       {references.map((reference,index)=>{
         const temporarilyExpanded=density==='summary'&&temporaryId===reference.id;
-        const sourceUrl=reference.node?.url||reference.edge?.source_url;
+        const firstMember=reference.members?.[0];
+        const sourceNode=firstMember?.node||reference.node;
+        const sourceEdge=firstMember?.edge||reference.edge;
+        const sourceUrl=sourceNode?.url||sourceEdge?.source_url;
         return <article
           key={reference.id}
           className={`reference-shelf-card ${activeId===reference.id?'is-current':''} ${temporarilyExpanded?'is-temporarily-expanded':''}`}
@@ -580,9 +612,9 @@ function ReferenceShelf({references,activeId,mobileOpen,onMobileClose,onActivate
             if(density==='summary') setTemporaryId(current=>current===reference.id?'':reference.id);
           }}
         >
-          <header><span>{String(index+1).padStart(2,'0')}</span><b>{reference.relationship.code}</b><button type="button" onClick={event=>{event.stopPropagation();onRemove(reference);}} aria-label={`Remove ${displayNodeTitle(reference.node)}`}>×</button></header>
-          <h3>{displayNodeTitle(reference.node)}</h3>
-          <p>{truncate(reference.node?.text||'No excerpt available.',240)}</p>
+          <header><span>{String(index+1).padStart(2,'0')}</span><b>{reference.relationship.code}{reference.members?.length>1?` · ${reference.members.length}`:''}</b><button type="button" onClick={event=>{event.stopPropagation();onRemove(reference);}} aria-label={`Remove ${referenceDisplayTitle(reference)}`}>×</button></header>
+          <h3>{referenceDisplayTitle(reference)}</h3>
+          <p>{truncate(sourceNode?.text||'No excerpt available.',240)}</p>
           <footer>
             <button type="button" onClick={event=>{event.stopPropagation();onReturnInline(reference);}}>Return inline</button>
             {sourceUrl&&<a href={sourceUrl} target="_blank" rel="noopener noreferrer" onClick={event=>event.stopPropagation()}>Source ↗</a>}
@@ -1970,6 +2002,7 @@ function provenanceLabel(method){
     glossary_source:'glossary definition',
     crr_terms_source:'CRR term definition',
     legal_instrument_listing:'legal instrument',
+    legal_reference_occurrence_v1:'exact legal citation',
     fca_waivers_list:'FCA waiver/permission list',
     site_structure:'document structure',
     inline_part_definition:'definition in rule text',

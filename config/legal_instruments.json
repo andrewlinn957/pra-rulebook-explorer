@@ -1,0 +1,895 @@
+{
+  "schema_version": 1,
+  "instruments": [
+    {
+      "id": "uk-crr",
+      "title": "UK Capital Requirements Regulation",
+      "legislation_type": "eur",
+      "year": 2013,
+      "number": 575,
+      "aliases": ["UK CRR", "CRR", "Capital Requirements Regulation", "Regulation (EU) No 575/2013"]
+    },
+    {
+      "id": "statutory-audit-regulation",
+      "title": "Statutory Audit Regulation",
+      "legislation_type": "eur",
+      "year": 2014,
+      "number": 537,
+      "aliases": ["Statutory Audit Regulation", "Audit Regulation", "Regulation (EU) No 537/2014"]
+    },
+    {
+      "id": "statutory-audit-directive",
+      "title": "Statutory Audit Directive",
+      "legislation_type": "eudr",
+      "year": 2006,
+      "number": 43,
+      "aliases": ["Statutory Audit Directive", "Audit Directive", "Directive 2006/43/EC"]
+    },
+    {
+      "id": "solvency-ii-directive",
+      "title": "Solvency II Directive",
+      "legislation_type": "eudr",
+      "year": 2009,
+      "number": 138,
+      "aliases": ["Solvency II Directive", "Solvency II", "Directive 2009/138/EC"]
+    },
+    {
+      "id": "solvency-ii-delegated-regulation",
+      "title": "Solvency II Delegated Regulation",
+      "legislation_type": "eur",
+      "year": 2015,
+      "number": 35,
+      "aliases": ["Solvency II Delegated Regulation", "Solvency II Commission Delegated Regulation", "Commission Delegated Regulation (EU) 2015/35", "CDR"]
+    },
+    {
+      "id": "crd",
+      "title": "Capital Requirements Directive",
+      "legislation_type": "eudr",
+      "year": 2013,
+      "number": 36,
+      "aliases": ["Capital Requirements Directive", "CRD V", "CRD IV", "CRD", "Directive 2013/36/EU"]
+    },
+    {
+      "id": "brrd",
+      "title": "Bank Recovery and Resolution Directive",
+      "legislation_type": "eudr",
+      "year": 2014,
+      "number": 59,
+      "aliases": ["Bank Recovery and Resolution Directive", "BRRD", "Directive 2014/59/EU"]
+    },
+    {
+      "id": "mifid-ii",
+      "title": "Markets in Financial Instruments Directive II",
+      "legislation_type": "eudr",
+      "year": 2014,
+      "number": 65,
+      "aliases": ["Markets in Financial Instruments Directive II", "MiFID II", "Directive 2014/65/EU"]
+    },
+    {
+      "id": "mifid-i",
+      "title": "Markets in Financial Instruments Directive",
+      "legislation_type": "eudr",
+      "year": 2004,
+      "number": 39,
+      "aliases": ["Markets in Financial Instruments Directive 2004/39/EC", "MiFID I", "MiFID", "Directive 2004/39/EC"]
+    },
+    {
+      "id": "mifir",
+      "title": "Markets in Financial Instruments Regulation",
+      "legislation_type": "eur",
+      "year": 2014,
+      "number": 600,
+      "aliases": ["Markets in Financial Instruments Regulation", "MiFIR", "Regulation (EU) No 600/2014"]
+    },
+    {
+      "id": "csdr",
+      "title": "Central Securities Depositories Regulation",
+      "legislation_type": "eur",
+      "year": 2014,
+      "number": 909,
+      "aliases": ["Central Securities Depositories Regulation", "CSDR", "Regulation (EU) No 909/2014"]
+    },
+    {
+      "id": "financial-groups-directive",
+      "title": "Financial Conglomerates Directive",
+      "legislation_type": "eudr",
+      "year": 2002,
+      "number": 87,
+      "aliases": ["Financial Groups Directive", "Financial Conglomerates Directive", "FICOD", "Directive 2002/87/EC"]
+    },
+    {
+      "id": "ucits-directive",
+      "title": "UCITS Directive",
+      "legislation_type": "eudr",
+      "year": 2009,
+      "number": 65,
+      "aliases": ["UCITS Directive", "Directive 2009/65/EC"]
+    },
+    {
+      "id": "aifmd",
+      "title": "Alternative Investment Fund Managers Directive",
+      "legislation_type": "eudr",
+      "year": 2011,
+      "number": 61,
+      "aliases": ["Alternative Investment Fund Managers Directive", "AIFMD", "Directive 2011/61/EU"]
+    },
+    {
+      "id": "dgsd",
+      "title": "Deposit Guarantee Schemes Directive",
+      "legislation_type": "eudr",
+      "year": 2014,
+      "number": 49,
+      "aliases": ["Deposit Guarantee Schemes Directive", "DGSD", "Directive 2014/49/EU"]
+    },
+    {
+      "id": "lcr-delegated-regulation",
+      "title": "Liquidity Coverage Requirement Delegated Regulation",
+      "legislation_type": "eur",
+      "year": 2015,
+      "number": 61,
+      "aliases": ["LCR Delegated Act", "LCR Delegated Regulation", "LCR", "Commission Delegated Regulation (EU) 2015/61"]
+    },
+    {
+      "id": "modr",
+      "title": "MiFID Organisational Requirements Delegated Regulation",
+      "legislation_type": "eur",
+      "year": 2017,
+      "number": 565,
+      "aliases": ["MODR", "Commission Delegated Regulation (EU) 2017/565"]
+    },
+    {
+      "id": "emir",
+      "title": "European Market Infrastructure Regulation",
+      "legislation_type": "eur",
+      "year": 2012,
+      "number": 648,
+      "aliases": ["EMIR", "Regulation (EU) No 648/2012"]
+    },
+    {
+      "id": "gdpr",
+      "title": "General Data Protection Regulation",
+      "legislation_type": "eur",
+      "year": 2016,
+      "number": 679,
+      "aliases": ["GDPR", "General Data Protection Regulation", "Regulation (EU) 2016/679"]
+    },
+    {
+      "id": "benchmarks-regulation",
+      "title": "Benchmarks Regulation",
+      "legislation_type": "eur",
+      "year": 2016,
+      "number": 1011,
+      "aliases": ["Benchmarks Regulation", "Regulation (EU) 2016/1011"]
+    },
+    {
+      "id": "auction-regulation",
+      "title": "Auction Regulation",
+      "legislation_type": "eur",
+      "year": 2010,
+      "number": 1031,
+      "aliases": ["Auction Regulation", "Regulation (EU) No 1031/2010"]
+    },
+    {
+      "id": "money-laundering-directive",
+      "title": "Money Laundering Directive",
+      "legislation_type": "eudr",
+      "year": 2015,
+      "number": 849,
+      "aliases": ["Money Laundering Directive", "Directive 2015/849/EU", "2015/849/EU"]
+    },
+    {
+      "id": "insurance-distribution-directive",
+      "title": "Insurance Distribution Directive",
+      "legislation_type": "eudr",
+      "year": 2016,
+      "number": 97,
+      "aliases": ["Insurance Distribution Directive", "Directive 2016/97/EU", "Directive 2016/97/EC"]
+    },
+    {
+      "id": "eu-prospectus-directive",
+      "title": "Prospectus Directive",
+      "legislation_type": "eudr",
+      "year": 2003,
+      "number": 71,
+      "aliases": ["EU Prospectus Directive", "Prospectus Directive", "Directive 2003/71/EC"]
+    },
+    {
+      "id": "ias-regulation",
+      "title": "IAS Regulation",
+      "legislation_type": "eur",
+      "year": 2002,
+      "number": 1606,
+      "aliases": ["IAS Regulation", "IAS Regulations", "Regulation (EC) No 1606/2002"]
+    },
+    {
+      "id": "eba-regulation",
+      "title": "European Banking Authority Regulation",
+      "legislation_type": "eur",
+      "year": 2010,
+      "number": 1093,
+      "aliases": ["EBA Regulation", "Regulation (EU) No 1093/2010"]
+    },
+    {
+      "id": "crr2",
+      "title": "CRR II amending Regulation",
+      "legislation_type": "eur",
+      "year": 2019,
+      "number": 876,
+      "aliases": ["CRR2", "CRR II", "Regulation (EU) 2019/876"]
+    },
+    {
+      "id": "rao",
+      "title": "Financial Services and Markets Act 2000 (Regulated Activities) Order 2001",
+      "legislation_type": "uksi",
+      "year": 2001,
+      "number": 544,
+      "aliases": ["Regulated Activities Order", "RAO", "FSMA (Regulated Activities) Order 2001", "Financial Services and Markets Act 2000 (Regulated Activities) Order 2001"]
+    },
+    {
+      "id": "pra-regulated-activities-order",
+      "title": "Financial Services and Markets Act 2000 (PRA-regulated Activities) Order 2013",
+      "legislation_type": "uksi",
+      "year": 2013,
+      "number": 556,
+      "aliases": ["PRA-regulated Activities Order", "Financial Services and Markets Act 2000 (PRA-regulated Activities) Order"]
+    },
+    {
+      "id": "core-activities-order",
+      "title": "Financial Services and Markets Act 2000 (Ring-fenced Bodies and Core Activities) Order 2014",
+      "legislation_type": "uksi",
+      "year": 2014,
+      "number": 1960,
+      "aliases": ["Core Activities Order", "FSMA (Ring-fenced Bodies and Core Activities) Order 2014"]
+    },
+    {
+      "id": "excluded-activities-order",
+      "title": "Financial Services and Markets Act 2000 (Excluded Activities and Prohibitions) Order 2014",
+      "legislation_type": "uksi",
+      "year": 2014,
+      "number": 2080,
+      "aliases": ["Excluded Activities and Prohibitions Order", "Excluded Activities Order"]
+    },
+    {
+      "id": "bank-recovery-resolution-order",
+      "title": "Bank Recovery and Resolution (No. 2) Order 2014",
+      "legislation_type": "uksi",
+      "year": 2014,
+      "number": 3348,
+      "aliases": ["Bank Recovery and Resolution (No 2) Order", "Bank Recovery and Resolution (No. 2) Order"]
+    },
+    {
+      "id": "banking-reform-transitional-order",
+      "title": "Financial Services (Banking Reform) Act 2013 (Transitional and Savings Provisions) Order 2015",
+      "legislation_type": "uksi",
+      "year": 2015,
+      "number": 492,
+      "aliases": ["Transitional Order"]
+    },
+    {
+      "id": "compensation-transitionals-order",
+      "title": "Financial Services and Markets Act 2000 (Transitional Provisions, Repeals and Savings) (Financial Services Compensation Scheme) Order 2001",
+      "legislation_type": "uksi",
+      "year": 2001,
+      "number": 2967,
+      "aliases": ["compensation transitionals order", "Compensation Transitionals Order"]
+    },
+    {
+      "id": "statutory-auditors-regulations-2016",
+      "title": "Statutory Auditors and Third Country Auditors Regulations 2016",
+      "legislation_type": "uksi",
+      "year": 2016,
+      "number": 649,
+      "aliases": ["Statutory Auditors and Third Country Auditors Regulations 2016", "SI 2016/649"]
+    },
+    {
+      "id": "variation-threshold-conditions-order",
+      "title": "Financial Services and Markets Act 2000 (Variation of Threshold Conditions) Order 2001",
+      "legislation_type": "uksi",
+      "year": 2001,
+      "number": 2507,
+      "aliases": ["Financial Services and Markets Act 2000 (Variation of Threshold Conditions) Order 2001", "SI 2001/2507"]
+    },
+    {
+      "id": "policy-policyholder-order",
+      "title": "Financial Services and Markets Act 2000 (Meaning of Policy and Policyholder) Order 2001",
+      "legislation_type": "uksi",
+      "year": 2001,
+      "number": 2361,
+      "aliases": ["Financial Services and Markets Act 2000 (Meaning of \"Policy\" and \"Policyholder\") Order 2001", "SI 2001/2361"]
+    },
+    {
+      "id": "regulated-activities-by-way-of-business-order",
+      "title": "Financial Services and Markets Act 2000 (Carrying on Regulated Activities by Way of Business) Order 2001",
+      "legislation_type": "uksi",
+      "year": 2001,
+      "number": 1177,
+      "aliases": ["Financial Services and Markets Act 2000 (Carrying on Regulated Activities by Way of Business) Order 2001", "SI 2001/1177"]
+    },
+    {
+      "id": "fsma",
+      "title": "Financial Services and Markets Act 2000",
+      "legislation_type": "ukpga",
+      "year": 2000,
+      "number": 8,
+      "aliases": ["Financial Services and Markets Act 2000", "Financial Services and Markets Act", "FSMA"],
+      "provision_sources": {
+        "section/59ZZA": {
+          "official_url": "https://www.legislation.gov.uk/uksi/2018/1149/regulation/23",
+          "data_url": "https://www.legislation.gov.uk/uksi/2018/1149/regulation/23/data.xml",
+          "provision_path": "regulation/23",
+          "document_title": "EEA Passport Rights (Amendment, etc., and Transitional Provisions) (EU Exit) Regulations 2018"
+        }
+      }
+    },
+    {
+      "id": "building-societies-act",
+      "title": "Building Societies Act 1986",
+      "legislation_type": "ukpga",
+      "year": 1986,
+      "number": 53,
+      "aliases": ["Building Societies Act 1986"]
+    },
+    {
+      "id": "banking-act",
+      "title": "Banking Act 2009",
+      "legislation_type": "ukpga",
+      "year": 2009,
+      "number": 1,
+      "aliases": ["Banking Act 2009", "BA09"]
+    },
+    {
+      "id": "companies-act-2006",
+      "title": "Companies Act 2006",
+      "legislation_type": "ukpga",
+      "year": 2006,
+      "number": 46,
+      "aliases": ["Companies Act 2006"]
+    },
+    {
+      "id": "employment-rights-act",
+      "title": "Employment Rights Act 1996",
+      "legislation_type": "ukpga",
+      "year": 1996,
+      "number": 18,
+      "aliases": ["Employment Rights Act 1996", "Employments Rights Act 1996"]
+    },
+    {
+      "id": "credit-unions-act",
+      "title": "Credit Unions Act 1979",
+      "legislation_type": "ukpga",
+      "year": 1979,
+      "number": 34,
+      "aliases": ["Credit Unions Act 1979", "Credit Union Act 1979"]
+    },
+    {
+      "id": "friendly-societies-act",
+      "title": "Friendly Societies Act 1992",
+      "legislation_type": "ukpga",
+      "year": 1992,
+      "number": 40,
+      "aliases": ["Friendly Societies Act 1992"]
+    },
+    {
+      "id": "insolvency-act",
+      "title": "Insolvency Act 1986",
+      "legislation_type": "ukpga",
+      "year": 1986,
+      "number": 45,
+      "aliases": ["Insolvency Act 1986"]
+    },
+    {
+      "id": "bank-of-england-act",
+      "title": "Bank of England Act 1998",
+      "legislation_type": "ukpga",
+      "year": 1998,
+      "number": 11,
+      "aliases": ["Bank of England Act 1998"]
+    },
+    {
+      "id": "financial-services-act-2012",
+      "title": "Financial Services Act 2012",
+      "legislation_type": "ukpga",
+      "year": 2012,
+      "number": 21,
+      "aliases": ["Financial Services Act 2012"]
+    },
+    {
+      "id": "financial-services-banking-reform-act",
+      "title": "Financial Services (Banking Reform) Act 2013",
+      "legislation_type": "ukpga",
+      "year": 2013,
+      "number": 33,
+      "aliases": ["Financial Services (Banking Reform) Act 2013"]
+    },
+    {
+      "id": "welfare-reform-pensions-act",
+      "title": "Welfare Reform and Pensions Act 1999",
+      "legislation_type": "ukpga",
+      "year": 1999,
+      "number": 30,
+      "aliases": ["Welfare Reform and Pensions Act 1999"]
+    },
+    {
+      "id": "welfare-reform-pensions-ni-order",
+      "title": "Welfare Reform and Pensions (Northern Ireland) Order 1999",
+      "legislation_type": "nisi",
+      "year": 1999,
+      "number": 3147,
+      "aliases": ["Welfare Reform and Pensions (Northern Ireland) Order 1999"]
+    },
+    {
+      "id": "securitisation-regulations-2024",
+      "title": "Securitisation Regulations 2024",
+      "legislation_type": "uksi",
+      "year": 2024,
+      "number": 102,
+      "aliases": ["Securitisation Regulations 2024", "Securitisation Regulations"]
+    },
+    {
+      "id": "irpr",
+      "title": "Insurance and Reinsurance Undertakings (Prudential Requirements) Regulations 2023",
+      "legislation_type": "uksi",
+      "year": 2023,
+      "number": 1347,
+      "aliases": ["Insurance and Reinsurance Undertakings (Prudential Requirements) Regulations 2023", "IRPR regulations", "IRPR Regulations", "IRPR"]
+    },
+    {
+      "id": "risk-transformation-regulations",
+      "title": "Risk Transformation Regulations 2017",
+      "legislation_type": "uksi",
+      "year": 2017,
+      "number": 1212,
+      "aliases": ["Risk Transformation Regulations", "RTR"]
+    },
+    {
+      "id": "financial-conglomerates-regulations",
+      "title": "Financial Conglomerates and Other Financial Groups Regulations 2004",
+      "legislation_type": "uksi",
+      "year": 2004,
+      "number": 1862,
+      "aliases": ["Financial Conglomerates Regulations", "Financial Conglomerates and Other Financial Groups Regulations 2004"]
+    },
+    {
+      "id": "capital-requirements-regulations",
+      "title": "Capital Requirements Regulations 2013",
+      "legislation_type": "uksi",
+      "year": 2013,
+      "number": 3115,
+      "aliases": ["Capital Requirements Regulations 2013", "Capital Requirements Regulations"]
+    },
+    {
+      "id": "electronic-money-regulations",
+      "title": "Electronic Money Regulations 2011",
+      "legislation_type": "uksi",
+      "year": 2011,
+      "number": 99,
+      "aliases": ["Electronic Money Regulations 2011", "Electronic Money Regulations"]
+    },
+    {
+      "id": "payment-services-regulations",
+      "title": "Payment Services Regulations 2017",
+      "legislation_type": "uksi",
+      "year": 2017,
+      "number": 752,
+      "aliases": ["Payment Services Regulations 2017", "Payment Services Regulations"]
+    },
+    {
+      "id": "solvency-2-regulations",
+      "title": "Solvency 2 Regulations 2015",
+      "legislation_type": "uksi",
+      "year": 2015,
+      "number": 575,
+      "aliases": ["Solvency 2 Regulations 2015", "Solvency 2 regulations"]
+    },
+    {
+      "id": "controllers-exemption-order",
+      "title": "Financial Services and Markets Act 2000 (Controllers) (Exemption) Order 2009",
+      "legislation_type": "uksi",
+      "year": 2009,
+      "number": 774,
+      "aliases": ["Exemption Order", "SI 2009/774"]
+    },
+    {
+      "id": "pension-schemes-act-1993",
+      "title": "Pension Schemes Act 1993",
+      "legislation_type": "ukpga",
+      "year": 1993,
+      "number": 48,
+      "aliases": ["Pension Scheme Act 1993", "Pension Schemes Act 1993"]
+    },
+    {
+      "id": "pensions-act-2008",
+      "title": "Pensions Act 2008",
+      "legislation_type": "ukpga",
+      "year": 2008,
+      "number": 30,
+      "aliases": ["Pensions Act 2008"]
+    },
+    {
+      "id": "pensions-act-2011",
+      "title": "Pensions Act 2011",
+      "legislation_type": "ukpga",
+      "year": 2011,
+      "number": 19,
+      "aliases": ["Pensions Act 2011"]
+    },
+    {
+      "id": "eu-withdrawal-act",
+      "title": "European Union (Withdrawal) Act 2018",
+      "legislation_type": "ukpga",
+      "year": 2018,
+      "number": 16,
+      "aliases": ["European Union (Withdrawal) Act 2018"]
+    },
+    {
+      "id": "eu-withdrawal-agreement-act",
+      "title": "European Union (Withdrawal Agreement) Act 2020",
+      "legislation_type": "ukpga",
+      "year": 2020,
+      "number": 1,
+      "aliases": ["European Union (Withdrawal Agreement) Act 2020"]
+    },
+    {
+      "id": "financial-services-act-1986",
+      "title": "Financial Services Act 1986",
+      "legislation_type": "ukpga",
+      "year": 1986,
+      "number": 60,
+      "aliases": ["Financial Services Act 1986"]
+    },
+    {
+      "id": "lloyds-act-1982",
+      "title": "Lloyd's Act 1982",
+      "legislation_type": "ukla",
+      "year": 1982,
+      "number": 14,
+      "aliases": ["Lloyd's Act 1982", "Lloyd’s Act 1982"],
+      "official_url": "https://www.legislation.gov.uk/ukla/1982/14/pdfs/ukla_19820014_en.pdf",
+      "data_url": "https://assets.lloyds.com/assets/pdf-lloyds-acts-dec08lloydsact-1982-2008/1/pdf-lloyds-acts-Dec08LloydsAct%201982_2008.pdf",
+      "source_format": "lloyds-consolidated-pdf"
+    },
+    {
+      "id": "compensation-act-2006",
+      "title": "Compensation Act 2006",
+      "legislation_type": "ukpga",
+      "year": 2006,
+      "number": 29,
+      "aliases": ["Compensation Act 2006"]
+    },
+    {
+      "id": "nuclear-installations-act-1965",
+      "title": "Nuclear Installations Act 1965",
+      "legislation_type": "ukpga",
+      "year": 1965,
+      "number": 57,
+      "aliases": ["Nuclear Installations Act 1965"]
+    },
+    {
+      "id": "road-traffic-act-1988",
+      "title": "Road Traffic Act 1988",
+      "legislation_type": "ukpga",
+      "year": 1988,
+      "number": 52,
+      "aliases": ["Road Traffic Act 1988"]
+    },
+    {
+      "id": "road-traffic-ni-order-1981",
+      "title": "Road Traffic (Northern Ireland) Order 1981",
+      "legislation_type": "nisi",
+      "year": 1981,
+      "number": 154,
+      "aliases": ["Road Traffic (Northern Ireland) Order 1981"]
+    },
+    {
+      "id": "cooperative-societies-act-2014",
+      "title": "Co-operative and Community Benefit Societies Act 2014",
+      "legislation_type": "ukpga",
+      "year": 2014,
+      "number": 14,
+      "aliases": ["Co-operative and Community Benefit Societies Act 2014"]
+    },
+    {
+      "id": "banking-financial-dealings-act",
+      "title": "Banking and Financial Dealings Act 1971",
+      "legislation_type": "ukpga",
+      "year": 1971,
+      "number": 80,
+      "aliases": ["Banking and Financial Dealings Act 1971"]
+    },
+    {
+      "id": "dormant-accounts-act",
+      "title": "Dormant Bank and Building Society Accounts Act 2008",
+      "legislation_type": "ukpga",
+      "year": 2008,
+      "number": 31,
+      "aliases": ["Dormant Bank and Building Society Accounts Act 2008"]
+    },
+    {
+      "id": "child-trust-funds-act",
+      "title": "Child Trust Funds Act 2004",
+      "legislation_type": "ukpga",
+      "year": 2004,
+      "number": 6,
+      "aliases": ["Child Trust Funds Act 2004"]
+    },
+    {
+      "id": "consumer-credit-act",
+      "title": "Consumer Credit Act 1974",
+      "legislation_type": "ukpga",
+      "year": 1974,
+      "number": 39,
+      "aliases": ["Consumer Credit Act 1974"]
+    },
+    {
+      "id": "pensions-act-1995",
+      "title": "Pensions Act 1995",
+      "legislation_type": "ukpga",
+      "year": 1995,
+      "number": 26,
+      "aliases": ["Pensions Act 1995"]
+    },
+    {
+      "id": "landlord-tenant-act-1987",
+      "title": "Landlord and Tenant Act 1987",
+      "legislation_type": "ukpga",
+      "year": 1987,
+      "number": 31,
+      "aliases": ["Landlord and Tenant Act 1987"]
+    },
+    {
+      "id": "law-property-act-1925",
+      "title": "Law of Property Act 1925",
+      "legislation_type": "ukpga",
+      "year": 1925,
+      "number": 20,
+      "aliases": ["Law of Property Act 1925"]
+    },
+    {
+      "id": "riding-establishments-act",
+      "title": "Riding Establishments Act 1964",
+      "legislation_type": "ukpga",
+      "year": 1964,
+      "number": 70,
+      "aliases": ["Riding Establishments Act 1964"]
+    },
+    {
+      "id": "employers-liability-act",
+      "title": "Employers' Liability (Compulsory Insurance) Act 1969",
+      "legislation_type": "ukpga",
+      "year": 1969,
+      "number": 57,
+      "aliases": ["Employers' Liability (Compulsory Insurance) Act 1969"]
+    },
+    {
+      "id": "employers-liability-ni-order-1972",
+      "title": "Employer's Liability (Defective Equipment and Compulsory Insurance) (Northern Ireland) Order 1972",
+      "legislation_type": "nisi",
+      "year": 1972,
+      "number": 963,
+      "aliases": [
+        "Employer's Liability (Defective Equipment and Compulsory Insurance) (Northern Ireland) Order 1972",
+        "Employers' Liability (Defective Equipment and Compulsory Insurance) (Northern Ireland) Order 1972",
+        "Employers' Liability Order (Defective Equipment and Compulsory Insurance) (Northern Ireland) Order 1972"
+      ]
+    },
+    {
+      "id": "financial-services-act-2019",
+      "title": "Financial Services (Implementation of Legislation) Act 2019",
+      "legislation_type": "ukpga",
+      "year": 2019,
+      "number": 1,
+      "aliases": ["Financial Services Act 2019", "Financial Services (Implementation of Legislation) Act 2019"]
+    },
+    {
+      "id": "friendly-industrial-societies-act-1968",
+      "title": "Friendly and Industrial and Provident Societies Act 1968",
+      "legislation_type": "ukpga",
+      "year": 1968,
+      "number": 55,
+      "aliases": ["Friendly and Industrial and Provident Societies Act 1968"]
+    },
+    {
+      "id": "insurers-reorganisation-lloyds-regulations",
+      "title": "Insurers (Reorganisation and Winding Up) (Lloyd's) Regulations 2005",
+      "legislation_type": "uksi",
+      "year": 2005,
+      "number": 1998,
+      "aliases": ["Insurers (Reorganisation and Winding Up) (Lloyd’s) Regulations 2005", "Insurers (Reorganisation and Winding Up) (Lloyd's) Regulations 2005", "Insures (Reorganisation and Winding Up) Regulations"]
+    },
+    {
+      "id": "money-laundering-regulations-2017",
+      "title": "Money Laundering, Terrorist Financing and Transfer of Funds (Information on the Payer) Regulations 2017",
+      "legislation_type": "uksi",
+      "year": 2017,
+      "number": 692,
+      "aliases": ["Money Laundering, Terrorist Financing and Transfer of Funds (Information on the Payer) Regulations 2017", "MLR"]
+    },
+    {
+      "id": "money-laundering-regulations-2007",
+      "title": "Money Laundering Regulations 2007",
+      "legislation_type": "uksi",
+      "year": 2007,
+      "number": 2157,
+      "aliases": ["Money Laundering Regulations 2007"]
+    },
+    {
+      "id": "aifm-regulations-2013",
+      "title": "Alternative Investment Fund Managers Regulations 2013",
+      "legislation_type": "uksi",
+      "year": 2013,
+      "number": 1773,
+      "aliases": ["Alternative Investment Fund Managers Regulations 2013"]
+    },
+    {
+      "id": "commission-recommendation-sme",
+      "title": "Commission Recommendation 2003/361/EC",
+      "legislation_type": "eudn",
+      "year": 2003,
+      "number": 361,
+      "aliases": ["Commission Recommendation 2003/361/EC", "Recommendation 2003/361/EC"],
+      "official_url": "https://eur-lex.europa.eu/eli/reco/2003/361/oj",
+      "data_url": "https://publications.europa.eu/resource/cellar/6ca8d655-126b-4a42-ada4-e9058fa45155.0004.01/DOC_1",
+      "source_format": "eurlex-cellar-html"
+    },
+    {
+      "id": "business-transfers-order",
+      "title": "Financial Services and Markets Act 2000 (Control of Transfers of Business Done at Lloyd's) Order 2001",
+      "legislation_type": "uksi",
+      "year": 2001,
+      "number": 3626,
+      "aliases": ["Business Transfers Regulations", "Control of Transfers of Business Done at Lloyd's Order 2001"]
+    },
+    {
+      "id": "commission-implementing-regulation-2016-1799",
+      "title": "Commission Implementing Regulation (EU) 2016/1799",
+      "legislation_type": "eur",
+      "year": 2016,
+      "number": 1799,
+      "aliases": ["Commission Implementing Regulation 2016/1799", "Commission Implementing Regulation (EU) 2016/1799"]
+    },
+    {
+      "id": "bank-accounts-directive",
+      "title": "Council Directive 86/635/EEC",
+      "legislation_type": "eudr",
+      "year": 1986,
+      "number": 635,
+      "aliases": ["Directive 86/635/EEC", "Council Directive 86/635/EEC"]
+    },
+    {
+      "id": "settlement-finality-regulations-1999",
+      "title": "Financial Markets and Insolvency (Settlement Finality) Regulations 1999",
+      "legislation_type": "uksi",
+      "year": 1999,
+      "number": 2979,
+      "aliases": ["Financial Markets and Insolvency (Settlement Finality) Regulations 1999"]
+    },
+    {
+      "id": "building-societies-transfer-regulations",
+      "title": "Building Societies (Transfer of Business) Regulations 1998",
+      "legislation_type": "uksi",
+      "year": 1998,
+      "number": 212,
+      "aliases": ["Building Societies (Transfer of Business) Regulations 1998", "Transfer Regulations"]
+    },
+    {
+      "id": "llp-accounts-audit-regulations",
+      "title": "Limited Liability Partnerships (Accounts and Audit) (Application of Companies Act 2006) Regulations 2008",
+      "legislation_type": "uksi",
+      "year": 2008,
+      "number": 1911,
+      "aliases": ["Limited Liability Partnerships (Accounts and Audit) (Application of Companies Act 2006) Regulations 2008"]
+    },
+    {
+      "id": "insurance-accounts-misc-regulations",
+      "title": "Insurance Accounts Directive (Miscellaneous Insurance Undertakings) Regulations 2008",
+      "legislation_type": "uksi",
+      "year": 2008,
+      "number": 565,
+      "aliases": ["Insurance Accounts Directive (Miscellaneous Insurance Undertakings) Regulations 2008"]
+    },
+    {
+      "id": "insurance-companies-act-1982",
+      "title": "Insurance Companies Act 1982",
+      "legislation_type": "ukpga",
+      "year": 1982,
+      "number": 50,
+      "aliases": ["Insurance Companies Act 1982"]
+    },
+    {
+      "id": "credit-unions-ni-order-1985",
+      "title": "Credit Unions (Northern Ireland) Order 1985",
+      "legislation_type": "nisi",
+      "year": 1985,
+      "number": 1205,
+      "aliases": ["Credit Unions (Northern Ireland) Order 1985"]
+    },
+    {
+      "id": "friendly-societies-act-1974",
+      "title": "Friendly Societies Act 1974",
+      "legislation_type": "ukpga",
+      "year": 1974,
+      "number": 46,
+      "aliases": ["Friendly Societies Act 1974"],
+      "provision_sources": {
+        "section/23A": {
+          "official_url": "https://www.legislation.gov.uk/ukpga/1992/40/schedule/16/paragraph/8",
+          "data_url": "https://www.legislation.gov.uk/ukpga/1992/40/schedule/16/paragraph/8/data.xml",
+          "provision_path": "schedule/16/paragraph/8",
+          "document_title": "Friendly Societies Act 1992"
+        }
+      }
+    },
+    {
+      "id": "service-notices-regulations",
+      "title": "Financial Services and Markets Act 2000 (Service of Notices) Regulations 2001",
+      "legislation_type": "uksi",
+      "year": 2001,
+      "number": 1420,
+      "aliases": ["Financial Services and Markets Act 2000 (Service of Notices) Regulations 2001"]
+    },
+    {
+      "id": "digital-securities-sandbox-regulations",
+      "title": "Financial Services and Markets Act 2023 (Digital Securities Sandbox) Regulations 2023",
+      "legislation_type": "uksi",
+      "year": 2023,
+      "number": 1398,
+      "aliases": ["Financial Services and Markets Act 2023 (Digital Securities Sandbox) Regulations 2023"]
+    },
+    {
+      "id": "rights-of-action-regulations",
+      "title": "Financial Services and Markets Act 2000 (Rights of Action) Regulations 2001",
+      "legislation_type": "uksi",
+      "year": 2001,
+      "number": 2256,
+      "aliases": ["Financial Services and Markets Act 2000 (Rights of Action) Regulations 2001"]
+    },
+    {
+      "id": "mifi-regulations-2017",
+      "title": "Financial Services and Markets Act 2000 (Markets in Financial Instruments) Regulations 2017",
+      "legislation_type": "uksi",
+      "year": 2017,
+      "number": 701,
+      "aliases": ["Financial Services and Markets Act 2000 (Markets in Financial Instruments) Regulations 2017"]
+    },
+    {
+      "id": "eea-passport-exit-regulations",
+      "title": "EEA Passport Rights (Amendment, etc., and Transitional Provisions) (EU Exit) Regulations 2018",
+      "legislation_type": "uksi",
+      "year": 2018,
+      "number": 1149,
+      "aliases": ["EEA Passport Exit Regulations", "EEA Passport Rights (Amendment, etc., and Transitional Provisions) (EU Exit) Regulations 2018"]
+    },
+    {
+      "id": "financial-services-act-2021",
+      "title": "Financial Services Act 2021",
+      "legislation_type": "ukpga",
+      "year": 2021,
+      "number": 22,
+      "aliases": ["Financial Services Act 2021"]
+    },
+    {
+      "id": "insolvency-ni-order-1989",
+      "title": "Insolvency (Northern Ireland) Order 1989",
+      "legislation_type": "nisi",
+      "year": 1989,
+      "number": 2405,
+      "aliases": ["Insolvency (Northern Ireland) Order 1989"]
+    },
+    {
+      "id": "compensation-mesothelioma-regulations",
+      "title": "Compensation Act 2006 (Contribution for Mesothelioma Claims) Regulations 2006",
+      "legislation_type": "uksi",
+      "year": 2006,
+      "number": 3259,
+      "aliases": ["mesothelioma regulations", "Compensation Act 2006 (Contribution for Mesothelioma Claims) Regulations 2006"]
+    },
+    {
+      "id": "eur-2016-2251",
+      "title": "Commission Delegated Regulation (EU) 2016/2251",
+      "legislation_type": "eur",
+      "year": 2016,
+      "number": 2251,
+      "aliases": ["Commission Delegated Regulation (EU) 2016/2251"]
+    }
+  ]
+}

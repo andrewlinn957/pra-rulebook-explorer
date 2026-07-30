@@ -21,6 +21,7 @@ def validation_dashboard(conn: sqlite3.Connection) -> dict[str, Any]:
         _missing_evidence(conn),
         _self_loops(conn),
         _unresolved_references(conn),
+        _legal_reference_occurrence_integrity(conn),
         _hard_soft_split(conn),
     ]
     return {
@@ -291,6 +292,85 @@ def _unresolved_references(conn: sqlite3.Connection) -> dict[str, Any]:
         "purpose": "Identify live cross-references that still point to placeholders rather than resolved legal nodes.",
         "status": "warn" if live_total else "pass",
         "metrics": {"live_placeholder_reference_nodes": live_total, "all_placeholder_reference_nodes": all_total, "orphan_placeholder_reference_nodes": orphan_total, "non_reference_placeholder_nodes": non_reference_total, **live_by_type},
+    }
+
+
+def _legal_reference_occurrence_integrity(
+    conn: sqlite3.Connection,
+) -> dict[str, Any]:
+    if not conn.execute(
+        """
+        SELECT 1 FROM sqlite_master
+        WHERE type='table' AND name='reference_occurrence'
+        """
+    ).fetchone():
+        return {
+            "check": "legal reference occurrences",
+            "purpose": (
+                "Ensure every extracted legal citation has an exact source "
+                "occurrence and a consistent materialized target."
+            ),
+            "status": "not_available",
+            "metrics": {},
+        }
+    metrics = {
+        "genuine_unresolved": conn.execute(
+            """
+            SELECT COUNT(*) FROM reference_occurrence
+            WHERE status IN ('unresolved','ambiguous')
+            """
+        ).fetchone()[0],
+        "materialized_missing_source": conn.execute(
+            """
+            SELECT COUNT(*) FROM reference_occurrence occurrence
+            LEFT JOIN node source ON source.id=occurrence.source_node_id
+            WHERE occurrence.status='materialized' AND source.id IS NULL
+            """
+        ).fetchone()[0],
+        "materialized_missing_target": conn.execute(
+            """
+            SELECT COUNT(*) FROM reference_occurrence occurrence
+            LEFT JOIN node target ON target.id=occurrence.target_node_id
+            WHERE occurrence.status='materialized' AND target.id IS NULL
+            """
+        ).fetchone()[0],
+        "materialized_missing_edge": conn.execute(
+            """
+            SELECT COUNT(*) FROM reference_occurrence occurrence
+            LEFT JOIN edge relation ON relation.id=occurrence.edge_id
+            WHERE occurrence.status='materialized' AND relation.id IS NULL
+            """
+        ).fetchone()[0],
+        "edge_target_mismatches": conn.execute(
+            """
+            SELECT COUNT(*) FROM reference_occurrence occurrence
+            JOIN edge relation ON relation.id=occurrence.edge_id
+            WHERE occurrence.status='materialized'
+              AND occurrence.target_node_id<>relation.to_node_id
+            """
+        ).fetchone()[0],
+        "source_span_out_of_bounds": conn.execute(
+            """
+            SELECT COUNT(*) FROM reference_occurrence occurrence
+            JOIN node source ON source.id=occurrence.source_node_id
+            WHERE occurrence.span_end>LENGTH(COALESCE(source.text,''))
+            """
+        ).fetchone()[0],
+        "missing_group_or_citation": conn.execute(
+            """
+            SELECT COUNT(*) FROM reference_occurrence
+            WHERE COALESCE(group_id,'')='' OR COALESCE(citation_text,'')=''
+            """
+        ).fetchone()[0],
+    }
+    return {
+        "check": "legal reference occurrences",
+        "purpose": (
+            "Ensure every extracted legal citation has an exact source "
+            "occurrence and a consistent materialized target."
+        ),
+        "status": "pass" if sum(metrics.values()) == 0 else "fail",
+        "metrics": metrics,
     }
 
 

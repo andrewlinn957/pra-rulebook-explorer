@@ -107,6 +107,72 @@ def test_neighbourhood_deduplicates_multiple_references_to_same_ss_document():
     assert graph['edges'][0]['metadata']['rolled_up_from_to_node_ids'] == ['sop-para-1', 'sop-para-2']
 
 
+def test_neighbourhood_attaches_every_reference_occurrence_to_its_edge():
+    conn = make_conn()
+    conn.executescript(
+        '''
+        CREATE TABLE reference_occurrence (
+          occurrence_id TEXT PRIMARY KEY,
+          group_id TEXT,
+          source_node_id TEXT,
+          target_node_id TEXT,
+          edge_id TEXT,
+          relationship_type TEXT,
+          citation_kind TEXT,
+          citation_text TEXT,
+          group_text TEXT,
+          instrument_id TEXT,
+          provision_path TEXT,
+          qualifier TEXT,
+          span_start INTEGER,
+          span_end INTEGER,
+          status TEXT,
+          source_method TEXT,
+          confidence REAL,
+          context_text TEXT,
+          metadata_json TEXT
+        );
+        '''
+    )
+    add_node(conn, 'rule-1', 'rule', 'Audit Committee 2.4')
+    add_node(conn, 'article-16', 'external_reference', 'Article 16')
+    add_edge(conn, 'ref-16', 'rule-1', 'article-16')
+    conn.executemany(
+        '''
+        INSERT INTO reference_occurrence VALUES (
+          ?,?,'rule-1','article-16','ref-16','REF','article',
+          ?,'Article 16','statutory-audit-regulation','article/16','',
+          ?,?,'materialized','legal_reference_occurrence_v1',0.99,'',?
+        )
+        ''',
+        [
+            (
+                'first',
+                'first-group',
+                'Article 16',
+                100,
+                110,
+                '{"group_span":{"start":100,"end":110}}',
+            ),
+            (
+                'second',
+                'second-group',
+                'Article 16',
+                200,
+                210,
+                '{"group_span":{"start":200,"end":210}}',
+            ),
+        ],
+    )
+
+    graph = neighbourhood(conn, 'rule-1', depth=1, edge_types=['references'])
+
+    occurrences = graph['edges'][0]['metadata']['reference_occurrences']
+    assert [item['occurrence_id'] for item in occurrences] == ['first', 'second']
+    assert occurrences[0]['source_span'] == {'start': 100, 'end': 110}
+    assert occurrences[1]['metadata']['group_span'] == {'start': 200, 'end': 210}
+
+
 def load_tests(loader, tests, pattern):
     return unittest.TestSuite(
         unittest.FunctionTestCase(value)

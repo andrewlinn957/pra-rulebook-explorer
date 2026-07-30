@@ -1,0 +1,304 @@
+{
+  "schema_version": 1,
+  "description": "Auditable context rules for citations whose instrument is expressed outside the atomic citation phrase.",
+  "rules": [
+    {
+      "source_node_ids": ["025267ac6855b951"],
+      "citation_kinds": ["section"],
+      "target_node_id": "acda4f3ef5f1bf19",
+      "reason": "Sections 3 to 6 of this Chapter are carried by the linked substantive chapter node."
+    },
+    {
+      "source_title_prefix": "SoP1/24",
+      "citation_kinds": ["section"],
+      "instrument_id": "fsma",
+      "reason": "The statement defines the unqualified Act as FSMA."
+    },
+    {
+      "source_title_prefix": "SoP2/14",
+      "citation_kinds": ["section"],
+      "instrument_id": "fsma",
+      "reason": "The statement defines the unqualified Act as FSMA."
+    },
+    {
+      "source_title_prefix": "SS8/16",
+      "citation_kinds": ["section"],
+      "instrument_id": "fsma",
+      "reason": "The supervisory statement uses the Act for FSMA."
+    },
+    {
+      "source_node_ids": ["3f616d2a63f322c4"],
+      "citation_kinds": ["section"],
+      "instrument_id": "fsma",
+      "reason": "The Rulebook Part defines the unqualified Act as FSMA."
+    },
+    {
+      "source_node_ids": ["3a933e095e9d2fc4", "8fab73af23bf2178", "cf665b7b7c4cfd18", "eae10bd98f2a5192", "f6e9ed8d80caabb6"],
+      "citation_kinds": ["article"],
+      "instrument_id": "core-activities-order",
+      "reason": "The statement defines the Order as the Core Activities Order."
+    },
+    {
+      "source_title_prefix": "SoP1/13",
+      "citation_kinds": ["article"],
+      "instrument_id": "pra-regulated-activities-order",
+      "reason": "The statement concerns the PRA-regulated Activities Order."
+    },
+    {
+      "source_title_prefix": "SS10/18",
+      "citation_kinds": ["article"],
+      "internal_part": "securitisation",
+      "reason": "The text expressly cites the Securitisation Part of the PRA Rulebook."
+    },
+    {
+      "source_node_ids": ["50c88c5e59a3f05c", "96fc21439a069e90", "a177f673d8f08044", "a674e2a753887efc", "b76b037a79773b6c", "fc86cc1a9d906e6d"],
+      "citation_kinds": ["article"],
+      "instrument_id": "crd",
+      "reason": "The surrounding source expressly labels these citations CRD or CRDV."
+    },
+    {
+      "source_node_ids": ["b08c0bfc01f2d04e"],
+      "citation_kinds": ["article"],
+      "instrument_id": "insurance-distribution-directive",
+      "reason": "The definition names the Insurance Distribution Directive with an OCR spacing error."
+    },
+    {
+      "source_node_ids": ["7b9d4bd9edfbedaa"],
+      "citation_kinds": ["article"],
+      "instrument_id": "uk-crr",
+      "reason": "The source expressly names Regulation (EU) No 575/2013."
+    },
+    {
+      "source_node_ids": ["c490ef2f3c7e1007"],
+      "citation_kinds": ["article"],
+      "instrument_id": "uk-crr",
+      "reason": "Articles 325 to 377 are provisions of the CRR package's Capital Requirements Regulation, despite the source's shorthand CRD IV label."
+    },
+    {
+      "source_node_ids": ["c0b70c981a0f524b"],
+      "citation_kinds": ["article"],
+      "instrument_id": "rao",
+      "reason": "The designated investment business definition expressly introduces these as RAO articles."
+    },
+    {
+      "source_node_ids": ["fbd08559430fa4d6"],
+      "citation_kinds": ["article"],
+      "instrument_id": "commission-implementing-regulation-2016-1799",
+      "reason": "The definition expressly names Commission Implementing Regulation 2016/1799."
+    },
+    {
+      "source_node_ids": ["342b2a67f8826d2e", "ebcb0e38d8292af1"],
+      "citation_kinds": ["section"],
+      "instrument_id": "building-societies-act",
+      "reason": "The source expressly defines the 1986 Act as the Building Societies Act 1986."
+    },
+    {
+      "source_node_ids": ["f06a349eff17b6a6"],
+      "citation_kinds": ["article"],
+      "citation_bases": ["432"],
+      "instrument_id": "uk-crr",
+      "reason": "DIS Article 432 is a UK CRR disclosure provision."
+    },
+    {
+      "source_node_ids": ["d3490697b0c1ecba"],
+      "citation_kinds": ["regulation"],
+      "citation_bases": ["36", "38a"],
+      "instrument_id": "llp-accounts-audit-regulations",
+      "reason": "The cited regulations are in the named LLP Accounts and Audit Regulations."
+    },
+    {
+      "source_node_ids": ["d3490697b0c1ecba"],
+      "citation_kinds": ["regulation"],
+      "citation_bases": ["6"],
+      "instrument_id": "insurance-accounts-misc-regulations",
+      "reason": "The pronoun refers to the immediately preceding Insurance Accounts Directive Regulations."
+    },
+    {
+      "source_node_ids": ["a82a350241cdc61f"],
+      "citation_kinds": ["section"],
+      "citation_bases": ["11625"],
+      "instrument_id": "companies-act-2006",
+      "provision_path": "section/1162",
+      "reason": "The final 5 is an OCR-concatenated footnote marker after Companies Act section 1162."
+    },
+    {
+      "source_node_ids": ["2a01f0c41d5fc3f3"],
+      "citation_kinds": ["regulation"],
+      "citation_bases": ["3"],
+      "instrument_id": "compensation-mesothelioma-regulations",
+      "reason": "The source expressly names the mesothelioma regulations."
+    },
+    {
+      "source_node_ids": ["15dd02d5bf907691", "2a01f0c41d5fc3f3"],
+      "citation_kinds": ["article"],
+      "citation_bases": ["9a"],
+      "instrument_id": "compensation-mesothelioma-regulations",
+      "provision_path": "regulation/2",
+      "reason": "Regulation 2 of SI 2006/3259 is the official source that inserts Article 9A into the transitionals order."
+    },
+    {
+      "source_node_ids": ["360c1a52a51ea1c5"],
+      "citation_kinds": ["section"],
+      "citation_bases": ["14a"],
+      "instrument_id": "credit-unions-ni-order-1985",
+      "provision_path": "article/14A",
+      "reason": "Northern Ireland Orders use article rather than section paths."
+    },
+    {
+      "source_node_ids": ["ff2554cb42ad30d0"],
+      "citation_kinds": ["section"],
+      "instrument_id": "eur-2016-2251",
+      "provision_path": "chapter/I",
+      "reason": "The citation is to Chapter I Section 4; legislation.gov exposes the official material at the Chapter I structural provision."
+    },
+    {
+      "source_node_ids": ["a0c7896eb58036b5", "c2b3cf0fb33ba8cc", "d57035890d0054d0", "f5d8cea20f24a374"],
+      "citation_kinds": ["regulation"],
+      "instrument_id": "service-notices-regulations",
+      "reason": "The generic parser stops at the embedded FSMA title; the full named instrument is the Service of Notices Regulations."
+    },
+    {
+      "source_node_ids": ["30da88a954f1f968"],
+      "citation_kinds": ["regulation"],
+      "instrument_id": "digital-securities-sandbox-regulations",
+      "reason": "The full named instrument is the Digital Securities Sandbox Regulations."
+    },
+    {
+      "source_node_ids": ["60cd5760760fb2a7", "66757c3a03d24841", "d590f50c1f47b789"],
+      "citation_kinds": ["regulation"],
+      "instrument_id": "rights-of-action-regulations",
+      "reason": "The full named instrument is the Rights of Action Regulations."
+    },
+    {
+      "source_node_ids": ["c4e18e48937acccd"],
+      "citation_kinds": ["regulation"],
+      "instrument_id": "securitisation-regulations-2024",
+      "reason": "The table's wrapped typography places the instrument title after Regulation 44."
+    },
+    {
+      "source_node_ids": ["f73a70c6a877bda9"],
+      "citation_kinds": ["regulation"],
+      "instrument_id": "mifi-regulations-2017",
+      "reason": "The cited provision is in the named Markets in Financial Instruments Regulations 2017."
+    },
+    {
+      "source_node_ids": ["7e85afa66fa170f8"],
+      "citation_kinds": ["section"],
+      "instrument_id": "building-societies-act",
+      "reason": "The supervisory statement defines the 1986 Act as the Building Societies Act 1986."
+    },
+    {
+      "source_node_ids": ["591689e2de087406"],
+      "citation_kinds": ["section"],
+      "instrument_id": "insolvency-ni-order-1989",
+      "provision_path": "article/227",
+      "reason": "Northern Ireland Orders use article rather than section paths."
+    },
+    {
+      "source_node_ids": ["17e09c88ec35142c", "32f8fa535eb1d730", "7cb76e8758aef13c", "dad2a2fb622a4d14", "e795eb57fe49bf26"],
+      "citation_kinds": ["section"],
+      "citation_bases": ["181"],
+      "instrument_id": "pension-schemes-act-1993",
+      "reason": "Section 181 belongs to the Pension Schemes Act 1993; later Acts in the sentence govern separate citations."
+    },
+    {
+      "source_node_ids": ["15b06ef9f63c8abc", "e3d489e0a5634b28", "f69a6d3c56d32a48"],
+      "citation_kinds": ["section"],
+      "instrument_id": "rao",
+      "provision_path": "article/5/2",
+      "reason": "The Regulated Activities Order exposes this provision as Article 5(2)."
+    },
+    {
+      "source_node_ids": ["eb1f557da78a3788"],
+      "citation_kinds": ["article"],
+      "citation_bases": ["330"],
+      "instrument_id": "solvency-ii-delegated-regulation",
+      "reason": "The sentence distinguishes the Directive from the Delegated Regulation."
+    },
+    {
+      "source_node_ids": ["2291ba44cc67df92", "3277532d7ca4d599", "3a72c7fe8e497efd", "495eae11cb3bbf71", "625245d2b6c4bada", "6ee1c36c64bd1705", "7b8a5acbc892f6fd", "8c627bdec8ee21e4"],
+      "citation_kinds": ["regulation"],
+      "instrument_id": "solvency-2-regulations",
+      "reason": "The full named instrument is the domestic Solvency 2 Regulations 2015."
+    },
+    {
+      "source_node_ids": ["16e03278c34a3cbf", "cb6534711415ed78", "7a26a1c0515502dc"],
+      "citation_kinds": ["section"],
+      "instrument_id": "fsma",
+      "reason": "The statement's unqualified Act is FSMA."
+    },
+    {
+      "source_node_ids": ["83d07628e7e95c0f", "f77de83d07c26915"],
+      "citation_kinds": ["section"],
+      "instrument_id": "building-societies-act",
+      "reason": "The source's 1986 Act is the Building Societies Act; the nearby SIs merely amend it."
+    },
+    {
+      "source_node_ids": ["7859e4cd2064addc", "bd609ccf8db7ff84", "dbde498831883e7c", "f181d74fb88050e8"],
+      "citation_kinds": ["article"],
+      "instrument_id": "lcr-delegated-regulation",
+      "reason": "These SS24/15 passages prefix their citations with Delegated Act, meaning the Liquidity Coverage Requirement Delegated Regulation."
+    },
+    {
+      "source_node_ids": ["8881892da379badd", "d30db8ec8abaf91b"],
+      "citation_kinds": ["article"],
+      "instrument_id": "lcr-delegated-regulation",
+      "reason": "These liquidity provisions use Delegated Regulation as shorthand for the Liquidity Coverage Requirement Delegated Regulation."
+    },
+    {
+      "source_node_ids": ["ff1760f5520d8d94"],
+      "citation_kinds": ["article"],
+      "instrument_id": "solvency-ii-delegated-regulation",
+      "reason": "SS8/17 uses Delegated Regulation for the Solvency II Delegated Regulation governing insurance special purpose vehicles."
+    },
+    {
+      "source_node_ids": ["051adb2192360f3a"],
+      "citation_kinds": ["article"],
+      "citation_bases": ["138"],
+      "instrument_id": "solvency-ii-directive",
+      "reason": "The source expressly identifies Article 138 as a provision of the Solvency II Directive."
+    },
+    {
+      "source_node_ids": ["32f8fa535eb1d730"],
+      "citation_kinds": ["article"],
+      "citation_bases": ["3"],
+      "instrument_id": "commission-recommendation-sme",
+      "reason": "The phrase in accordance with Article 3 refers back to the Annex to Commission Recommendation 2003/361/EC in the same definition."
+    },
+    {
+      "source_node_ids": ["9f0144d23d4b642a"],
+      "citation_kinds": ["article"],
+      "citation_bases": ["4"],
+      "instrument_id": "mifid-i",
+      "reason": "The citation expressly names the Markets in Financial Instruments Directive 2004/39/EC."
+    },
+    {
+      "source_node_ids": ["3b78fc5fb2cc61fa"],
+      "citation_kinds": ["article"],
+      "citation_bases": ["3"],
+      "target_node_id": "a52227af46ec9364",
+      "reason": "The SS9/15 update log refers to local paragraph 3.3, represented by this guidance node, rather than Article 3 of the CDR."
+    },
+    {
+      "source_node_ids": ["3b78fc5fb2cc61fa"],
+      "citation_kinds": ["article"],
+      "citation_bases": ["5a"],
+      "target_node_id": "6385940781465bc6",
+      "reason": "The SS9/15 update log's 5A paragraph references are contained in the canonical 5A guidance node."
+    },
+    {
+      "source_node_ids": ["3b78fc5fb2cc61fa"],
+      "citation_kinds": ["article"],
+      "citation_bases": ["5b"],
+      "target_node_id": "9c4a7e07a3761be4",
+      "reason": "The SS9/15 update log's 5B.1F reference is contained in the canonical 5B guidance node."
+    },
+    {
+      "source_node_ids": ["3b78fc5fb2cc61fa"],
+      "citation_kinds": ["article"],
+      "citation_bases": ["9"],
+      "target_node_id": "ce85c8e3f44f0e41",
+      "reason": "The SS9/15 update log refers to local paragraph 9.2, represented by this guidance node."
+    }
+  ]
+}

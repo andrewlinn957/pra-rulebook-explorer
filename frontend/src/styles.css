@@ -981,10 +981,39 @@ button{cursor:pointer}
   margin:0 0 11px;color:#2b2823;font-family:Georgia,"Times New Roman",serif;
   font-size:21px;font-weight:600;line-height:1.25;
 }
+.inline-reference-members{
+  max-height:128px;overflow:auto;display:flex;flex-wrap:wrap;gap:5px;margin:0 0 12px;
+  padding:8px;border:1px solid #d8ccbb;background:rgba(255,255,255,.32);
+  scrollbar-color:#c3b7a6 transparent;
+}
+.inline-reference-members button{
+  display:flex;align-items:center;gap:5px;border:1px solid #cfc1ad;border-radius:4px;
+  background:#f8f3ea;color:#5f513e;padding:5px 7px;font-size:8px;text-align:left;
+}
+.inline-reference-members button:hover,.inline-reference-members button.is-selected{
+  border-color:#80613b;background:#e4d5bd;color:#392b1b;
+}
+.inline-reference-members button span{color:#8e7b61;font-size:7px;font-weight:800;letter-spacing:.06em}
+.inline-legal-reference .inline-reference-selected-title{
+  margin:0 0 8px;color:#554a3c;font-family:Inter,ui-sans-serif,system-ui,sans-serif;
+  font-size:10px;font-weight:750;letter-spacing:.02em;
+}
 .inline-reference-text{max-height:360px;overflow:auto;padding-right:8px;scrollbar-color:#c3b7a6 transparent}
 .inline-reference-text p{
   margin:0 0 10px;color:#38342e;font-family:Georgia,"Times New Roman",serif;font-size:15px;line-height:1.65;
 }
+.inline-reference-applicability{
+  margin:12px 0 0;padding:11px 12px;border:1px solid #c9cdbd;border-left:3px solid #6f7b62;
+  background:#edf0e7;color:#454b3f;
+}
+.inline-reference-applicability>strong{
+  display:block;margin-bottom:4px;font-size:8px;font-weight:900;letter-spacing:.1em;text-transform:uppercase;
+}
+.inline-reference-applicability>p{margin:0;font-family:Georgia,"Times New Roman",serif;font-size:12px;line-height:1.5}
+.inline-reference-applicability ul{display:grid;gap:5px;margin:9px 0 0;padding:8px 0 0;border-top:1px solid #cfd3c5;list-style:none}
+.inline-reference-applicability li{display:grid;grid-template-columns:minmax(90px,.35fr) minmax(0,1fr);gap:8px;font-size:8px;line-height:1.4}
+.inline-reference-applicability li a{color:#526047;font-weight:800;text-transform:capitalize}
+.inline-reference-applicability li span{color:#656b5e}
 .inline-legal-reference>footer{display:flex;align-items:center;gap:9px;margin-top:13px;padding-top:12px;border-top:1px solid #d7ccbd}
 .inline-legal-reference>footer a,.inline-legal-reference>footer button{
   border:1px solid #c8b9a4;border-radius:5px;background:transparent;color:#5d4930;

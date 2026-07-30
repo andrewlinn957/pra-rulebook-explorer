@@ -29,7 +29,9 @@ from xml.etree import ElementTree
 ARTICLE_PREFIX_RE = re.compile(r"\b(?P<prefix>Articles?|Arts?\.?)\s*", re.I)
 ARTICLE_TOKEN_RE = re.compile(
     r"(?P<base>\d{1,3}[A-Za-z]{0,3})"
-    r"(?P<paragraphs>(?:\s*\(\s*[0-9A-Za-zivxlcdm.-]+\s*\))*)",
+    r"(?P<paragraphs>"
+    r"(?:\s*\.\s*[0-9][0-9A-Za-z-]*)?"
+    r"(?:\s*\(\s*[0-9A-Za-zivxlcdm.-]+\s*\))*)",
     re.I,
 )
 ARTICLE_SEPARATOR_RE = re.compile(

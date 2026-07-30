@@ -87,11 +87,11 @@ function boundaryMatch(text, needle, start) {
   return true;
 }
 
-function citationMatch(paragraph, reference) {
+function citationMatch(paragraph, reference, startAt = 0) {
   const haystack = paragraph.toLocaleLowerCase();
   for (const needle of citationNeedles(reference)) {
     const lowerNeedle = needle.toLocaleLowerCase();
-    let start = haystack.indexOf(lowerNeedle);
+    let start = haystack.indexOf(lowerNeedle, startAt);
     while (start >= 0) {
       if (boundaryMatch(paragraph, needle, start)) {
         return { start, end: start + needle.length };
@@ -105,7 +105,19 @@ function citationMatch(paragraph, reference) {
 export function readerReferences(rootNode, graph = {}) {
   const byId = new Map((graph.nodes || []).map(node => [node.id, node]));
   const references = [];
-  const seen = new Set();
+  const occurrenceGroups = new Map();
+  const seenOccurrences = new Set();
+  const seenFallbacks = new Set();
+  const occurrenceCoveredTargets = new Set(
+    (graph.edges || []).flatMap(edge => (
+      edge.metadata?.reference_occurrences || []
+    ))
+      .filter(occurrence => (
+        occurrence.status === 'materialized'
+        && occurrence.source_node_id === rootNode?.id
+      ))
+      .map(occurrence => `${occurrence.target_node_id}|REF`),
+  );
   for (const edge of graph.edges || []) {
     if (!READING_EDGE_TYPES.has(edge.edge_type)) continue;
     // The reading spine follows citations made by the current provision.
@@ -118,14 +130,68 @@ export function readerReferences(rootNode, graph = {}) {
       edge.from_node_id !== rootNode?.id
       && !rolledUpSources.includes(rootNode?.id)
     ) continue;
-    const targetId = edge.to_node_id;
-    const target = byId.get(targetId);
-    if (!target || target.id === rootNode.id) continue;
     const relationship = readingRelationship(edge.edge_type);
-    const key = `${target.id}|${relationship.code}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
     const metadata = edge.metadata || {};
+    const occurrences = (metadata.reference_occurrences || [])
+      .filter(occurrence => occurrence.status === 'materialized')
+      .filter(occurrence => (
+        occurrence.source_node_id === rootNode?.id
+        || edge.from_node_id === rootNode?.id
+        || rolledUpSources.includes(occurrence.source_node_id)
+      ));
+    if (occurrences.length) {
+      for (const occurrence of occurrences) {
+        if (!occurrence.occurrence_id || seenOccurrences.has(occurrence.occurrence_id)) {
+          continue;
+        }
+        seenOccurrences.add(occurrence.occurrence_id);
+        const target = byId.get(occurrence.target_node_id)
+          || byId.get(edge.to_node_id);
+        if (!target || target.id === rootNode?.id) continue;
+        const groupKey = `${occurrence.group_id || occurrence.occurrence_id}|${relationship.code}`;
+        const group = occurrenceGroups.get(groupKey) || {
+          id: `occurrence-group:${groupKey}`,
+          occurrenceGroupId: occurrence.group_id || occurrence.occurrence_id,
+          node: target,
+          edge,
+          relationship,
+          citation: compactWhitespace(
+            occurrence.group_text
+            || occurrence.citation_text
+            || target.title
+          ),
+          sourceHeading: compactWhitespace(
+            target.metadata?.instrument_title
+            || target.metadata?.part_title
+            || target.metadata?.official_document_title
+            || target.metadata?.document_title
+            || target.metadata?.source_title
+            || 'PRA Rulebook'
+          ),
+          sourceSpan: occurrence.metadata?.group_span || occurrence.source_span || {
+            start: occurrence.span_start,
+            end: occurrence.span_end,
+          },
+          members: [],
+        };
+        group.members.push({
+          id: occurrence.occurrence_id,
+          occurrence,
+          node: target,
+          edge,
+          citation: compactWhitespace(occurrence.citation_text || target.title),
+        });
+        occurrenceGroups.set(groupKey, group);
+      }
+      continue;
+    }
+
+    const target = byId.get(edge.to_node_id);
+    if (!target || target.id === rootNode?.id) continue;
+    const key = `${target.id}|${relationship.code}`;
+    if (occurrenceCoveredTargets.has(key)) continue;
+    if (seenFallbacks.has(key)) continue;
+    seenFallbacks.add(key);
     references.push({
       id: key,
       node: target,
@@ -139,25 +205,62 @@ export function readerReferences(rootNode, graph = {}) {
         || target.title
       ),
       sourceHeading: compactWhitespace(
-        target.metadata?.part_title
+        target.metadata?.instrument_title
+        || target.metadata?.part_title
+        || target.metadata?.official_document_title
         || target.metadata?.document_title
         || target.metadata?.source_title
         || 'PRA Rulebook'
       ),
+      members: [{
+        id: key,
+        occurrence: null,
+        node: target,
+        edge,
+        citation: compactWhitespace(metadata.reference || target.title),
+      }],
     });
+  }
+  for (const group of occurrenceGroups.values()) {
+    group.members.sort((a, b) => (
+      Number(a.occurrence?.span_start || 0) - Number(b.occurrence?.span_start || 0)
+      || a.citation.localeCompare(b.citation, undefined, { numeric: true })
+    ));
+    references.push(group);
   }
   return references.sort((a, b) => {
     const priority = { REF: 0, DEF: 1, RELATED: 2 };
-    return priority[a.relationship.code] - priority[b.relationship.code]
+    return Number(a.sourceSpan?.start ?? Number.MAX_SAFE_INTEGER)
+      - Number(b.sourceSpan?.start ?? Number.MAX_SAFE_INTEGER)
+      || priority[a.relationship.code] - priority[b.relationship.code]
       || a.citation.localeCompare(b.citation, undefined, { numeric: true });
   });
 }
 
 export function assignReferencesToParagraphs(paragraphs, references) {
+  const nextMatchByCitation = new Map();
   return references.map(reference => {
-    for (let paragraphIndex = 0; paragraphIndex < paragraphs.length; paragraphIndex += 1) {
-      const match = citationMatch(paragraphs[paragraphIndex], reference);
-      if (match) return { ...reference, paragraphIndex, match };
+    const citationKey = compactWhitespace(reference.citation).toLocaleLowerCase();
+    const previous = nextMatchByCitation.get(citationKey) || {
+      paragraphIndex: 0,
+      offset: 0,
+    };
+    for (
+      let paragraphIndex = previous.paragraphIndex;
+      paragraphIndex < paragraphs.length;
+      paragraphIndex += 1
+    ) {
+      const startAt = paragraphIndex === previous.paragraphIndex
+        ? previous.offset
+        : 0;
+      const match = citationMatch(paragraphs[paragraphIndex], reference, startAt);
+      if (match) {
+        nextMatchByCitation.set(citationKey, {
+          paragraphIndex,
+          offset: match.end,
+        });
+        return { ...reference, paragraphIndex, match };
+      }
     }
     return { ...reference, paragraphIndex: -1, match: null };
   });
@@ -165,7 +268,10 @@ export function assignReferencesToParagraphs(paragraphs, references) {
 
 export function paragraphCitationSegments(paragraph, references) {
   const matches = references
-    .map(reference => ({ reference, match: citationMatch(paragraph, reference) }))
+    .map(reference => ({
+      reference,
+      match: reference.match || citationMatch(paragraph, reference),
+    }))
     .filter(item => item.match)
     .sort((a, b) => a.match.start - b.match.start
       || b.match.end - b.match.start - (a.match.end - a.match.start));
@@ -193,6 +299,13 @@ export function paragraphCitationSegments(paragraph, references) {
     segments.push({ type: 'text', text: paragraph.slice(cursor) });
   }
   return segments.length ? segments : [{ type: 'text', text: paragraph }];
+}
+
+export function referenceDisplayTitle(reference) {
+  if ((reference?.members || []).length > 1) {
+    return reference.citation || `${reference.members.length} linked provisions`;
+  }
+  return reference?.node?.title || reference?.citation || 'Linked provision';
 }
 
 export function referenceShelfDensity(availableHeight, referenceCount) {

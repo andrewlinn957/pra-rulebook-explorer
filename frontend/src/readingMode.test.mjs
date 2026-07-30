@@ -6,6 +6,7 @@ import {
   assignReferencesToParagraphs,
   paragraphCitationSegments,
   readerReferences,
+  referenceDisplayTitle,
   readingRelationship,
   referenceShelfDensity,
   splitLegalParagraphs,
@@ -164,6 +165,139 @@ test('joined Article citations expose each referenced provision separately', () 
     segments.filter(segment => segment.type === 'citation').map(segment => segment.text),
     ['Articles 378', '379'],
   );
+});
+
+test('occurrence groups retain repeated citations to the same target', () => {
+  const root = {
+    id: 'audit-24',
+    text: 'Apply Article 16. Article 16 applies again.',
+  };
+  const target = { id: 'article-16', title: 'Article 16', text: 'Source text.' };
+  const graph = {
+    nodes: [root, target],
+    edges: [{
+      id: 'article-16-edge',
+      from_node_id: root.id,
+      to_node_id: target.id,
+      edge_type: 'references',
+      metadata: {
+        reference_occurrences: [
+          {
+            occurrence_id: 'first',
+            group_id: 'group-first',
+            source_node_id: root.id,
+            target_node_id: target.id,
+            status: 'materialized',
+            citation_text: 'Article 16',
+            group_text: 'Article 16',
+            span_start: 6,
+            span_end: 16,
+            metadata: { group_span: { start: 6, end: 16 } },
+          },
+          {
+            occurrence_id: 'second',
+            group_id: 'group-second',
+            source_node_id: root.id,
+            target_node_id: target.id,
+            status: 'materialized',
+            citation_text: 'Article 16',
+            group_text: 'Article 16',
+            span_start: 18,
+            span_end: 28,
+            metadata: { group_span: { start: 18, end: 28 } },
+          },
+        ],
+      },
+    }],
+  };
+
+  const references = readerReferences(root, graph);
+  assert.equal(references.length, 2);
+  assert.notEqual(references[0].id, references[1].id);
+  const placed = assignReferencesToParagraphs([root.text], references);
+  assert.deepEqual(placed.map(reference => reference.match.start), [6, 18]);
+});
+
+test('a coordinated range is one clickable citation with every target accessible', () => {
+  const root = {
+    id: 'audit-24',
+    text: 'Apply paragraphs 5 to 8 of Schedule 1.',
+  };
+  const nodes = [
+    root,
+    ...[5, 6, 7, 8].map(number => ({
+      id: `paragraph-${number}`,
+      title: `Schedule 1 paragraph ${number}`,
+      text: `Paragraph ${number} source text.`,
+    })),
+  ];
+  const groupText = 'paragraphs 5 to 8 of Schedule 1';
+  const edges = nodes.slice(1).map((node, index) => ({
+    id: `edge-${node.id}`,
+    from_node_id: root.id,
+    to_node_id: node.id,
+    edge_type: 'references',
+    metadata: {
+      reference_occurrences: [{
+        occurrence_id: `occurrence-${node.id}`,
+        group_id: 'schedule-range',
+        source_node_id: root.id,
+        target_node_id: node.id,
+        status: 'materialized',
+        citation_text: `paragraphs ${index + 5}`,
+        group_text: groupText,
+        span_start: 6,
+        span_end: 39,
+        metadata: { group_span: { start: 6, end: 39 } },
+      }],
+    },
+  }));
+
+  const references = readerReferences(root, { nodes, edges });
+  assert.equal(references.length, 1);
+  assert.equal(references[0].members.length, 4);
+  assert.equal(referenceDisplayTitle(references[0]), groupText);
+  const placed = assignReferencesToParagraphs([root.text], references);
+  assert.equal(placed[0].paragraphIndex, 0);
+  assert.equal(paragraphCitationSegments(root.text, placed)[1].text, groupText);
+});
+
+test('occurrence-backed references suppress duplicate legacy edges', () => {
+  const root = { id: 'root', text: 'See Article 26(6).' };
+  const target = { id: 'article-26-6', title: 'Article 26(6)', text: 'Text.' };
+  const occurrence = {
+    occurrence_id: 'occurrence',
+    group_id: 'group',
+    source_node_id: root.id,
+    target_node_id: target.id,
+    status: 'materialized',
+    citation_text: 'Article 26(6)',
+    group_text: 'Article 26(6)',
+    span_start: 4,
+    span_end: 17,
+    metadata: { group_span: { start: 4, end: 17 } },
+  };
+  const references = readerReferences(root, {
+    nodes: [root, target],
+    edges: [
+      {
+        id: 'legacy',
+        from_node_id: root.id,
+        to_node_id: target.id,
+        edge_type: 'references',
+        metadata: { reference: 'Article 26(6)' },
+      },
+      {
+        id: 'occurrence-edge',
+        from_node_id: root.id,
+        to_node_id: target.id,
+        edge_type: 'references',
+        metadata: { reference_occurrences: [occurrence] },
+      },
+    ],
+  });
+  assert.equal(references.length, 1);
+  assert.equal(references[0].members[0].id, 'occurrence');
 });
 
 test('defined terms remain clickable when the provision uses a simple plural', () => {

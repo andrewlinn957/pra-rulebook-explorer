@@ -11,7 +11,7 @@ from sklearn.cluster import KMeans
 
 from .db import row_to_edge, row_to_node
 
-EXPLICIT_METHODS = {"site_structure", "html_link", "html_anchor_resolved", "html_glossary_link", "glossary_source", "crr_terms_source", "legal_instrument_listing", "regex_reference", "regex_named_reference", "llm_extracted_reference", "resolved_part_reference", "fca_waivers_list"}
+EXPLICIT_METHODS = {"site_structure", "html_link", "html_anchor_resolved", "html_glossary_link", "glossary_source", "crr_terms_source", "legal_instrument_listing", "legal_reference_occurrence_v1", "regex_reference", "regex_named_reference", "llm_extracted_reference", "resolved_part_reference", "fca_waivers_list"}
 EDGE_LABELS = {"contains":"contains / child", "references":"cross-reference", "uses_defined_term":"uses defined term", "defines":"defines", "has_topic":"topic assignment", "has_topic_cluster":"topic cluster", "has_obligation_pattern":"obligation pattern", "shares_obligation_pattern":"shared obligation pattern", "has_structured_obligation":"structured obligation", "amends":"amends", "has_permission":"firm permission"}
 EDGE_COLOURS = {"contains":"#94a3b8", "references":"#60a5fa", "uses_defined_term":"#f59e0b", "defines":"#fbbf24", "has_topic":"#c084fc", "has_topic_cluster":"#22d3ee", "has_obligation_pattern":"#fb7185", "shares_obligation_pattern":"#f97316", "has_structured_obligation":"#e11d48", "amends":"#ef4444", "has_permission":"#a78bfa"}
 MATERIAL_COLOURS = {"rule":"#4f7cff", "supervisory_statement":"#22c55e", "statement_of_policy":"#14b8a6", "definition":"#d28b24", "permission":"#a78bfa", "external_reference":"#7b8190", "legal_instrument":"#cc5c5c", "topic":"#c084fc", "topic_cluster":"#22d3ee", "obligation_pattern":"#fb7185", "obligation_statement":"#e11d48", "analysis":"#d35cff", "rulebook":"#9b6bff"}
@@ -115,8 +115,53 @@ def neighbourhood(conn: sqlite3.Connection, node_id: str, *, depth: int = 1, lim
         "SELECT id,node_type,stable_key,title,text,url,metadata_json FROM node WHERE id IN (%s)" % ",".join("?" for _ in seen_nodes),
         list(seen_nodes),
     ).fetchall()]
-    nodes, edges = _roll_up_guidance_reference_nodes(conn, nodes, list(seen_edges.values()))
+    edges = list(seen_edges.values())
+    _attach_reference_occurrences(conn, edges)
+    nodes, edges = _roll_up_guidance_reference_nodes(conn, nodes, edges)
     return {"nodes": nodes, "edges": edges, "available_edge_types": available}
+
+
+def _attach_reference_occurrences(
+    conn: sqlite3.Connection,
+    edges: list[dict[str, Any]],
+) -> None:
+    """Attach every lexical citation occurrence without changing graph topology."""
+
+    if not edges or not conn.execute(
+        """
+        SELECT 1 FROM sqlite_master
+        WHERE type='table' AND name='reference_occurrence'
+        """
+    ).fetchone():
+        return
+    edge_ids = [str(edge["id"]) for edge in edges if edge.get("id")]
+    if not edge_ids:
+        return
+    placeholders = ",".join("?" for _ in edge_ids)
+    occurrences_by_edge: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in conn.execute(
+        f"""
+        SELECT occurrence_id,group_id,source_node_id,target_node_id,edge_id,
+               relationship_type,citation_kind,citation_text,group_text,
+               instrument_id,provision_path,qualifier,span_start,span_end,
+               status,source_method,confidence,context_text,metadata_json
+        FROM reference_occurrence
+        WHERE edge_id IN ({placeholders}) AND status='materialized'
+        ORDER BY source_node_id,span_start,span_end,occurrence_id
+        """,
+        edge_ids,
+    ):
+        occurrence = dict(row)
+        occurrence["metadata"] = _json(occurrence.pop("metadata_json", "{}"))
+        occurrence["source_span"] = {
+            "start": occurrence["span_start"],
+            "end": occurrence["span_end"],
+        }
+        occurrences_by_edge[str(occurrence["edge_id"])].append(occurrence)
+    for edge in edges:
+        occurrences = occurrences_by_edge.get(str(edge.get("id") or ""), [])
+        if occurrences:
+            edge.setdefault("metadata", {})["reference_occurrences"] = occurrences
 
 
 def _roll_up_guidance_reference_nodes(conn: sqlite3.Connection, nodes: list[dict[str, Any]], edges: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -169,6 +214,21 @@ def _roll_up_guidance_reference_nodes(conn: sqlite3.Connection, nodes: list[dict
                 for node_id in node_ids:
                     if node_id not in existing_directional:
                         existing_directional.append(node_id)
+            existing_occurrences = existing_meta.setdefault(
+                "reference_occurrences",
+                [],
+            )
+            known_occurrence_ids = {
+                item.get("occurrence_id")
+                for item in existing_occurrences
+            }
+            for occurrence in edge.get("metadata", {}).get(
+                "reference_occurrences",
+                [],
+            ):
+                if occurrence.get("occurrence_id") not in known_occurrence_ids:
+                    existing_occurrences.append(occurrence)
+                    known_occurrence_ids.add(occurrence.get("occurrence_id"))
             continue
         if rolled_from:
             edge["metadata"]["rolled_up_from_node_ids"] = rolled_from

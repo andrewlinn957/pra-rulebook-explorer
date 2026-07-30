@@ -4,7 +4,7 @@ import sqlite3
 from datetime import datetime, timezone
 
 
-LATEST_SCHEMA_VERSION = 6
+LATEST_SCHEMA_VERSION = 7
 
 
 ENRICHMENT_SCHEMA = """
@@ -70,7 +70,59 @@ def apply_migrations(conn: sqlite3.Connection) -> list[int]:
     if current < 6:
         _migrate_v6(conn)
         applied.append(6)
+        current = 6
+    if current < 7:
+        _migrate_v7(conn)
+        applied.append(7)
     return applied
+
+
+def _migrate_v7(conn: sqlite3.Connection) -> None:
+    """Store every legal citation span independently from its graph edge."""
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS reference_occurrence (
+          occurrence_id TEXT PRIMARY KEY,
+          group_id TEXT NOT NULL,
+          source_node_id TEXT NOT NULL,
+          target_node_id TEXT,
+          edge_id TEXT,
+          relationship_type TEXT NOT NULL DEFAULT 'REF',
+          citation_kind TEXT NOT NULL,
+          citation_text TEXT NOT NULL,
+          group_text TEXT NOT NULL,
+          instrument_id TEXT,
+          provision_path TEXT,
+          qualifier TEXT DEFAULT '',
+          span_start INTEGER NOT NULL,
+          span_end INTEGER NOT NULL,
+          status TEXT NOT NULL CHECK(status IN (
+            'materialized','unresolved','ambiguous','not_reference'
+          )),
+          source_method TEXT NOT NULL,
+          confidence REAL NOT NULL,
+          context_text TEXT DEFAULT '',
+          metadata_json TEXT DEFAULT '{}',
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          CHECK(span_start >= 0 AND span_end >= span_start),
+          CHECK(confidence >= 0.0 AND confidence <= 1.0),
+          CHECK(json_valid(metadata_json))
+        );
+        CREATE INDEX IF NOT EXISTS idx_reference_occurrence_source
+          ON reference_occurrence(source_node_id,span_start,span_end);
+        CREATE INDEX IF NOT EXISTS idx_reference_occurrence_target
+          ON reference_occurrence(target_node_id);
+        CREATE INDEX IF NOT EXISTS idx_reference_occurrence_edge
+          ON reference_occurrence(edge_id);
+        CREATE INDEX IF NOT EXISTS idx_reference_occurrence_status
+          ON reference_occurrence(status);
+        INSERT OR REPLACE INTO schema_migration(version,name,applied_at)
+        VALUES (7,'legal_reference_occurrences',CURRENT_TIMESTAMP);
+        PRAGMA user_version=7;
+        """
+    )
+    conn.commit()
 
 
 def _migrate_v6(conn: sqlite3.Connection) -> None:
