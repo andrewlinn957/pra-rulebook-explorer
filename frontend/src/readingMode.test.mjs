@@ -4,7 +4,10 @@ import { test } from 'node:test';
 
 import {
   assignReferencesToParagraphs,
+  legalTextBlocks,
+  mergeOverlappingReferences,
   paragraphCitationSegments,
+  readingSpine,
   readerReferences,
   referenceDisplayTitle,
   readingRelationship,
@@ -24,6 +27,61 @@ test('legal text becomes readable paragraphs without losing numbered clauses', (
     '(1) It must report promptly.',
     '(2) It must retain records.',
   ]);
+});
+
+test('legal text preserves nested list markers and does not split paragraph references', () => {
+  const blocks = legalTextBlocks(
+    'A firm must do the following: (1) retain records; (2) provide: '
+    + '(a) its name; (b) all of: (i) the date; (ii) the amount; and (c) '
+    + 'the information set out in (1).'
+  );
+  assert.deepEqual(
+    blocks.map(({ kind, marker, depth, text }) => ({
+      kind,
+      marker,
+      depth,
+      text,
+    })),
+    [
+      { kind: 'prose', marker: '', depth: 0, text: 'A firm must do the following:' },
+      { kind: 'list-item', marker: '(1)', depth: 0, text: 'retain records;' },
+      { kind: 'list-item', marker: '(2)', depth: 0, text: 'provide:' },
+      { kind: 'list-item', marker: '(a)', depth: 1, text: 'its name;' },
+      { kind: 'list-item', marker: '(b)', depth: 1, text: 'all of:' },
+      { kind: 'list-item', marker: '(i)', depth: 2, text: 'the date;' },
+      { kind: 'list-item', marker: '(ii)', depth: 2, text: 'the amount; and' },
+      {
+        kind: 'list-item',
+        marker: '(c)',
+        depth: 1,
+        text: 'the information set out in (1).',
+      },
+    ],
+  );
+});
+
+test('reading spine includes nested child provisions in source order', () => {
+  const spine = readingSpine({
+    root: { id: 'chapter', title: 'Chapter', text: '' },
+    children: [
+      {
+        id: 'section',
+        title: 'Section',
+        text: '',
+        children: [{ id: 'rule-1', title: '1.1', text: 'First rule.' }],
+      },
+      { id: 'rule-2', title: '1.2', text: 'Second rule.' },
+    ],
+  });
+  assert.deepEqual(
+    spine.map(entry => [entry.node.id, entry.depth, entry.isRoot, entry.bodyText]),
+    [
+      ['chapter', 0, true, ''],
+      ['section', 1, false, ''],
+      ['rule-1', 2, false, 'First rule.'],
+      ['rule-2', 1, false, 'Second rule.'],
+    ],
+  );
 });
 
 test('reference relationships use concise editorial labels', () => {
@@ -167,6 +225,40 @@ test('joined Article citations expose each referenced provision separately', () 
   );
 });
 
+test('overlapping cross-references and definitions remain accessible through one citation', () => {
+  const paragraph = 'Apply Art. 109 of the Solvency II Directive.';
+  const assigned = assignReferencesToParagraphs([paragraph], [
+    {
+      id: 'article',
+      citation: 'Art. 109 of the Solvency II Directive',
+      relationship: { code: 'REF', label: 'Cross-reference' },
+      node: { id: 'article-109', title: 'Article 109' },
+      edge: { metadata: {} },
+      members: [{ id: 'article-member', node: { id: 'article-109' } }],
+    },
+    {
+      id: 'directive',
+      citation: 'Solvency II Directive',
+      relationship: { code: 'DEF', label: 'Definition' },
+      node: { id: 'directive-term', title: 'Solvency II Directive' },
+      edge: { metadata: {} },
+      members: [{ id: 'directive-member', node: { id: 'directive-term' } }],
+    },
+  ]);
+  const merged = mergeOverlappingReferences(assigned);
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].relationship.code, 'RELATED');
+  assert.deepEqual(
+    merged[0].members.map(member => [member.node.id, member.relationship.code]),
+    [['article-109', 'REF'], ['directive-term', 'DEF']],
+  );
+  assert.equal(
+    paragraphCitationSegments(paragraph, merged)
+      .filter(segment => segment.type === 'citation').length,
+    1,
+  );
+});
+
 test('occurrence groups retain repeated citations to the same target', () => {
   const root = {
     id: 'audit-24',
@@ -300,6 +392,38 @@ test('occurrence-backed references suppress duplicate legacy edges', () => {
   assert.equal(references[0].members[0].id, 'occurrence');
 });
 
+test('legacy edges with the same citation become one reference with all targets retained', () => {
+  const root = { id: 'root', text: 'Apply 3.3.' };
+  const first = { id: 'first-33', title: '3.3', text: 'First candidate.' };
+  const second = { id: 'second-33', title: '3.3', text: 'Second candidate.' };
+  const references = readerReferences(root, {
+    nodes: [root, first, second],
+    edges: [
+      {
+        id: 'first',
+        from_node_id: root.id,
+        to_node_id: first.id,
+        edge_type: 'references',
+        evidence_text: 'General Provisions 3.3',
+        metadata: {},
+      },
+      {
+        id: 'second',
+        from_node_id: root.id,
+        to_node_id: second.id,
+        edge_type: 'references',
+        metadata: { reference: '3.3' },
+      },
+    ],
+  });
+  assert.equal(references.length, 1);
+  assert.equal(references[0].citation, '3.3');
+  assert.deepEqual(
+    references[0].members.map(member => member.node.id),
+    ['first-33', 'second-33'],
+  );
+});
+
 test('defined terms remain clickable when the provision uses a simple plural', () => {
   const reference = {
     id: 'term-rule|DEF',
@@ -333,7 +457,8 @@ test('graph inspector exposes reading mode with inline and pinned reference acti
   assert.match(interfaceSource, /Pin to shelf/);
   assert.match(interfaceSource, /Return inline/);
   assert.match(interfaceSource, /setExpandedId\(current=>current===reference\.id\?'':reference\.id\)/);
-  assert.match(interfaceSource, /depth:'1'/);
+  assert.match(interfaceSource, /\/reader/);
+  assert.doesNotMatch(interfaceSource, /Loading one-level references/);
 });
 
 test('reference shelf is space-aware, sticky, scrollable and becomes a narrow-screen drawer', () => {

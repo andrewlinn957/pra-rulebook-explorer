@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse
 
 from .db import DEFAULT_DB, connect, ensure_indexes, get_node
 from .feedback import create_feedback, list_feedback
-from .graph import betweenness, centrality, common_neighbours, communities, components, contents_tree, interesting, list_nodes, neighbourhood, search, semantic_map, shortest_path, stats
+from .graph import betweenness, centrality, common_neighbours, communities, components, contents_tree, interesting, list_nodes, neighbourhood, reader_bundle, search, semantic_map, shortest_path, stats
 from .reporting import (
     datapoint_detail,
     list_returns,
@@ -536,6 +536,15 @@ def api_contents(node_id: str) -> dict:
     conn = connect(DB_PATH)
     try:
         return contents_tree(conn, node_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Node not found")
+
+
+@app.get("/node/{node_id}/reader")
+def api_reader(node_id: str) -> dict:
+    conn = connect(DB_PATH)
+    try:
+        return reader_bundle(conn, node_id)
     except ValueError:
         raise HTTPException(status_code=404, detail="Node not found")
 

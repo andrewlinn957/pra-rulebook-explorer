@@ -368,6 +368,121 @@ def contents_tree(conn: sqlite3.Connection, node_id: str, *, max_depth: int = 4,
     return {"root": root, "children": children(node_id, 0)}
 
 
+def reader_bundle(
+    conn: sqlite3.Connection,
+    node_id: str,
+    *,
+    max_depth: int = 8,
+    max_children: int = 5000,
+) -> dict[str, Any]:
+    """Return a complete reading spine and every direct link made by that spine.
+
+    A graph neighbourhood is centred on one node, so it cannot represent the
+    citations made by contained rules without increasing graph depth and also
+    admitting references-of-references.  The reader has different semantics:
+    every contained provision is part of the fixed source spine, and only
+    outgoing reading relationships from those source provisions are included.
+    """
+
+    contents = contents_tree(
+        conn,
+        node_id,
+        max_depth=max_depth,
+        max_children=max_children,
+    )
+    spine_nodes: list[dict[str, Any]] = []
+    reading_source_nodes: list[dict[str, Any]] = []
+    seen_spine_ids: set[str] = set()
+    structural_types = {
+        "rulebook",
+        "part",
+        "chapter",
+        "guidance_document",
+        "guidance_section",
+    }
+
+    def collect(node: dict[str, Any]) -> None:
+        if node["id"] not in seen_spine_ids:
+            seen_spine_ids.add(node["id"])
+            flat_node = {key: value for key, value in node.items() if key != "children"}
+            spine_nodes.append(flat_node)
+            children = node.get("children") or []
+            if (
+                str(node.get("text") or "").strip()
+                and not (children and node.get("node_type") in structural_types)
+            ):
+                reading_source_nodes.append(flat_node)
+        for child in node.get("children") or []:
+            collect(child)
+
+    collect({**contents["root"], "children": contents["children"]})
+    source_ids = [node["id"] for node in reading_source_nodes]
+    edges_by_id: dict[str, dict[str, Any]] = {}
+    available: Counter[str] = Counter()
+    edge_types = ("references", "uses_defined_term", "amends")
+
+    # Stay below conservative SQLite variable limits for very large Parts.
+    for start in range(0, len(source_ids), 750):
+        batch = source_ids[start:start + 750]
+        placeholders = ",".join("?" for _ in batch)
+        rows = conn.execute(
+            f"""
+            SELECT id,from_node_id,to_node_id,edge_type,source_method,confidence,
+                   evidence_text,source_url,metadata_json
+            FROM edge
+            WHERE from_node_id IN ({placeholders})
+              AND edge_type IN (?,?,?)
+            ORDER BY from_node_id,edge_type,confidence DESC,id
+            """,
+            [*batch, *edge_types],
+        ).fetchall()
+        for row in rows:
+            edge = row_to_edge(row)
+            edges_by_id[edge["id"]] = edge
+            available[edge["edge_type"]] += 1
+
+    edges = list(edges_by_id.values())
+    _attach_reference_occurrences(conn, edges)
+    endpoint_ids = set(source_ids)
+    endpoint_ids.update(
+        endpoint
+        for edge in edges
+        for endpoint in (edge.get("from_node_id"), edge.get("to_node_id"))
+        if endpoint
+    )
+    nodes_by_id = {node["id"]: node for node in spine_nodes}
+    missing_ids = sorted(endpoint_ids - set(nodes_by_id))
+    for start in range(0, len(missing_ids), 750):
+        batch = missing_ids[start:start + 750]
+        placeholders = ",".join("?" for _ in batch)
+        for row in conn.execute(
+            f"""
+            SELECT id,node_type,stable_key,title,text,url,metadata_json
+            FROM node WHERE id IN ({placeholders})
+            """,
+            batch,
+        ):
+            node = row_to_node(row)
+            nodes_by_id[node["id"]] = node
+
+    nodes, edges = _roll_up_guidance_reference_nodes(
+        conn,
+        list(nodes_by_id.values()),
+        edges,
+    )
+    return {
+        "contents": contents,
+        "graph": {
+            "nodes": nodes,
+            "edges": edges,
+            "available_edge_types": dict(sorted(available.items())),
+        },
+        "spine_node_count": len(spine_nodes),
+        "source_provision_count": len(reading_source_nodes),
+        "reference_level": 1,
+    }
+
+
 def _natural_sort_content(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     import re
     def key(item: dict[str, Any]) -> tuple:
@@ -380,16 +495,16 @@ def _natural_sort_content(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
         nums = tuple(int(x) for x in re.findall(r"\d+", raw)[:4])
         if lower.startswith("annex") or annex:
             structure_rank = 3
-            ordinal = (_roman_to_int(annex.group(1)) if annex else 9999, "")
+            ordinal = (_roman_to_int(annex.group(1)) if annex else 9999,)
         elif lower.startswith("rules on standards"):
             structure_rank = 1
-            ordinal = (nums[0] if nums else 9999, "")
+            ordinal = (nums[0] if nums else 9999,)
         elif lower.startswith("article") or article:
             structure_rank = 2
             ordinal = (int(article.group(1)) if article else (nums[0] if nums else 9999), article.group(2) if article else "")
         else:
             structure_rank = 0
-            ordinal = (nums[0] if nums else 9999, "")
+            ordinal = nums or (9999,)
         type_rank = {"chapter": 0, "rule": 1, "guidance_section": 2, "guidance_paragraph": 3}.get(item.get("node_type"), 9)
         return (type_rank, structure_rank, ordinal, raw.lower())
 

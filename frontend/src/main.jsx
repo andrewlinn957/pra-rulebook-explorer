@@ -33,13 +33,14 @@ import {
   reportingWorkbookDatapoints,
 } from './reportingCells.js';
 import {
-  READING_EDGE_TYPE_LIST,
   assignReferencesToParagraphs,
+  legalTextBlocks,
+  mergeOverlappingReferences,
   paragraphCitationSegments,
   readerReferences,
+  readingSpine,
   referenceDisplayTitle,
   referenceShelfDensity,
-  splitLegalParagraphs,
 } from './readingMode.js';
 import './styles.css';
 
@@ -314,6 +315,7 @@ function NodeFeedbackModal({node,text,setText,saving,onClose,onSubmit}){
 
 function ProvisionReader({rootNode,api,onClose}){
   const [root,setRoot]=useState(rootNode);
+  const [contents,setContents]=useState({root:null,children:[]});
   const [referenceGraph,setReferenceGraph]=useState({nodes:[rootNode],edges:[]});
   const [loading,setLoading]=useState(true);
   const [loadError,setLoadError]=useState('');
@@ -326,6 +328,7 @@ function ProvisionReader({rootNode,api,onClose}){
   useEffect(()=>{
     let cancelled=false;
     setRoot(rootNode);
+    setContents({root:null,children:[]});
     setReferenceGraph({nodes:[rootNode],edges:[]});
     setExpandedId('');
     setPinned([]);
@@ -333,15 +336,11 @@ function ProvisionReader({rootNode,api,onClose}){
     setMobileShelfOpen(false);
     setLoading(true);
     setLoadError('');
-    const params=new URLSearchParams({depth:'1',limit:'500',explicit_only:'false'});
-    READING_EDGE_TYPE_LIST.forEach(type=>params.append('edge_types',type));
-    Promise.all([
-      api(`/node/${encodeURIComponent(rootNode.id)}`),
-      api(`/node/${encodeURIComponent(rootNode.id)}/neighbourhood?${params}`),
-    ]).then(([full,neighbourhood])=>{
+    api(`/node/${encodeURIComponent(rootNode.id)}/reader`).then(bundle=>{
       if(cancelled) return;
-      setRoot(full);
-      setReferenceGraph(neighbourhood);
+      setRoot(bundle.contents?.root||rootNode);
+      setContents(bundle.contents||{root:rootNode,children:[]});
+      setReferenceGraph(bundle.graph||{nodes:[rootNode],edges:[]});
     }).catch(error=>{
       if(!cancelled) setLoadError(error.message||String(error));
     }).finally(()=>{
@@ -350,33 +349,57 @@ function ProvisionReader({rootNode,api,onClose}){
     return ()=>{cancelled=true;};
   },[rootNode.id]);
 
-  const paragraphs=useMemo(
-    ()=>splitLegalParagraphs(root?.text||''),
-    [root?.id,root?.text],
-  );
+  const referenceEdgesBySource=useMemo(()=>{
+    const bySource=new Map();
+    for(const edge of referenceGraph.edges||[]){
+      const sourceIds=new Set([
+        edge.from_node_id,
+        ...(edge.metadata?.rolled_up_from_from_node_ids||[]),
+        ...(edge.metadata?.reference_occurrences||[]).map(item=>item.source_node_id),
+      ].filter(Boolean));
+      for(const sourceId of sourceIds){
+        bySource.set(sourceId,[...(bySource.get(sourceId)||[]),edge]);
+      }
+    }
+    return bySource;
+  },[referenceGraph]);
+  const sections=useMemo(()=>readingSpine(contents).map(entry=>{
+    const blocks=legalTextBlocks(entry.bodyText||'');
+    const references=blocks.length?mergeOverlappingReferences(assignReferencesToParagraphs(
+      blocks,
+      readerReferences(entry.node,{
+        nodes:referenceGraph.nodes||[],
+        edges:referenceEdgesBySource.get(entry.node.id)||[],
+      }),
+    )).map(reference=>({
+      ...reference,
+      readingSourceId:entry.node.id,
+      readingSourceTitle:entry.node.title||displayNodeTitle(entry.node),
+      readingBlockId:reference.paragraphIndex>=0
+        ?`${entry.node.id}:${reference.paragraphIndex}`
+        :`${entry.node.id}:references`,
+    })):[];
+    return {...entry,blocks,references};
+  }),[contents,referenceGraph.nodes,referenceEdgesBySource]);
   const references=useMemo(
-    ()=>assignReferencesToParagraphs(
-      paragraphs,
-      readerReferences(root,referenceGraph),
-    ),
-    [root?.id,paragraphs,referenceGraph],
+    ()=>sections.flatMap(section=>section.references),
+    [sections],
   );
   const referenceById=useMemo(
     ()=>new Map(references.map(reference=>[reference.id,reference])),
     [references],
   );
-  const placedByParagraph=useMemo(()=>{
+  const placedByBlock=useMemo(()=>{
     const placed=new Map();
     for(const reference of references){
       if(reference.paragraphIndex<0) continue;
       placed.set(
-        reference.paragraphIndex,
-        [...(placed.get(reference.paragraphIndex)||[]),reference],
+        reference.readingBlockId,
+        [...(placed.get(reference.readingBlockId)||[]),reference],
       );
     }
     return placed;
   },[references]);
-  const unmatched=references.filter(reference=>reference.paragraphIndex<0);
   const linkedProvisionCount=references.reduce(
     (total,reference)=>total+Math.max(1,reference.members?.length||0),
     0,
@@ -433,9 +456,8 @@ function ProvisionReader({rootNode,api,onClose}){
     setExpandedId(reference.id);
     setMobileShelfOpen(false);
     requestAnimationFrame(()=>{
-      const index=Math.max(0,reference.paragraphIndex);
       readingScrollRef.current
-        ?.querySelector(`[data-paragraph-index="${index}"]`)
+        ?.querySelector(`[data-reading-block-id="${reference.readingBlockId}"]`)
         ?.scrollIntoView({behavior:'smooth',block:'center'});
     });
   }
@@ -448,6 +470,8 @@ function ProvisionReader({rootNode,api,onClose}){
     ||root?.metadata?.document_title
     ||root?.metadata?.source_title
     ||label(root?.node_type);
+  const provisionCount=sections.filter(section=>section.blocks.length).length;
+  const hasBody=sections.some(section=>section.blocks.length);
   return <div className="provision-reader">
     <header className="provision-reader-header">
       <button type="button" className="provision-reader-back" onClick={onClose}>← Graph</button>
@@ -463,59 +487,78 @@ function ProvisionReader({rootNode,api,onClose}){
             <span className="provision-kicker">Reading spine · {sourceHeading}</span>
             <h1>{displayNodeTitle(root)}</h1>
             <div className="provision-byline">
-              <span>{linkedProvisionCount} linked provision{linkedProvisionCount===1?'':'s'} across {references.length} citation{references.length===1?'':'s'} · one reference level</span>
+              <span>{loading
+                ?'Loading contained provisions and citations…'
+                :`${linkedProvisionCount} linked provision${linkedProvisionCount===1?'':'s'} across ${references.length} citation${references.length===1?'':'s'} · ${provisionCount} source provision${provisionCount===1?'':'s'} · expansions stop after one level`}</span>
               {root?.url&&<a href={root.url} target="_blank" rel="noopener noreferrer">Open original source ↗</a>}
             </div>
           </header>
-          {loadError&&<p className="reader-load-error">References could not be loaded: {loadError}</p>}
-          {!paragraphs.length&&!loading&&<p className="reader-empty">This node has no provision text. Its original source remains available above.</p>}
+          {loadError&&<p className="reader-load-error">Reader content could not be loaded: {loadError}</p>}
+          {!hasBody&&!loading&&<p className="reader-empty">This node and its contained provisions have no body text. The original source remains available above.</p>}
           <div className="legal-paragraphs">
-            {paragraphs.map((paragraph,index)=>{
-              const paragraphReferences=placedByParagraph.get(index)||[];
-              const segments=paragraphCitationSegments(paragraph,paragraphReferences);
-              const expanded=paragraphReferences.find(reference=>reference.id===expandedId);
+            {sections.map(section=>{
+              const unmatched=section.references.filter(reference=>reference.paragraphIndex<0);
               return <section
-                className="legal-paragraph"
-                key={`${index}-${paragraph.slice(0,30)}`}
-                data-paragraph-index={index}
-                data-reference-ids={paragraphReferences.map(reference=>reference.id).join(',')}
+                className={`reading-provision-section ${section.isRoot?'is-root':'is-child'}`}
+                key={section.node.id}
+                style={{'--section-depth':Math.max(0,section.depth-1)}}
               >
-                <span className="legal-paragraph-number">{String(index+1).padStart(2,'0')}</span>
-                <p>{segments.map((segment,segmentIndex)=>segment.type==='citation'
-                  ?<button
-                    type="button"
-                    key={`${segment.reference.id}-${segmentIndex}`}
-                    className={`legal-citation ${pinnedIds.has(segment.reference.id)?'is-pinned':''}`}
-                    onClick={()=>activateReference(segment.reference)}
-                    aria-expanded={expandedId===segment.reference.id}
-                  >{segment.text}<sup>{segment.reference.relationship.code}</sup></button>
-                  :<React.Fragment key={segmentIndex}>{segment.text}</React.Fragment>)}</p>
-                {expanded&&<InlineLegalReference
-                  reference={expanded}
-                  onCollapse={()=>setExpandedId('')}
-                  onPin={()=>pinReference(expanded)}
-                />}
+                {!section.isRoot&&<header className="reading-provision-heading">
+                  <span>{label(section.node.node_type)}</span>
+                  <h2>{section.node.title||displayNodeTitle(section.node)}</h2>
+                  {section.node.url&&<a href={section.node.url} target="_blank" rel="noopener noreferrer">Source ↗</a>}
+                </header>}
+                {section.blocks.map((block,index)=>{
+                  const blockId=`${section.node.id}:${index}`;
+                  const blockReferences=placedByBlock.get(blockId)||[];
+                  const segments=paragraphCitationSegments(block,blockReferences);
+                  const expanded=blockReferences.find(reference=>reference.id===expandedId);
+                  return <section
+                    className={`legal-paragraph legal-block-${block.kind} legal-depth-${Math.min(block.depth||0,3)}`}
+                    key={blockId}
+                    data-reading-block-id={blockId}
+                    data-reference-ids={blockReferences.map(reference=>reference.id).join(',')}
+                  >
+                    <span className="legal-paragraph-number" aria-hidden={!block.marker}>
+                      {block.marker||''}
+                    </span>
+                    <p>{segments.map((segment,segmentIndex)=>segment.type==='citation'
+                      ?<button
+                        type="button"
+                        key={`${segment.reference.id}-${segmentIndex}`}
+                        className={`legal-citation ${pinnedIds.has(segment.reference.id)?'is-pinned':''}`}
+                        onClick={()=>activateReference(segment.reference)}
+                        aria-expanded={expandedId===segment.reference.id}
+                      >{segment.text}<sup>{segment.reference.relationship.code}</sup></button>
+                      :<React.Fragment key={segmentIndex}>{segment.text}</React.Fragment>)}</p>
+                    {expanded&&<InlineLegalReference
+                      reference={expanded}
+                      onCollapse={()=>setExpandedId('')}
+                      onPin={()=>pinReference(expanded)}
+                    />}
+                  </section>;
+                })}
+                {unmatched.length>0&&<section
+                  className="legal-paragraph reader-reference-index"
+                  data-reading-block-id={`${section.node.id}:references`}
+                  data-reference-ids={unmatched.map(reference=>reference.id).join(',')}
+                >
+                  <span className="legal-paragraph-number">REF</span>
+                  <div>
+                    <h2>Other links from {section.node.title||displayNodeTitle(section.node)}</h2>
+                    <p>These relationships are recorded for this provision but are not anchored to a unique phrase in its text.</p>
+                    <div className="reader-reference-links">{unmatched.map(reference=><button type="button" key={reference.id} onClick={()=>activateReference(reference)}><b>{reference.relationship.code}</b>{referenceDisplayTitle(reference)}</button>)}</div>
+                    {unmatched.find(reference=>reference.id===expandedId)&&<InlineLegalReference
+                      reference={unmatched.find(reference=>reference.id===expandedId)}
+                      onCollapse={()=>setExpandedId('')}
+                      onPin={()=>pinReference(unmatched.find(reference=>reference.id===expandedId))}
+                    />}
+                  </div>
+                </section>}
               </section>;
             })}
-            {unmatched.length>0&&<section
-              className="legal-paragraph reader-reference-index"
-              data-paragraph-index={Math.max(0,paragraphs.length-1)}
-              data-reference-ids={unmatched.map(reference=>reference.id).join(',')}
-            >
-              <span className="legal-paragraph-number">REF</span>
-              <div>
-                <h2>Other linked provisions</h2>
-                <p>These relationships are recorded for this provision but are not anchored to a unique phrase in the source text.</p>
-                <div className="reader-reference-links">{unmatched.map(reference=><button type="button" key={reference.id} onClick={()=>activateReference(reference)}><b>{reference.relationship.code}</b>{referenceDisplayTitle(reference)}</button>)}</div>
-                {unmatched.find(reference=>reference.id===expandedId)&&<InlineLegalReference
-                  reference={unmatched.find(reference=>reference.id===expandedId)}
-                  onCollapse={()=>setExpandedId('')}
-                  onPin={()=>pinReference(unmatched.find(reference=>reference.id===expandedId))}
-                />}
-              </div>
-            </section>}
           </div>
-          {loading&&<div className="reader-loading">Loading one-level references…</div>}
+          {loading&&<div className="reader-loading">Loading provision hierarchy and direct references…</div>}
         </article>
       </main>
       {mobileShelfOpen&&<button type="button" className="reference-shelf-backdrop" onClick={()=>setMobileShelfOpen(false)} aria-label="Close pinned references"/>}
@@ -532,6 +575,18 @@ function ProvisionReader({rootNode,api,onClose}){
   </div>;
 }
 
+function LegalText({value,className=''}) {
+  const blocks=legalTextBlocks(value||'');
+  if(!blocks.length) return <p>No body text is available for this reference.</p>;
+  return <div className={`legal-text-blocks ${className}`}>{blocks.map((block,index)=><div
+    className={`legal-text-block legal-text-block-${block.kind} legal-depth-${Math.min(block.depth||0,3)}`}
+    key={`${index}-${block.marker}-${block.text.slice(0,24)}`}
+  >
+    <span aria-hidden={!block.marker}>{block.marker||''}</span>
+    <p>{block.text}</p>
+  </div>)}</div>;
+}
+
 function InlineLegalReference({reference,onCollapse,onPin}){
   const members=reference.members?.length
     ?reference.members
@@ -541,7 +596,6 @@ function InlineLegalReference({reference,onCollapse,onPin}){
   const selectedMember=members.find(member=>member.id===selectedMemberId)||members[0];
   const selectedNode=selectedMember?.node||reference.node;
   const selectedEdge=selectedMember?.edge||reference.edge;
-  const paragraphs=splitLegalParagraphs(selectedNode?.text||'');
   const sourceUrl=selectedNode?.url||selectedEdge?.source_url;
   const applicabilityNote=selectedNode?.metadata?.applicability_note;
   const relatedProvisions=selectedNode?.metadata?.related_provisions||[];
@@ -557,12 +611,10 @@ function InlineLegalReference({reference,onCollapse,onPin}){
         key={member.id}
         className={member.id===selectedMember?.id?'is-selected':''}
         onClick={()=>setSelectedMemberId(member.id)}
-      ><span>{String(index+1).padStart(2,'0')}</span>{member.citation||displayNodeTitle(member.node)}</button>)}
+      ><span>{String(index+1).padStart(2,'0')}</span>{member.relationship&&<b>{member.relationship.code}</b>}{member.citation||displayNodeTitle(member.node)}</button>)}
     </div>}
     {members.length>1&&<h3 className="inline-reference-selected-title">{displayNodeTitle(selectedNode)}</h3>}
-    <div className="inline-reference-text">{paragraphs.length
-      ?paragraphs.map((paragraph,index)=><p key={index}>{paragraph}</p>)
-      :<p>No body text is available for this reference.</p>}</div>
+    <div className="inline-reference-text"><LegalText value={selectedNode?.text||''}/></div>
     {applicabilityNote&&<aside className="inline-reference-applicability">
       <strong>UK applicability</strong>
       <p>{applicabilityNote}</p>
