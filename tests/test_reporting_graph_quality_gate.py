@@ -96,6 +96,22 @@ class ReportingGraphQualityGateTests(unittest.TestCase):
         failing_ids = {check["check_id"] for check in result["checks"] if check["status"] == "fail"}
         self.assertIn("graph_nodes_no_audit_cleanup", failing_ids)
 
+    def test_gate_fails_when_an_edge_targets_its_source(self):
+        db = self.make_db()
+        conn = sqlite3.connect(db)
+        conn.execute(
+            "INSERT INTO graph_edge(edge_id,source_node_id,target_node_id,edge_type) VALUES (?,?,?,?)",
+            ("self-edge", "source_document:a", "source_document:a", "REFERENCES_SOURCE"),
+        )
+        conn.commit()
+        conn.close()
+
+        result = run_quality_gate(db)
+
+        self.assertEqual(result["status"], "fail")
+        by_id = {check["check_id"]: check for check in result["checks"]}
+        self.assertEqual(by_id["graph_edges_have_distinct_endpoints"]["row_count"], 1)
+
     def test_gate_fails_when_edges_still_point_to_duplicate_source_nodes(self):
         db = self.make_db()
         conn = sqlite3.connect(db)

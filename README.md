@@ -154,11 +154,40 @@ download any newly published official files, and refresh its graph projection:
 ```bash
 .venv/bin/python scripts/rebuild_reporting_catalog.py --download-missing
 .venv/bin/python scripts/project_reporting_ontology.py
+.venv/bin/python scripts/project_reporting_instruction_coordinates.py --apply
 ```
 
-Useful catalogue endpoints are `GET /reporting/catalog` and
-`GET /reporting/catalog/{return_id}`. Pillar 3 disclosures are deliberately a
+Useful catalogue endpoints are `GET /reporting/catalog`,
+`GET /reporting/catalog/{return_id}` and
+`GET /reporting/catalog/{return_id}/cells`. The cell endpoint bridges a
+normalized requirement edition to the existing parsed template, row, column
+and datapoint corpora, including both normalized relational cells and
+graph-native workbook cells. It uses the edition's exact official-template URL
+first, with the direct data-item identity reserved for catalogue rows that have
+no template artifact. Annex editions can therefore reach their existing
+COREP/FINREP cells without filename guessing, stale-version fallback or
+cross-resource leakage. Duplicate data-item projections and parallel graph
+evidence are collapsed to one logical template and cell. Its `coverage` field
+distinguishes cell data that is
+available from templates that have not yet been parsed and editions that are
+not yet mapped to a parsed template. Pillar 3 disclosures are deliberately a
 separate estate from regulatory returns.
+
+`GET /reporting/impact/{target_node_id}` provides the evidence-led foundation
+for rule-change applications. It finds reporting instruction sources that
+directly reference a changed graph node and returns the supporting passages.
+Where the same instruction provision names an explicit row, column or cell, it
+returns `direct_coordinate_evidence` separately. The remaining associated
+templates and cells are `candidate_scope`. Neither tier is automatically a
+confirmed edit: a user must review the instruction passage and the legal change.
+
+The instruction projector is deterministic and idempotent. A run without
+`--apply` is read-only. It creates `InstructionProvision` nodes, exact
+`REFERENCES_RULE` links only where a canonical legal target exists, and
+`INSTRUCTS` links only for explicit coordinates. When an instruction names a
+valid row/column pair that the workbook parser did not materialize as a
+`DataPoint`, the graph retains it as a visibly
+`instruction_defined_not_materialized` reporting coordinate.
 
 The ontology and naming conventions are documented in
 [`docs/reporting-estate-ontology.md`](docs/reporting-estate-ontology.md). The
@@ -199,6 +228,12 @@ Frontend URL: `http://127.0.0.1:5173`
 
 Implemented UI features:
 
+- reporting-estate navigation from official collection and dated requirement
+  edition through resources and template components;
+- edition-aware cell search with explicit template, row and column coordinates,
+  datatype, unit and official-source context;
+- rule-change impact tracing from a changed provision to direct instruction
+  evidence and separately labelled candidate template/cell scope;
 - keyword search across the corpus;
 - selected-node neighbourhood graph;
 - controls for depth, node cap, edge types and explicit-only mode;

@@ -108,6 +108,18 @@ Edition properties include:
 Templates, instructions and taxonomy entry points attach to an edition, not
 directly to the timeless requirement.
 
+In user-facing graphs, both the stable requirement and its editions use the
+requirement's code and official name. Lifecycle status and effective dates are
+secondary metadata shown by the inspector or status treatment; they are not
+substitutes for the node's meaningful requirement label.
+
+Structural hierarchy is visible in the reporting-estate overview but is hidden
+by default after a requirement is selected. The requirement canvas prioritises
+forms, guidance and related rules. When the catalogue contains multiple
+editions of the same requirement, the UI presents them through a compact
+edition/history control rather than adding requirement and edition wrapper
+nodes to the default canvas.
+
 ## Resources
 
 A `Resource` is an official published object. Resource role and file format are
@@ -178,6 +190,92 @@ Instruction resource
 
 An instruction provision can apply to a whole requirement, an edition, a
 template, a row, a column, or a field or concept.
+
+The deterministic instruction projection uses the following evidence path:
+
+```text
+Rulebook provision
+↑ REFERENCES_RULE
+InstructionProvision
+├── EVIDENCED_BY → official instruction resource
+├── APPLIES_TO → default template
+└── INSTRUCTS → DataPoint, TemplateRow or ReportingCoordinate
+```
+
+`ReportingCoordinate` represents an explicit template/row/column combination
+from an instruction where the template dimensions exist but the current
+workbook parser did not create a `DataPoint`. Its
+`coverage_status=instruction_defined_not_materialized` is a data-coverage fact,
+not a weaker form of instruction evidence.
+
+## Cell read model
+
+The normalized catalogue and the existing parsed datapoint corpus are at
+different lifecycle stages. Public cell navigation therefore uses an explicit
+read-model bridge:
+
+```text
+Requirement edition
+└── exact official-template source, or direct code when no artifact exists
+    └── legacy DataItem
+        └── USES_TEMPLATE
+            └── Template (relational or graph-native)
+                ├── TemplateRow
+                ├── TemplateColumn
+                └── DataPoint
+```
+
+This bridge is exposed by `GET /reporting/catalog/{return_id}/cells`. It is a
+compatibility read model, not a new ontology edge. Consumers must inspect the
+returned `coverage` value. Relational templates are preferred when the same
+logical template code exists in both corpora; otherwise exact-source
+graph-native templates and datapoints are included. Parallel graph edges to
+the same datapoint do not create duplicate public cells, and duplicate
+DataItem projections of the same workbook sheet are collapsed in favour of
+the edition's own return code.
+
+- `available` means parsed cells can be searched and paged;
+- `templates_without_cells` means templates are linked but their cells have
+  not been parsed into the current database;
+- `return_not_mapped` means the catalogue edition has no link to a parsed
+  legacy template.
+
+The UI must surface these states directly. Absence of cells must never be
+presented as evidence that a reporting requirement has no fields.
+
+The cell viewer selects one logical template at a time and reconstructs its
+row-by-column matrix from `TemplateRow`, `TemplateColumn` and `DataPoint`
+coordinates. It retrieves every paged datapoint for that template before
+rendering, preserves empty intersections, and keeps row and column headings
+fixed while the matrix scrolls. Search narrows matching rows while retaining
+the template's full ordered column structure. A flat cross-template cell
+ledger is not the primary presentation.
+
+When a normalized Annex code differs from the older aggregate data-item code,
+the bridge may use an exact official template URL shared by the catalogue
+artifact, source document and DataItem evidence. Templates are then constrained
+to that same artifact URL. A source-level match must never expose every template
+from an aggregate DataItem such as FINREP or COR011.
+
+## Change-impact evidence tiers
+
+Change-impact applications use `GET /reporting/impact/{target_node_id}` and
+must preserve three evidence tiers:
+
+1. `direct_instruction_reference` — an instruction source has an extracted,
+   source-backed graph relationship to the changed rule or provision.
+2. `direct_coordinate_evidence` — the same instruction provision expressly
+   names the changed rule and a reporting row, column or cell. This narrows the
+   review to exact coordinates but does not prove that an edit is required.
+3. `candidate_scope` — templates and cells sit downstream of the affected
+   reporting return and therefore require review, but no precise instruction
+   provision has yet proved that each coordinate changes.
+
+Applications must not relabel candidate scope as confirmed impact. A confirmed
+cell edit requires legal and reporting review of the changed rule and its
+instruction passage. An `INSTRUCTS` relationship proves that the passage names
+the coordinate; it does not predict the semantic effect of the future rule
+text.
 
 ## XBRL components
 

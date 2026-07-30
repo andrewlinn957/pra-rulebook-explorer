@@ -46,9 +46,12 @@ test('a single click on a reporting overview node loads its child navigation', (
   assert.match(source, /<ReportingChildNavigation node=\{nodeDetail\}/);
 });
 
-test('reporting graph defaults to one hop and combined relationship categories', () => {
+test('reporting graph keeps overview structure but hides it inside a selected requirement', () => {
   assert.match(source, /reportingOneHopGraph\(filtered,nodeDetail\?\.id\)/);
-  assert.match(source, /new Set\(\['structure','documents','rules'\]\)/);
+  assert.match(source, /new Set\(REPORTING_OVERVIEW_EDGE_GROUP_KEYS\)/);
+  assert.match(source, /new Set\(REPORTING_REQUIREMENT_EDGE_GROUP_KEYS\)/);
+  assert.match(source, /reportingRequirementEditions\(selectedRow,catalog\.returns\|\|\[\]\)/);
+  assert.match(source, /className="reporting-edition-switcher"/);
   assert.match(source, /relationshipFilters=\{REPORTING_EDGE_GROUPS\.map/);
   assert.doesNotMatch(source, /relationshipFilters=\{REPORTING_EDGE_TYPES\}/);
 });
@@ -57,7 +60,7 @@ test('reporting catalogue separates returns from Pillar 3 disclosures', () => {
   assert.match(source, /setEstate\('supervisory_reporting'\)/);
   assert.match(source, /setEstate\('pillar3_disclosure'\)/);
   assert.match(source, /Regulatory returns/);
-  assert.match(source, /Pillar 3 disclosures/);
+  assert.match(source, />Pillar 3</);
   assert.match(source, /disclosure sets/);
 });
 
@@ -90,7 +93,11 @@ test('reporting overview groups catalog rows by official collection', () => {
   assert.match(source, /const families=useMemo/);
   assert.match(source, /row\.collection_name\|\|row\.family/);
   assert.match(source, /className="reporting-catalog-list reporting-graph-nav"/);
-  assert.match(source, /return versions/);
+  assert.match(source, /'editions'/);
+  assert.match(source, /node_type:'ReportingCollection'/);
+  assert.match(source, /edge_type:'HAS_EDITION'/);
+  assert.match(source, /reportingOneHopGraph\(graph,nodeDetail\.id\)/);
+  assert.match(source, /focusCollection\(group\.name\)/);
   assert.doesNotMatch(source, /function groupReportingReturns\(roots\)/);
   assert.doesNotMatch(source, /function reportingEstateForReturn\(node\)/);
   assert.doesNotMatch(source, /function compareReturnCode\(a,b\)/);
@@ -101,7 +108,8 @@ test('reporting overview groups catalog rows by official collection', () => {
 });
 
 test('reporting child navigation groups related artefacts by relationship role', () => {
-  assert.match(source, /reportingChildGroups\(nodeDetail,graph\)/);
+  assert.match(source, /reportingChildGroups\(nodeDetail,activeGraph\)/);
+  assert.match(source, /reportingParentNodes\(nodeDetail,activeGraph\)/);
   assert.match(source, /REPORTING_EDGE_GROUPS\.map/);
   assert.match(source, /group\.children\.map/);
   assert.doesNotMatch(source, /function reportingRailGroups\(node,graph\)/);
@@ -146,6 +154,33 @@ test('reporting catalogue exposes templates, workbook sheets, instructions and R
   assert.match(source, /item\.sheet_names/);
   assert.match(source, /title="Instructions"/);
   assert.match(source, /Connected nodes/);
+});
+
+test('cell explorer renders the selected template as a coordinate matrix rather than a flat ledger', () => {
+  assert.match(source, /function ReportingTemplateMatrix\(/);
+  assert.match(source, /className="reporting-template-grid"/);
+  assert.match(source, /reportingTemplateGrid\(data\.cells\|\|\[\],query\)/);
+  assert.match(source, /pageSize=500/);
+  assert.match(source, /gridRef\.current\.scrollTo\(\{top:0,left:0\}\)/);
+  assert.doesNotMatch(source, /className="reporting-cell-ledger"/);
+  assert.doesNotMatch(source, /className="reporting-cell-pages"/);
+  assert.match(styles, /\.reporting-template-grid thead th\{[^}]*position:sticky/);
+  assert.match(styles, /\.reporting-template-grid tbody th\{[^}]*position:sticky;left:0/);
+  assert.match(source, /function ReportingWorkbookTemplate\(/);
+  assert.match(source, /reportingWorkbookCellStyle\(layout\.styles\?\.\[cell\.style_id\]/);
+  assert.match(source, /data\.layout\?\.format==='pdf'/);
+  assert.match(source, /function ReportingPdfTemplate\(/);
+  assert.match(source, /\/document#page=1&toolbar=0/);
+  assert.match(styles, /\.reporting-workbook-sheet\{/);
+  assert.match(styles, /\.reporting-pdf-template iframe\{/);
+});
+
+test('cell explorer carries the graph-selected template into the cells view', () => {
+  assert.match(source, /reportingTemplateForNode\(preferredNode,summary\.templates\)/);
+  assert.match(source, /reportingTemplateForNode\(nodeDetail,cellData\?\.templates\)/);
+  assert.match(source, /loadCells\(\{template:selectedTemplate,preferredNode:nodeDetail\}\)/);
+  assert.match(source, /coverage:'selected_template_unavailable'/);
+  assert.match(source, /reportingNodeSelectsTemplate\(nodeDetail\)&&!selectedTemplate/);
 });
 
 test('reporting catalogue keeps the legacy public return page removed', () => {

@@ -140,6 +140,7 @@ def _roll_up_guidance_reference_nodes(conn: sqlite3.Connection, nodes: list[dict
     for edge in edges:
         edge = {**edge, "metadata": dict(edge.get("metadata") or {})}
         rolled_from: list[str] = []
+        directional_rollups: dict[str, list[str]] = {}
         if edge.get("edge_type") == "references":
             for field in ("from_node_id", "to_node_id"):
                 original = edge.get(field)
@@ -147,6 +148,10 @@ def _roll_up_guidance_reference_nodes(conn: sqlite3.Connection, nodes: list[dict
                 if doc:
                     edge[field] = doc["id"]
                     rolled_from.append(original)
+                    directional_rollups.setdefault(
+                        f"rolled_up_from_{field.split('_', 1)[0]}_node_ids",
+                        [],
+                    ).append(original)
                     replaced_node_ids.add(original)
         if edge.get("from_node_id") == edge.get("to_node_id"):
             continue
@@ -159,9 +164,15 @@ def _roll_up_guidance_reference_nodes(conn: sqlite3.Connection, nodes: list[dict
             for node_id in rolled_from or edge.get("metadata", {}).get("rolled_up_from_node_ids", []):
                 if node_id not in existing_rollups:
                     existing_rollups.append(node_id)
+            for key, node_ids in directional_rollups.items():
+                existing_directional = existing_meta.setdefault(key, [])
+                for node_id in node_ids:
+                    if node_id not in existing_directional:
+                        existing_directional.append(node_id)
             continue
         if rolled_from:
             edge["metadata"]["rolled_up_from_node_ids"] = rolled_from
+            edge["metadata"].update(directional_rollups)
         deduped_edges[key] = edge
 
     kept_node_ids = {edge["from_node_id"] for edge in deduped_edges.values()} | {edge["to_node_id"] for edge in deduped_edges.values()}

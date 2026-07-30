@@ -8,6 +8,7 @@ from typing import Annotated
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 
 from .db import DEFAULT_DB, connect, ensure_indexes, get_node
 from .feedback import create_feedback, list_feedback
@@ -19,9 +20,13 @@ from .reporting import (
     relationship_evidence,
     reporting_neighbourhood,
     reporting_catalog,
+    reporting_catalog_cells,
     reporting_catalog_return,
+    reporting_change_impact,
     reporting_overview_graph,
     reporting_stats,
+    reporting_template_document_path,
+    reporting_template_layout,
     return_detail,
     return_references,
     returns_relying_on,
@@ -298,6 +303,91 @@ def api_reporting_catalog_return(return_id: str) -> dict:
         conn.close()
     if not result:
         raise HTTPException(status_code=404, detail="Reporting catalogue entry not found")
+    return result
+
+
+@app.get("/reporting/catalog/{return_id}/cells")
+def api_reporting_catalog_cells(
+    return_id: str,
+    q: str | None = None,
+    template_id: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> dict:
+    conn = connect(DB_PATH)
+    try:
+        result = reporting_catalog_cells(
+            conn,
+            return_id,
+            q=q,
+            template_id=template_id,
+            limit=_limit(limit, 500),
+            offset=_offset(offset),
+        )
+    finally:
+        conn.close()
+    if not result:
+        raise HTTPException(status_code=404, detail="Reporting catalogue entry not found")
+    return result
+
+
+@app.get("/reporting/templates/{template_id}/layout")
+def api_reporting_template_layout(template_id: str) -> dict:
+    conn = connect(DB_PATH)
+    try:
+        result = reporting_template_layout(
+            conn,
+            template_id,
+            project_root=PROJECT_ROOT,
+        )
+    finally:
+        conn.close()
+    if result is None:
+        raise HTTPException(status_code=404, detail="Workbook layout not available")
+    return result
+
+
+@app.get("/reporting/templates/{template_id}/document")
+def api_reporting_template_document(template_id: str) -> FileResponse:
+    conn = connect(DB_PATH)
+    try:
+        path = reporting_template_document_path(
+            conn,
+            template_id,
+            project_root=PROJECT_ROOT,
+        )
+    finally:
+        conn.close()
+    if path is None or path.suffix.lower() != ".pdf":
+        raise HTTPException(status_code=404, detail="PDF template not available")
+    return FileResponse(
+        path,
+        media_type="application/pdf",
+        content_disposition_type="inline",
+        filename=path.name,
+    )
+
+
+@app.get("/reporting/impact/{target_node_id:path}")
+def api_reporting_change_impact(
+    target_node_id: str,
+    include_historic: bool = False,
+    sample_cells: int = 8,
+    limit: int = 200,
+) -> dict:
+    conn = connect(DB_PATH)
+    try:
+        result = reporting_change_impact(
+            conn,
+            target_node_id,
+            include_historic=include_historic,
+            sample_cells=_limit(sample_cells, 50),
+            limit=_limit(limit, 1000),
+        )
+    finally:
+        conn.close()
+    if not result:
+        raise HTTPException(status_code=404, detail="Rulebook or reporting graph node not found")
     return result
 
 

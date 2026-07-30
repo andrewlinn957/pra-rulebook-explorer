@@ -1,0 +1,74 @@
+{
+  "overrides": [
+    {
+      "source_node_id": "fc86cc1a9d906e6d",
+      "article": "140",
+      "classification": "other",
+      "instrument": "Capital Requirements Directive 2013/36/EU",
+      "rationale": "The PDF table row is truncated after 'of', but the adjacent continuation identifies CRD Article 140(4), not the UK CRR."
+    },
+    {
+      "source_node_id": "f6e9ed8d80caabb6",
+      "article": "13",
+      "classification": "other",
+      "instrument": "Financial Services and Markets Act 2000 (Excluded Activities and Prohibitions) Order 2014",
+      "rationale": "Paragraph 9.2 of the same supervisory statement defines 'the Order' as SI 2014/2080; paragraph 9.3 then uses that anaphoric label."
+    },
+    {
+      "source_node_id": "f81896725adc78ba",
+      "article": "7",
+      "classification": "other",
+      "instrument": "Commission Delegated Regulation (EU) 2015/61",
+      "rationale": "The paragraph introduces these Articles as provisions of the LCR Delegated Act."
+    },
+    {
+      "source_node_id": "f81896725adc78ba",
+      "article": "8",
+      "classification": "other",
+      "instrument": "Commission Delegated Regulation (EU) 2015/61",
+      "rationale": "The paragraph introduces these Articles as provisions of the LCR Delegated Act."
+    },
+    {
+      "source_node_id": "f81896725adc78ba",
+      "article": "23",
+      "classification": "other",
+      "instrument": "Commission Delegated Regulation (EU) 2015/61",
+      "rationale": "The paragraph introduces these Articles as provisions of the LCR Delegated Act."
+    },
+    {
+      "source_node_id": "f81896725adc78ba",
+      "article": "24",
+      "classification": "other",
+      "instrument": "Commission Delegated Regulation (EU) 2015/61",
+      "rationale": "The paragraph introduces these Articles as provisions of the LCR Delegated Act."
+    },
+    {
+      "source_node_id": "f81896725adc78ba",
+      "article": "25",
+      "classification": "other",
+      "instrument": "Commission Delegated Regulation (EU) 2015/61",
+      "rationale": "The paragraph introduces these Articles as provisions of the LCR Delegated Act."
+    },
+    {
+      "source_node_id": "f81896725adc78ba",
+      "article": "27",
+      "classification": "other",
+      "instrument": "Commission Delegated Regulation (EU) 2015/61",
+      "rationale": "The paragraph introduces these Articles as provisions of the LCR Delegated Act."
+    },
+    {
+      "source_node_id": "d5e91d27ca49bbb1",
+      "article": "8",
+      "classification": "other",
+      "instrument": "Commission Delegated Regulation (EU) 2015/61",
+      "rationale": "The cross-reference points back to the LCR coverage discussion in section 4 of the same supervisory statement."
+    },
+    {
+      "source_node_id": "d3490697b0c1ecba",
+      "article": "16",
+      "classification": "other",
+      "instrument": "Regulation (EU) No 537/2014",
+      "rationale": "The same Rulebook definition names this instrument as the Statutory Audit Regulation before using 'that Regulation'."
+    }
+  ]
+}

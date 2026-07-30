@@ -37,6 +37,17 @@ class SqlCheck:
 
 SQL_CHECKS = [
     SqlCheck(
+        "graph_edges_have_distinct_endpoints",
+        "Graph edges must not point from a node back to itself.",
+        """
+        select edge_id,source_node_id,target_node_id,edge_type,extraction_method
+        from graph_edge
+        where source_node_id=target_node_id
+        limit 50
+        """,
+        expect="no_rows",
+    ),
+    SqlCheck(
         "graph_nodes_no_audit_cleanup",
         "Graph node properties must not expose audit cleanup metadata.",
         """

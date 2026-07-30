@@ -43,6 +43,9 @@ export const REPORTING_EDGE_GROUPS = [
   },
 ];
 
+export const REPORTING_OVERVIEW_EDGE_GROUP_KEYS = ['structure', 'documents', 'rules'];
+export const REPORTING_REQUIREMENT_EDGE_GROUP_KEYS = ['documents', 'rules'];
+
 const REPORTING_EDGE_GROUP_BY_TYPE = new Map(
   REPORTING_EDGE_GROUPS.flatMap(group => group.edgeTypes.map(edgeType => [edgeType, group])),
 );
@@ -66,6 +69,25 @@ export function reportingEdgeGroupCounts(graph) {
     if (group) counts[group.key] += 1;
   }
   return counts;
+}
+
+export function reportingRequirementEditions(selectedRow, returns) {
+  if (!selectedRow?.requirement_id) return [];
+  return (returns || [])
+    .filter(row => row.requirement_id === selectedRow.requirement_id)
+    .sort((left, right) => {
+      const dateOrder = String(left.effective_from || '').localeCompare(String(right.effective_from || ''));
+      return dateOrder || String(left.return_id || '').localeCompare(String(right.return_id || ''));
+    });
+}
+
+export function reportingEditionOptionLabel(row) {
+  const status = {
+    current: 'Current',
+    future: 'Future',
+    superseded: 'Superseded',
+  }[String(row?.status || '').toLowerCase()] || 'Edition';
+  return row?.effective_text ? `${status} · ${row.effective_text}` : status;
 }
 
 export function reportingChildGroups(node, graph) {

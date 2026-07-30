@@ -4,7 +4,12 @@ import json
 import re
 import sqlite3
 from collections import deque
+from pathlib import Path
 from typing import Any
+
+from pypdf import PdfReader
+
+from .xlsx_layout import _select_sheet, parse_xlsx_layout
 
 REPORTING_REFERENCE_EDGE_TYPES = {
     "REFERENCES_RULE",
@@ -148,6 +153,1199 @@ def reporting_catalog_return(conn: sqlite3.Connection, return_id: str) -> dict[s
     result["rulebook_references"] = (references or {}).get("references", [])
     result["reference_summary"] = (references or {}).get("summary", {})
     return result
+
+
+def reporting_catalog_cells(
+    conn: sqlite3.Connection,
+    return_id: str,
+    *,
+    q: str | None = None,
+    template_id: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> dict[str, Any] | None:
+    """Return the parsed template cells associated with a catalogue edition.
+
+    The normalized catalogue is edition-centred, while the existing cell
+    corpus is attached to the older ``DataItem -> Template`` projection.  This
+    read model is the deliberate bridge between those layers: callers use a
+    catalogue return or edition id and never need to know the legacy graph id.
+    Coverage is explicit because not every official workbook has been parsed
+    into cells yet.
+    """
+    catalog_row = conn.execute(
+        """
+        SELECT r.return_id,r.return_code,r.name,r.status,r.estate,r.source_page_url,
+               oe.edition_id
+        FROM reporting_return_catalog r
+        LEFT JOIN reporting_requirement_edition oe ON oe.legacy_return_id=r.return_id
+        WHERE r.return_id=? OR oe.edition_id=?
+        LIMIT 1
+        """,
+        (return_id, return_id),
+    ).fetchone()
+    if not catalog_row:
+        return None
+
+    data_item_id = _data_item_id(catalog_row["return_code"])
+    artifact_urls = [
+        row["url"]
+        for row in conn.execute(
+            """
+            SELECT DISTINCT a.url
+            FROM reporting_return_artifact ra
+            JOIN reporting_artifact a ON a.artifact_id=ra.artifact_id
+            WHERE ra.return_id=? AND ra.relationship='template'
+              AND COALESCE(a.url,'')<>''
+            """,
+            (catalog_row["return_id"],),
+        )
+    ]
+    artifact_sheet_names: dict[str, list[str]] = {}
+    for row in conn.execute(
+        """
+        SELECT a.url,a.sheet_names_json
+        FROM reporting_return_artifact ra
+        JOIN reporting_artifact a ON a.artifact_id=ra.artifact_id
+        WHERE ra.return_id=? AND ra.relationship='template'
+          AND lower(a.file_type) IN ('xlsx','xlsm','xltx')
+          AND COALESCE(a.url,'')<>''
+        """,
+        (catalog_row["return_id"],),
+    ):
+        try:
+            sheet_names = json.loads(row["sheet_names_json"] or "[]")
+        except json.JSONDecodeError:
+            sheet_names = []
+        if isinstance(sheet_names, list) and sheet_names:
+            artifact_sheet_names[row["url"]] = [
+                str(name) for name in sheet_names if str(name).strip()
+            ]
+    direct_data_item = conn.execute(
+        """
+        SELECT node_id FROM graph_node
+        WHERE node_id=? AND node_type='DataItem'
+        """,
+        (data_item_id,),
+    ).fetchone()
+    artifact_routed_data_items = {
+        row["data_item_id"]
+        for row in conn.execute(
+            f"""
+            SELECT DISTINCT di.node_id AS data_item_id
+            FROM graph_node di
+            JOIN graph_edge evidence
+              ON evidence.source_node_id=di.node_id
+             AND evidence.edge_type='EVIDENCED_BY'
+            JOIN graph_node source_node
+              ON source_node.node_id=evidence.target_node_id
+             AND source_node.node_type='SourceDocument'
+            JOIN source_document sd ON sd.source_id=source_node.source_pk
+            WHERE di.node_type='DataItem'
+              AND sd.url IN ({','.join('?' for _ in artifact_urls)})
+            """,
+            artifact_urls,
+        )
+    } if artifact_urls else set()
+    routed_data_items = set(artifact_routed_data_items)
+    direct_matches_artifact = False
+    if direct_data_item and artifact_urls:
+        direct_matches_artifact = bool(
+            conn.execute(
+                f"""
+                SELECT 1
+                FROM graph_edge uses
+                JOIN graph_node n
+                  ON n.node_id=uses.target_node_id AND n.node_type='Template'
+                JOIN template t
+                  ON t.template_id=n.source_pk OR t.template_id=n.node_id
+                JOIN source_document sd ON sd.source_id=t.source_id
+                WHERE uses.source_node_id=?
+                  AND uses.edge_type='USES_TEMPLATE'
+                  AND sd.url IN ({','.join('?' for _ in artifact_urls)})
+                LIMIT 1
+                """,
+                [data_item_id, *artifact_urls],
+            ).fetchone()
+        )
+    if direct_matches_artifact:
+        # Prefer the edition's own data-item route over broader aggregate
+        # packages that happen to cite the same workbook.
+        routed_data_items = {data_item_id}
+    elif direct_data_item and not artifact_urls:
+        routed_data_items.add(data_item_id)
+
+    exact_artifact_template = False
+    if artifact_urls:
+        exact_artifact_template = bool(
+            conn.execute(
+                f"""
+                SELECT 1
+                FROM graph_node n
+                LEFT JOIN template t
+                  ON t.template_id=n.node_id OR t.template_id=n.source_pk
+                LEFT JOIN source_document relational_source
+                  ON relational_source.source_id=t.source_id
+                LEFT JOIN source_document graph_source
+                  ON graph_source.source_id=json_extract(
+                    n.properties_json,'$.source_id'
+                  )
+                WHERE n.node_type='Template'
+                  AND (
+                    relational_source.url IN (
+                      {','.join('?' for _ in artifact_urls)}
+                    )
+                    OR (
+                      t.template_id IS NULL
+                      AND graph_source.url IN (
+                        {','.join('?' for _ in artifact_urls)}
+                      )
+                    )
+                  )
+                LIMIT 1
+                """,
+                [*artifact_urls, *artifact_urls],
+            ).fetchone()
+        )
+
+    # An edition's official template URL is the strongest available join key.
+    # Read templates directly from that exact source even when the older
+    # DataItem projection omitted USES_TEMPLATE/EVIDENCED_BY edges. Fall back
+    # to the edition's own legacy DataItem only when no exact-source template
+    # exists. Never fall back through an aggregate DataItem discovered from
+    # artifact evidence: that is what previously leaked unrelated FINREP and
+    # COR011 workbooks into an edition.
+    constrain_to_artifacts = exact_artifact_template
+    route_ids = sorted(routed_data_items)
+    relational_route_where = "1=0"
+    relational_route_params: list[Any] = []
+    graph_route_where = "1=0"
+    graph_route_params: list[Any] = []
+    if constrain_to_artifacts:
+        artifact_slots = ",".join("?" for _ in artifact_urls)
+        relational_route_where = (
+            f"(sd.url IN ({artifact_slots}) "
+            f"OR (sd.source_id IS NULL "
+            f"AND graph_sd.url IN ({artifact_slots})))"
+        )
+        relational_route_params.extend([*artifact_urls, *artifact_urls])
+        graph_route_where = f"sd.url IN ({artifact_slots})"
+        graph_route_params.extend(artifact_urls)
+    elif direct_data_item and not artifact_urls:
+        relational_route_where = graph_route_where = (
+            "EXISTS ("
+            "SELECT 1 FROM graph_edge uses "
+            "WHERE uses.target_node_id=n.node_id "
+            "AND uses.edge_type='USES_TEMPLATE' "
+            "AND uses.source_node_id=?"
+            ")"
+        )
+        relational_route_params.append(data_item_id)
+        graph_route_params.append(data_item_id)
+    scoped_family_code = str(catalog_row["return_code"] or "").upper()
+    if re.fullmatch(r"(?:PRA|RFB|LVR)\d{3}", scoped_family_code):
+        family_scope = (
+            "UPPER(COALESCE("
+            "json_extract(n.properties_json,'$.data_item_code'),?"
+            "))=?"
+        )
+        relational_route_where = (
+            f"({relational_route_where}) AND {family_scope}"
+        )
+        graph_route_where = f"({graph_route_where}) AND {family_scope}"
+        relational_route_params.extend(
+            [scoped_family_code, scoped_family_code]
+        )
+        graph_route_params.extend([scoped_family_code, scoped_family_code])
+
+    template_rows = conn.execute(
+        f"""
+        SELECT n.node_id,t.template_id,
+               COALESCE(
+                 json_extract(n.properties_json,'$.template_code'),
+                 t.template_code
+               ) AS template_code,
+               COALESCE(
+                 json_extract(n.properties_json,'$.template_title'),
+                 t.title
+               ) AS title,
+               t.annex,
+               COALESCE(sd.url,graph_sd.url) AS source_url,
+               COALESCE(sd.title,graph_sd.title) AS source_title,
+               (SELECT COUNT(*) FROM datapoint dp WHERE dp.template_id=t.template_id) AS cell_count,
+               (SELECT COUNT(*) FROM template_row tr WHERE tr.template_id=t.template_id) AS row_count,
+               (SELECT COUNT(*) FROM template_column tc WHERE tc.template_id=t.template_id) AS column_count
+        FROM graph_node n
+        JOIN template t
+          ON t.template_id=n.source_pk OR t.template_id=n.node_id
+        LEFT JOIN source_document sd ON sd.source_id=t.source_id
+        LEFT JOIN source_document graph_sd
+          ON graph_sd.source_id=json_extract(n.properties_json,'$.source_id')
+        WHERE n.node_type='Template'
+          AND {relational_route_where}
+          AND COALESCE(
+                json_extract(n.properties_json,'$.sheet_state'),
+                'visible'
+              )='visible'
+        GROUP BY n.node_id,t.template_id
+        ORDER BY t.template_code,t.title,t.template_id
+        """,
+        relational_route_params,
+    ).fetchall()
+    templates = _dedupe_template_summaries([
+        {
+            "node_id": row["node_id"],
+            "template_id": row["template_id"],
+            "template_code": row["template_code"],
+            "title": row["title"],
+            "annex": row["annex"],
+            "source_url": row["source_url"],
+            "source_title": row["source_title"],
+            "cell_count": int(row["cell_count"] or 0),
+            "row_count": int(row["row_count"] or 0),
+            "column_count": int(row["column_count"] or 0),
+        }
+        for row in template_rows
+    ], preferred_code=catalog_row["return_code"])
+    graph_template_rows = conn.execute(
+        f"""
+        SELECT n.node_id,n.label,n.properties_json,
+               sd.url AS source_url,sd.title AS source_title,
+               (SELECT COUNT(DISTINCT e.target_node_id) FROM graph_edge e
+                WHERE e.source_node_id=n.node_id
+                  AND e.edge_type='HAS_DATAPOINT') AS cell_count,
+               (SELECT COUNT(*) FROM graph_edge e
+                WHERE e.source_node_id=n.node_id
+                  AND e.edge_type='HAS_ROW') AS row_count,
+               (SELECT COUNT(*) FROM graph_edge e
+                WHERE e.source_node_id=n.node_id
+                  AND e.edge_type='HAS_COLUMN') AS column_count
+        FROM graph_node n
+        LEFT JOIN source_document sd
+          ON sd.source_id=json_extract(n.properties_json,'$.source_id')
+        WHERE n.node_type='Template'
+          AND {graph_route_where}
+          AND COALESCE(
+                json_extract(n.properties_json,'$.sheet_state'),
+                'visible'
+              )='visible'
+          AND NOT EXISTS (
+            SELECT 1 FROM template t
+            WHERE t.template_id=n.node_id OR t.template_id=n.source_pk
+          )
+        GROUP BY n.node_id
+        ORDER BY n.label,n.node_id
+        """,
+        graph_route_params,
+    ).fetchall()
+    seen_template_keys = {
+        _template_identity_key(template["template_code"])
+        for template in templates
+    }
+    graph_template_ids: set[str] = set()
+    graph_template_metadata: dict[str, dict[str, Any]] = {}
+    for row in graph_template_rows:
+        summary = _graph_template_summary(row)
+        identity_key = _template_identity_key(summary["template_code"])
+        if identity_key and identity_key in seen_template_keys:
+            continue
+        if identity_key:
+            seen_template_keys.add(identity_key)
+        graph_template_ids.add(summary["template_id"])
+        graph_template_metadata[summary["template_id"]] = summary
+        templates.append(summary)
+    if constrain_to_artifacts and artifact_sheet_names:
+        # A workbook URL can have stale legacy templates attached to it.  The
+        # catalogue's inspected worksheet list is the authoritative scope for
+        # this return (for example NSFR declares Index and sheets 80-84, not
+        # the unrelated C71 template that once pointed at the same URL).
+        templates = [
+            template
+            for template in templates
+            if not artifact_sheet_names.get(template.get("source_url") or "")
+            or _select_sheet(
+                [
+                    (sheet_name, "")
+                    for sheet_name in artifact_sheet_names[
+                        template.get("source_url") or ""
+                    ]
+                ],
+                template_id=template["template_id"],
+                template_code=template.get("template_code") or "",
+                title=template.get("title") or "",
+            )
+            is not None
+        ]
+        retained_template_ids = {
+            template["template_id"] for template in templates
+        }
+        graph_template_ids.intersection_update(retained_template_ids)
+        graph_template_metadata = {
+            template_id: metadata
+            for template_id, metadata in graph_template_metadata.items()
+            if template_id in retained_template_ids
+        }
+    templates.sort(
+        key=lambda row: (
+            str(row.get("template_code") or ""),
+            str(row.get("title") or ""),
+            str(row.get("template_id") or ""),
+        )
+    )
+    relational_template_ids = {
+        row["template_id"] for row in templates
+        if row["template_id"] not in graph_template_ids
+    }
+    available_template_ids = {row["template_id"] for row in templates}
+    selected_template_id = template_id if template_id in available_template_ids else None
+    filtered_template_ids = [selected_template_id] if selected_template_id else sorted(available_template_ids)
+    selected_relational_ids = [
+        value for value in filtered_template_ids
+        if value in relational_template_ids
+    ]
+    selected_graph_ids = [
+        value for value in filtered_template_ids
+        if value in graph_template_ids
+    ]
+    needle = f"%{q}%" if q else ""
+    cell_offset = offset
+    graph_total_from_metadata: int | None = None
+    if not q and not selected_relational_ids and selected_graph_ids:
+        # The graph-native corpus can contain tens of thousands of cells.
+        # Counting and sorting every one just to return the first page made
+        # the default explorer load take several seconds. Template summaries
+        # already hold distinct cell counts, so use those for the unfiltered
+        # total and only query the templates that intersect the requested page.
+        graph_total_from_metadata = sum(
+            int(graph_template_metadata[value]["cell_count"] or 0)
+            for value in selected_graph_ids
+        )
+        page_graph_ids: list[str] = []
+        cumulative = 0
+        page_capacity = 0
+        for value in selected_graph_ids:
+            template_count = int(
+                graph_template_metadata[value]["cell_count"] or 0
+            )
+            if cumulative + template_count <= offset:
+                cumulative += template_count
+                continue
+            if not page_graph_ids:
+                cell_offset = max(0, offset - cumulative)
+                page_capacity = template_count - cell_offset
+            else:
+                page_capacity += template_count
+            page_graph_ids.append(value)
+            cumulative += template_count
+            if page_capacity >= limit:
+                break
+        selected_graph_ids = page_graph_ids
+
+    total = 0
+    cell_selects: list[str] = []
+    cell_params: list[Any] = []
+    if selected_relational_ids:
+        relational_where = [
+            f"d.template_id IN ({','.join('?' for _ in selected_relational_ids)})"
+        ]
+        relational_params: list[Any] = list(selected_relational_ids)
+        if q:
+            relational_where.append(
+                "(d.datapoint_id LIKE ? OR d.concept_label LIKE ? OR "
+                "tr.row_code LIKE ? OR tr.label LIKE ? OR "
+                "tc.column_code LIKE ? OR tc.label LIKE ? OR "
+                "t.template_code LIKE ? OR t.title LIKE ?)"
+            )
+            relational_params.extend([needle] * 8)
+        total += conn.execute(
+            f"""
+            SELECT COUNT(*)
+            FROM datapoint d
+            JOIN template t ON t.template_id=d.template_id
+            LEFT JOIN template_row tr ON tr.row_id=d.row_id
+            LEFT JOIN template_column tc ON tc.column_id=d.column_id
+            WHERE {' AND '.join(relational_where)}
+            """,
+            relational_params,
+        ).fetchone()[0]
+        cell_selects.append(
+            f"""
+            SELECT t.template_code AS sort_template,
+                   COALESCE(tr.row_order,999999) AS sort_row,
+                   COALESCE(tc.column_order,999999) AS sort_column,
+                   d.datapoint_id,d.template_id,d.row_id,d.column_id,
+                   d.data_type,d.unit_type,d.concept_label,d.source_span_id,
+                   t.template_code,t.title AS template_title,
+                   tr.row_code,tr.label AS row_label,tr.row_order,
+                   tc.column_code,tc.label AS column_label,tc.column_order,
+                   gn.node_id,gn.label AS node_label,gn.properties_json
+            FROM datapoint d
+            JOIN template t ON t.template_id=d.template_id
+            LEFT JOIN template_row tr ON tr.row_id=d.row_id
+            LEFT JOIN template_column tc ON tc.column_id=d.column_id
+            LEFT JOIN graph_node gn ON gn.node_id=d.datapoint_id
+            WHERE {' AND '.join(relational_where)}
+            """
+        )
+        cell_params.extend(relational_params)
+
+    if graph_total_from_metadata is not None:
+        total += graph_total_from_metadata
+    if selected_graph_ids:
+        graph_where = [
+            f"h.source_node_id IN ({','.join('?' for _ in selected_graph_ids)})",
+            "h.edge_type='HAS_DATAPOINT'",
+            "dp.node_type='DataPoint'",
+        ]
+        graph_params: list[Any] = list(selected_graph_ids)
+        if q:
+            graph_where.append(
+                "(dp.node_id LIKE ? OR dp.label LIKE ? OR "
+                "json_extract(dp.properties_json,'$.row_code') LIKE ? OR "
+                "gr.label LIKE ? OR "
+                "json_extract(dp.properties_json,'$.column_code') LIKE ? OR "
+                "gc.label LIKE ? OR gt.node_id LIKE ? OR gt.label LIKE ?)"
+            )
+            graph_params.extend([needle] * 8)
+        graph_joins = """
+            FROM graph_edge h
+            JOIN graph_node gt
+              ON gt.node_id=h.source_node_id AND gt.node_type='Template'
+            JOIN graph_node dp ON dp.node_id=h.target_node_id
+            LEFT JOIN graph_node gr
+              ON gr.node_id=(
+                'row:' || gt.node_id || ':' ||
+                json_extract(dp.properties_json,'$.row_code')
+              )
+            LEFT JOIN graph_node gc
+              ON gc.node_id=(
+                'column:' || gt.node_id || ':' ||
+                json_extract(dp.properties_json,'$.column_code')
+              )
+        """
+        if graph_total_from_metadata is None:
+            total += conn.execute(
+                f"""
+                SELECT COUNT(DISTINCT dp.node_id)
+                {graph_joins}
+                WHERE {' AND '.join(graph_where)}
+                """,
+                graph_params,
+            ).fetchone()[0]
+        cell_selects.append(
+            f"""
+            SELECT DISTINCT gt.label AS sort_template,
+                   COALESCE(
+                     CAST(json_extract(dp.properties_json,'$.row_code') AS INTEGER),
+                     999999
+                   ) AS sort_row,
+                   COALESCE(
+                     CAST(json_extract(dp.properties_json,'$.column_code') AS INTEGER),
+                     999999
+                   ) AS sort_column,
+                   dp.node_id AS datapoint_id,
+                   gt.node_id AS template_id,
+                   gr.node_id AS row_id,
+                   gc.node_id AS column_id,
+                   json_extract(dp.properties_json,'$.data_type') AS data_type,
+                   json_extract(dp.properties_json,'$.unit_type') AS unit_type,
+                   dp.label AS concept_label,
+                   json_extract(dp.properties_json,'$.source_span_id') AS source_span_id,
+                   gt.label AS template_code,
+                   gt.label AS template_title,
+                   json_extract(dp.properties_json,'$.row_code') AS row_code,
+                   gr.label AS row_label,
+                   NULL AS row_order,
+                   json_extract(dp.properties_json,'$.column_code') AS column_code,
+                   gc.label AS column_label,
+                   NULL AS column_order,
+                   dp.node_id AS node_id,
+                   dp.label AS node_label,
+                   dp.properties_json
+            {graph_joins}
+            WHERE {' AND '.join(graph_where)}
+            """
+        )
+        cell_params.extend(graph_params)
+
+    cells: list[sqlite3.Row] = []
+    if cell_selects:
+        cells = conn.execute(
+            f"""
+            SELECT * FROM ({' UNION ALL '.join(cell_selects)})
+            ORDER BY sort_template,sort_row,sort_column,datapoint_id
+            LIMIT ? OFFSET ?
+            """,
+            [*cell_params, limit, cell_offset],
+        ).fetchall()
+    result_relational_ids = sorted({
+        row["template_id"] for row in cells
+        if row["template_id"] in relational_template_ids
+    })
+    row_metadata: dict[tuple[str, str], dict[str, Any]] = {}
+    column_metadata: dict[tuple[str, str], dict[str, Any]] = {}
+    if result_relational_ids:
+        slots = ",".join("?" for _ in result_relational_ids)
+        for row in conn.execute(
+            f"""
+            SELECT template_id,row_id,row_code,row_order,label
+            FROM template_row
+            WHERE template_id IN ({slots})
+            """,
+            result_relational_ids,
+        ):
+            row_metadata[(row["template_id"], str(row["row_code"] or ""))] = dict(row)
+        for row in conn.execute(
+            f"""
+            SELECT template_id,column_id,column_code,column_order,label
+            FROM template_column
+            WHERE template_id IN ({slots})
+            """,
+            result_relational_ids,
+        ):
+            column_metadata[(row["template_id"], str(row["column_code"] or ""))] = dict(row)
+    cell_results: list[dict[str, Any]] = []
+    for row in cells:
+        result = _datapoint_result(row)
+        graph_template = graph_template_metadata.get(result["template_id"])
+        if graph_template:
+            result["template_code"] = graph_template["template_code"]
+            result["template_title"] = graph_template["title"]
+        _fill_graph_coordinate(result)
+        row_meta = row_metadata.get((
+            str(result.get("template_id") or ""),
+            str(result.get("row_code") or ""),
+        ))
+        if row_meta:
+            result["row_id"] = result.get("row_id") or row_meta["row_id"]
+            result["row_label"] = result.get("row_label") or row_meta["label"]
+            result["row_order"] = row_meta["row_order"]
+        column_meta = column_metadata.get((
+            str(result.get("template_id") or ""),
+            str(result.get("column_code") or ""),
+        ))
+        if column_meta:
+            result["column_id"] = result.get("column_id") or column_meta["column_id"]
+            result["column_label"] = result.get("column_label") or column_meta["label"]
+            result["column_order"] = column_meta["column_order"]
+        cell_results.append(result)
+
+    cell_count = sum(row["cell_count"] for row in templates)
+    coverage = (
+        "available"
+        if cell_count
+        else "template_layout_available"
+        if templates
+        else "return_not_mapped"
+    )
+    return {
+        "return": {
+            "return_id": catalog_row["return_id"],
+            "edition_id": catalog_row["edition_id"],
+            "return_code": catalog_row["return_code"],
+            "name": catalog_row["name"],
+            "status": catalog_row["status"],
+            "estate": catalog_row["estate"],
+            "source_page_url": catalog_row["source_page_url"],
+            "data_item_id": route_ids[0] if route_ids else data_item_id,
+            "data_item_ids": route_ids,
+            "cell_mapping_basis": (
+                "official_template_source"
+                if constrain_to_artifacts
+                else "direct_return_code"
+                if direct_data_item and not artifact_urls
+                else "unmapped"
+            ),
+        },
+        "templates": templates,
+        "cells": cell_results,
+        "counts": {
+            "templates": len(templates),
+            "cells": cell_count,
+            "matched_cells": int(total),
+        },
+        "coverage": coverage,
+        "query": q or "",
+        "selected_template_id": selected_template_id,
+        "limit": limit,
+        "offset": offset,
+    }
+
+
+def _reporting_template_source(
+    conn: sqlite3.Connection,
+    template_id: str,
+) -> sqlite3.Row | None:
+    row = conn.execute(
+        """
+        SELECT t.template_id,t.template_code,t.title,t.source_id,
+               sd.local_path,sd.url AS source_url,sd.file_type,
+               (
+                 SELECT json_extract(n.properties_json,'$.sheet_name')
+                 FROM graph_node n
+                 WHERE n.node_id=t.template_id
+                 LIMIT 1
+               ) AS sheet_name
+        FROM template t
+        LEFT JOIN source_document sd ON sd.source_id=t.source_id
+        WHERE t.template_id=?
+        LIMIT 1
+        """,
+        (template_id,),
+    ).fetchone()
+    if row is None:
+        row = conn.execute(
+            """
+            SELECT n.node_id AS template_id,
+                   COALESCE(
+                     json_extract(n.properties_json,'$.data_item_code'),
+                     n.label
+                   ) AS template_code,
+                   n.label AS title,
+                   json_extract(n.properties_json,'$.source_id') AS source_id,
+                   sd.local_path,sd.url AS source_url,sd.file_type,
+                   json_extract(n.properties_json,'$.sheet_name') AS sheet_name
+            FROM graph_node n
+            LEFT JOIN source_document sd
+              ON sd.source_id=json_extract(n.properties_json,'$.source_id')
+            WHERE n.node_id=? AND n.node_type='Template'
+            LIMIT 1
+            """,
+            (template_id,),
+        ).fetchone()
+    return row
+
+
+def reporting_template_document_path(
+    conn: sqlite3.Connection,
+    template_id: str,
+    *,
+    project_root: Path,
+) -> Path | None:
+    row = _reporting_template_source(conn, template_id)
+    if row is None or not row["local_path"]:
+        return None
+    root = project_root.resolve()
+    source_path = (root / row["local_path"]).resolve()
+    if root not in source_path.parents:
+        return None
+    if not source_path.exists():
+        return None
+    return source_path
+
+
+def reporting_template_layout(
+    conn: sqlite3.Connection,
+    template_id: str,
+    *,
+    project_root: Path,
+) -> dict[str, Any] | None:
+    row = _reporting_template_source(conn, template_id)
+    if row is None:
+        return None
+    root = project_root.resolve()
+    source_path = reporting_template_document_path(
+        conn,
+        template_id,
+        project_root=project_root,
+    )
+    if source_path is None:
+        return None
+    if str(row["file_type"] or "").lower() == "pdf":
+        try:
+            page_count = len(PdfReader(source_path).pages)
+        except Exception:
+            return None
+        return {
+            "template_id": row["template_id"],
+            "template_code": row["template_code"],
+            "source_url": row["source_url"],
+            "format": "pdf",
+            "sheet_name": "PDF",
+            "dimension": f"{page_count} page{'s' if page_count != 1 else ''}",
+            "page_count": page_count,
+            "rows": [],
+            "columns": [],
+        }
+    layout = parse_xlsx_layout(
+        source_path,
+        template_id=row["template_id"],
+        template_code=row["sheet_name"] or row["template_code"] or "",
+        title=row["title"] or "",
+    )
+    layout_source_url = row["source_url"]
+    if layout is None:
+        sheet_hints = {row["template_code"] or ""}
+        code_match = re.search(r"(\d{1,3})(?:\.\d+)?", row["template_code"] or "")
+        if code_match:
+            sheet_hints.add(str(int(code_match.group(1))))
+        fallback_rows = conn.execute(
+            f"""
+            SELECT DISTINCT sd.local_path,sd.url AS source_url
+            FROM source_span sp
+            JOIN source_document sd ON sd.source_id=sp.source_id
+            WHERE sp.sheet_name IN ({','.join('?' for _ in sheet_hints)})
+              AND sd.file_type IN ('xlsx','xlsm','xltx')
+              AND COALESCE(sd.local_path,'')<>''
+            ORDER BY sd.local_path
+            """,
+            sorted(sheet_hints),
+        ).fetchall()
+        for fallback in fallback_rows:
+            fallback_path = (root / fallback["local_path"]).resolve()
+            if root not in fallback_path.parents:
+                continue
+            layout = parse_xlsx_layout(
+                fallback_path,
+                template_id=row["template_id"],
+                template_code=row["sheet_name"] or row["template_code"] or "",
+                title=row["title"] or "",
+            )
+            if layout is not None:
+                layout_source_url = fallback["source_url"]
+                break
+    if layout is None:
+        return None
+    return {
+        "template_id": row["template_id"],
+        "template_code": row["template_code"],
+        "source_url": layout_source_url,
+        **layout,
+    }
+
+
+def reporting_change_impact(
+    conn: sqlite3.Connection,
+    target_node_id: str,
+    *,
+    include_historic: bool = False,
+    sample_cells: int = 8,
+    limit: int = 200,
+) -> dict[str, Any] | None:
+    """Trace a changed rule to instruction evidence and candidate cell scope.
+
+    A reference edge proves that an instruction source mentions the changed
+    provision. It does *not* prove that every cell in the associated return
+    changes. The response keeps those evidence tiers separate so downstream
+    applications can review the direct instruction passages before narrowing
+    candidate templates and cells.
+    """
+    target = get_graph_node(conn, target_node_id)
+    if not target:
+        return None
+    reference_rows = conn.execute(
+        f"""
+        SELECT ref.edge_id,ref.edge_type,ref.confidence,ref.extraction_method,
+               ref.evidence_span_id,ref.properties_json,
+               di.node_id AS data_item_id,di.label AS return_label,
+               sdn.node_id AS source_node_id,
+               sd.source_id,sd.title AS source_title,sd.url AS source_url,
+               sd.file_type,sp.raw_text AS evidence_text,
+               sp.heading_path,sp.page_number,sp.sheet_name,sp.row_number
+        FROM graph_edge ref
+        JOIN graph_node sdn
+          ON sdn.node_id=ref.source_node_id AND sdn.node_type='SourceDocument'
+        JOIN graph_edge ev
+          ON ev.target_node_id=sdn.node_id AND ev.edge_type='EVIDENCED_BY'
+        JOIN graph_node di
+          ON di.node_id=ev.source_node_id AND di.node_type='DataItem'
+        LEFT JOIN source_document sd
+          ON sd.source_id=sdn.source_pk OR sd.source_id=sdn.node_id
+        LEFT JOIN source_span sp ON sp.span_id=ref.evidence_span_id
+        WHERE ref.target_node_id=?
+          AND ref.edge_type IN ({','.join('?' for _ in REPORTING_REFERENCE_EDGE_TYPES)})
+        ORDER BY di.label,sd.title,ref.confidence DESC,ref.edge_id
+        """,
+        [target_node_id, *sorted(REPORTING_REFERENCE_EDGE_TYPES)],
+    ).fetchall()
+
+    by_return: dict[str, dict[str, Any]] = {}
+
+    def ensure_return(
+        data_item_id: str,
+        *,
+        return_label: str | None = None,
+    ) -> dict[str, Any]:
+        return_code = str(data_item_id).removeprefix("data_item:")
+        return by_return.setdefault(
+            data_item_id,
+            {
+                "data_item_id": data_item_id,
+                "return_code": return_code,
+                "return_label": return_label or return_code,
+                "references": [],
+                "reference_count": 0,
+                "instruction_sources": {},
+                "direct_coordinates": [],
+                "direct_coordinate_count": 0,
+                "direct_coordinate_instruction_ids": set(),
+                "materialized_direct_cell_count": 0,
+                "instruction_defined_coordinate_count": 0,
+                "direct_coordinates_seen": set(),
+            },
+        )
+
+    for row in reference_rows:
+        entry = ensure_return(
+            row["data_item_id"],
+            return_label=row["return_label"],
+        )
+        entry["reference_count"] += 1
+        if len(entry["references"]) < limit:
+            entry["references"].append(
+                {
+                    "edge_id": row["edge_id"],
+                    "edge_type": row["edge_type"],
+                    "confidence": row["confidence"],
+                    "extraction_method": row["extraction_method"],
+                    "evidence_span_id": row["evidence_span_id"],
+                    "evidence_text": row["evidence_text"],
+                    "heading_path": row["heading_path"],
+                    "page_number": row["page_number"],
+                    "sheet_name": row["sheet_name"],
+                    "row_number": row["row_number"],
+                    "source_node_id": row["source_node_id"],
+                    "source_id": row["source_id"],
+                    "source_title": row["source_title"],
+                    "source_url": row["source_url"],
+                }
+            )
+        source_key = row["source_id"] or row["source_node_id"]
+        entry["instruction_sources"][source_key] = {
+            "source_node_id": row["source_node_id"],
+            "source_id": row["source_id"],
+            "title": row["source_title"],
+            "url": row["source_url"],
+            "file_type": row["file_type"],
+            "relationship": "direct_reference",
+        }
+
+    direct_coordinate_rows = conn.execute(
+        """
+        SELECT DISTINCT
+               legal.edge_id AS legal_edge_id,
+               legal.confidence AS legal_confidence,
+               legal.properties_json AS legal_properties_json,
+               coordinate.edge_id AS coordinate_edge_id,
+               coordinate.confidence AS coordinate_confidence,
+               coordinate.properties_json AS coordinate_properties_json,
+               coordinate.evidence_span_id,
+               ip.node_id AS instruction_node_id,
+               ip.label AS instruction_label,
+               ip.properties_json AS instruction_properties_json,
+               target.node_id AS coordinate_node_id,
+               target.node_type AS coordinate_node_type,
+               target.label AS coordinate_node_label,
+               target.properties_json AS coordinate_node_properties_json,
+               di.node_id AS data_item_id,
+               di.label AS return_label,
+               t.template_id,t.template_code,t.title AS template_title,
+               tsd.url AS template_source_url,
+               tr.label AS row_label,
+               tc.label AS column_label,
+               dp.datapoint_id,dp.concept_label,
+               sp.raw_text AS evidence_text,
+               sp.heading_path,sp.page_number,sp.sheet_name,sp.row_number,
+               sdn.node_id AS source_node_id,
+               sd.source_id,sd.title AS source_title,sd.url AS source_url,
+               sd.file_type
+        FROM graph_edge legal
+        JOIN graph_node ip
+          ON ip.node_id=legal.source_node_id
+         AND ip.node_type='InstructionProvision'
+        JOIN graph_edge coordinate
+          ON coordinate.source_node_id=ip.node_id
+         AND coordinate.edge_type='INSTRUCTS'
+         AND json_extract(
+               coordinate.properties_json,'$.coordinate_relation'
+             )='normative_reporting_coordinate'
+         AND COALESCE(coordinate.evidence_span_id,'')
+             =COALESCE(legal.evidence_span_id,'')
+        JOIN graph_node target ON target.node_id=coordinate.target_node_id
+        JOIN template t
+          ON t.template_id=json_extract(
+               coordinate.properties_json,'$.template_id'
+             )
+        JOIN graph_edge uses
+          ON uses.target_node_id=t.template_id
+         AND uses.edge_type='USES_TEMPLATE'
+        JOIN graph_node di
+          ON di.node_id=uses.source_node_id AND di.node_type='DataItem'
+        LEFT JOIN source_document tsd ON tsd.source_id=t.source_id
+        LEFT JOIN datapoint dp ON dp.datapoint_id=target.node_id
+        LEFT JOIN template_row tr
+          ON tr.template_id=t.template_id
+         AND tr.row_code=json_extract(
+               coordinate.properties_json,'$.row_code'
+             )
+        LEFT JOIN template_column tc
+          ON tc.template_id=t.template_id
+         AND tc.column_code=json_extract(
+               coordinate.properties_json,'$.column_code'
+             )
+        LEFT JOIN source_span sp
+          ON sp.span_id=coordinate.evidence_span_id
+        LEFT JOIN graph_edge instruction_evidence
+          ON instruction_evidence.source_node_id=ip.node_id
+         AND instruction_evidence.edge_type='EVIDENCED_BY'
+        LEFT JOIN graph_node sdn
+          ON sdn.node_id=instruction_evidence.target_node_id
+         AND sdn.node_type='SourceDocument'
+        LEFT JOIN source_document sd
+          ON sd.source_id=sdn.source_pk
+        WHERE legal.target_node_id=?
+          AND legal.edge_type='REFERENCES_RULE'
+          AND legal.extraction_method='instruction_legal_reference_projection'
+        ORDER BY di.label,t.template_code,
+                 json_extract(coordinate.properties_json,'$.row_code'),
+                 json_extract(coordinate.properties_json,'$.column_code'),
+                 ip.node_id
+        """,
+        (target_node_id,),
+    ).fetchall()
+
+    for row in direct_coordinate_rows:
+        entry = ensure_return(
+            row["data_item_id"],
+            return_label=row["return_label"],
+        )
+        evidence_key = (
+            row["instruction_node_id"],
+            row["coordinate_node_id"],
+            row["legal_edge_id"],
+        )
+        if evidence_key in entry["direct_coordinates_seen"]:
+            continue
+        entry["direct_coordinates_seen"].add(evidence_key)
+        entry["direct_coordinate_count"] += 1
+        entry["direct_coordinate_instruction_ids"].add(row["instruction_node_id"])
+
+        edge_properties = _json(row["coordinate_properties_json"])
+        target_properties = _json(row["coordinate_node_properties_json"])
+        instruction_properties = _json(row["instruction_properties_json"])
+        legal_properties = _json(row["legal_properties_json"])
+        if row["coordinate_node_type"] == "DataPoint":
+            coverage_status = "materialized_datapoint"
+            entry["materialized_direct_cell_count"] += 1
+        elif row["coordinate_node_type"] == "ReportingCoordinate":
+            coverage_status = (
+                target_properties.get("coverage_status")
+                or "instruction_defined_not_materialized"
+            )
+            entry["instruction_defined_coordinate_count"] += 1
+        else:
+            coverage_status = "instruction_defined_row_scope"
+            entry["instruction_defined_coordinate_count"] += 1
+
+        if len(entry["direct_coordinates"]) < limit:
+            entry["direct_coordinates"].append(
+                {
+                    "instruction_node_id": row["instruction_node_id"],
+                    "instruction_label": row["instruction_label"],
+                    "instruction_text": (
+                        instruction_properties.get("text")
+                        or row["instruction_label"]
+                    ),
+                    "legal_edge_id": row["legal_edge_id"],
+                    "legal_confidence": row["legal_confidence"],
+                    "legal_reference": (
+                        legal_properties.get("reference_label")
+                        or legal_properties.get("canonical_key")
+                    ),
+                    "coordinate_edge_id": row["coordinate_edge_id"],
+                    "coordinate_confidence": row["coordinate_confidence"],
+                    "coordinate_node_id": row["coordinate_node_id"],
+                    "coordinate_node_type": row["coordinate_node_type"],
+                    "coordinate_node_label": row["coordinate_node_label"],
+                    "coordinate_evidence": edge_properties.get(
+                        "coordinate_evidence"
+                    ),
+                    "template_id": row["template_id"],
+                    "template_code": row["template_code"],
+                    "template_title": row["template_title"],
+                    "template_source_url": row["template_source_url"],
+                    "row_code": edge_properties.get("row_code"),
+                    "row_label": row["row_label"],
+                    "column_code": edge_properties.get("column_code"),
+                    "column_label": row["column_label"],
+                    "datapoint_id": row["datapoint_id"],
+                    "concept_label": row["concept_label"],
+                    "coverage_status": coverage_status,
+                    "evidence_span_id": row["evidence_span_id"],
+                    "evidence_text": (
+                        row["evidence_text"]
+                        or instruction_properties.get("text")
+                    ),
+                    "heading_path": row["heading_path"],
+                    "page_number": row["page_number"],
+                    "sheet_name": row["sheet_name"],
+                    "row_number": row["row_number"],
+                    "source_node_id": row["source_node_id"],
+                    "source_id": row["source_id"],
+                    "source_title": row["source_title"],
+                    "source_url": row["source_url"],
+                    "impact_tier": "direct_coordinate_evidence",
+                    "review_note": (
+                        "The same instruction passage names this rule and "
+                        "reporting coordinate. Review the passage before "
+                        "treating the coordinate as a required edit."
+                    ),
+                }
+            )
+        if row["source_id"] or row["source_node_id"]:
+            source_key = row["source_id"] or row["source_node_id"]
+            entry["instruction_sources"][source_key] = {
+                "source_node_id": row["source_node_id"],
+                "source_id": row["source_id"],
+                "title": row["source_title"],
+                "url": row["source_url"],
+                "file_type": row["file_type"],
+                "relationship": "instruction_provision_evidence",
+            }
+
+    return_codes = sorted({str(entry["return_code"]) for entry in by_return.values() if entry["return_code"]})
+    catalog_by_code: dict[str, list[dict[str, Any]]] = {}
+    if return_codes:
+        historic_clause = "" if include_historic else " AND r.status <> 'historic'"
+        catalog_rows = conn.execute(
+            f"""
+            SELECT r.return_id,r.return_code,r.name,r.description,r.estate,r.family,
+                   r.status,r.effective_from,r.effective_to,r.effective_text,
+                   oe.edition_id
+            FROM reporting_return_catalog r
+            LEFT JOIN reporting_requirement_edition oe ON oe.legacy_return_id=r.return_id
+            WHERE UPPER(r.return_code) IN ({','.join('?' for _ in return_codes)})
+              {historic_clause}
+            ORDER BY r.return_code,r.effective_from,r.return_id
+            """,
+            [code.upper() for code in return_codes],
+        ).fetchall()
+        for row in catalog_rows:
+            catalog_by_code.setdefault(row["return_code"].upper(), []).append(dict(row))
+
+    impacted_returns: list[dict[str, Any]] = []
+    for entry in by_return.values():
+        template_rows = conn.execute(
+            """
+            SELECT DISTINCT n.node_id,t.template_id,t.template_code,t.title,t.annex,
+                   sd.url AS source_url,
+                   (SELECT COUNT(*) FROM datapoint d WHERE d.template_id=t.template_id) AS cell_count,
+                   (SELECT COUNT(*) FROM instruction i
+                    WHERE i.applies_to_type='template'
+                      AND i.applies_to_id=t.template_id) AS instruction_count
+            FROM graph_edge uses
+            JOIN graph_node n
+              ON n.node_id=uses.target_node_id AND n.node_type='Template'
+            JOIN template t
+              ON t.template_id=n.source_pk OR t.template_id=n.node_id
+            LEFT JOIN source_document sd ON sd.source_id=t.source_id
+            WHERE uses.source_node_id=? AND uses.edge_type='USES_TEMPLATE'
+            ORDER BY t.template_code,t.title,t.template_id
+            """,
+            (entry["data_item_id"],),
+        ).fetchall()
+        templates = [
+            {
+                "node_id": row["node_id"],
+                "template_id": row["template_id"],
+                "template_code": row["template_code"],
+                "title": row["title"],
+                "annex": row["annex"],
+                "source_url": row["source_url"],
+                "cell_count": int(row["cell_count"] or 0),
+                "instruction_count": int(row["instruction_count"] or 0),
+                "impact_tier": "candidate_scope",
+            }
+            for row in template_rows
+        ]
+        template_ids = [row["template_id"] for row in templates]
+        cell_samples: list[dict[str, Any]] = []
+        if template_ids and sample_cells:
+            sample_rows = conn.execute(
+                f"""
+                SELECT d.*,t.template_code,t.title AS template_title,
+                       tr.row_code,tr.label AS row_label,tr.row_order,
+                       tc.column_code,tc.label AS column_label,tc.column_order,
+                       gn.node_id,gn.label AS node_label,gn.properties_json
+                FROM datapoint d
+                JOIN template t ON t.template_id=d.template_id
+                LEFT JOIN template_row tr ON tr.row_id=d.row_id
+                LEFT JOIN template_column tc ON tc.column_id=d.column_id
+                LEFT JOIN graph_node gn ON gn.node_id=d.datapoint_id
+                WHERE d.template_id IN ({','.join('?' for _ in template_ids)})
+                ORDER BY t.template_code,COALESCE(tr.row_order,999999),
+                         COALESCE(tc.column_order,999999),d.datapoint_id
+                LIMIT ?
+                """,
+                [*template_ids, sample_cells],
+            ).fetchall()
+            cell_samples = [
+                _datapoint_result(row) | {"impact_tier": "candidate_scope"}
+                for row in sample_rows
+            ]
+        entry["instruction_sources"] = list(entry["instruction_sources"].values())
+        entry["direct_coordinate_instruction_count"] = len(
+            entry.pop("direct_coordinate_instruction_ids")
+        )
+        entry["direct_coordinates_truncated"] = (
+            entry["direct_coordinate_count"] > len(entry["direct_coordinates"])
+        )
+        entry.pop("direct_coordinates_seen")
+        entry["catalog_entries"] = catalog_by_code.get(str(entry["return_code"]).upper(), [])
+        entry["templates"] = templates
+        entry["candidate_cell_count"] = sum(row["cell_count"] for row in templates)
+        entry["candidate_cell_samples"] = cell_samples
+        entry["instruction_record_count"] = sum(row["instruction_count"] for row in templates)
+        entry["references_truncated"] = entry["reference_count"] > len(entry["references"])
+        entry["impact_tier"] = "direct_instruction_reference"
+        impacted_returns.append(entry)
+
+    impacted_returns.sort(key=lambda row: (str(row["return_code"]), row["data_item_id"]))
+    return {
+        "target": _ui_reporting_node(target),
+        "impact_model": {
+            "direct_instruction_reference": (
+                "The reporting instruction source expressly references the changed node."
+            ),
+            "candidate_scope": (
+                "Templates and cells belong to an affected return, but the database "
+                "does not yet prove that each item changes."
+            ),
+            "direct_coordinate_evidence": (
+                "The same reporting-instruction passage expressly names the changed "
+                "rule and this row, column or cell. This sharply narrows review, but "
+                "does not by itself prove that the coordinate must be edited."
+            ),
+        },
+        "returns": impacted_returns,
+        "counts": {
+            "affected_returns": len(impacted_returns),
+            "direct_references": sum(row["reference_count"] for row in impacted_returns),
+            "direct_coordinates": sum(
+                row["direct_coordinate_count"] for row in impacted_returns
+            ),
+            "direct_coordinate_instructions": sum(
+                row["direct_coordinate_instruction_count"]
+                for row in impacted_returns
+            ),
+            "materialized_direct_cells": sum(
+                row["materialized_direct_cell_count"] for row in impacted_returns
+            ),
+            "instruction_defined_coordinates": sum(
+                row["instruction_defined_coordinate_count"]
+                for row in impacted_returns
+            ),
+            "instruction_sources": sum(len(row["instruction_sources"]) for row in impacted_returns),
+            "candidate_templates": sum(len(row["templates"]) for row in impacted_returns),
+            "candidate_cells": sum(row["candidate_cell_count"] for row in impacted_returns),
+        },
+        "limitations": [
+            "A source-level rule reference is direct evidence for reviewing the instruction source.",
+            "A direct coordinate means the same instruction passage names the rule and coordinate; it is review evidence, not an automatically confirmed edit.",
+            "Template and other cell results remain candidate scope when no instruction provision links them to a precise row, column or cell.",
+            "Instruction-defined coordinates identify explicit row and column codes even where the workbook parser has not materialized a DataPoint.",
+        ],
+    }
 
 
 def _public_catalog_return(row: sqlite3.Row) -> dict[str, Any]:
@@ -363,6 +1561,10 @@ def _reporting_edges_for_targets(conn: sqlite3.Connection, target_ids: list[str]
 
 
 def _add_reporting_edges(conn: sqlite3.Connection, rows: list[dict[str, Any]], nodes: dict[str, dict[str, Any]], edges: dict[str, dict[str, Any]]) -> None:
+    rows = [
+        row for row in rows
+        if row.get("source_node_id") != row.get("target_node_id")
+    ]
     missing_ids = sorted({node_id for row in rows for node_id in (row["source_node_id"], row["target_node_id"]) if node_id not in nodes})
     if missing_ids:
         fetched = _get_graph_nodes(conn, missing_ids)
@@ -1248,6 +2450,99 @@ def _data_item_id(code: str) -> str:
     return code if code.startswith("data_item:") else f"data_item:{code.upper()}"
 
 
+def _template_identity_key(value: str | None) -> str:
+    # Whitespace and import-only underscores are cosmetic, but punctuation
+    # within an official template code is not: FINREP 1.1 and FINREP 11 are
+    # different templates.
+    return re.sub(r"[\s_]+", "", (value or "").lower())
+
+
+def _template_projection_key(template: dict[str, Any]) -> tuple[str, str]:
+    """Identify duplicate DataItem projections of one workbook sheet."""
+    template_id = str(template.get("template_id") or "")
+    template_code = str(template.get("template_code") or "")
+    suffix = template_id.split(":", 2)[-1].strip("_")
+    prefix = f"{template_code}_"
+    if template_code and suffix.upper().startswith(prefix.upper()):
+        suffix = suffix[len(prefix):].strip("_")
+    return (
+        _normalise_reporting_source_url(str(template.get("source_url") or "")),
+        _template_identity_key(suffix or template_code),
+    )
+
+
+def _dedupe_template_summaries(
+    templates: list[dict[str, Any]],
+    *,
+    preferred_code: str,
+) -> list[dict[str, Any]]:
+    by_projection: dict[tuple[str, str], dict[str, Any]] = {}
+    preferred = preferred_code.upper()
+    for template in templates:
+        key = _template_projection_key(template)
+        current = by_projection.get(key)
+        if current is None:
+            by_projection[key] = template
+            continue
+        candidate_score = (
+            str(template.get("template_code") or "").upper() == preferred,
+            int(template.get("cell_count") or 0),
+        )
+        current_score = (
+            str(current.get("template_code") or "").upper() == preferred,
+            int(current.get("cell_count") or 0),
+        )
+        if candidate_score > current_score:
+            by_projection[key] = template
+    return list(by_projection.values())
+
+
+def _graph_template_summary(row: sqlite3.Row) -> dict[str, Any]:
+    properties = _json(row["properties_json"])
+    data_item_code = str(properties.get("data_item_code") or "")
+    suffix = str(row["node_id"]).split(":", 2)[-1].strip("_")
+    prefix = f"{data_item_code}_"
+    if data_item_code and suffix.upper().startswith(prefix.upper()):
+        suffix = suffix[len(prefix):].strip("_")
+    template_code = str(properties.get("template_code") or "").strip()
+    if not template_code:
+        template_code = re.sub(r"_+", " ", suffix).strip() or row["label"] or row["node_id"]
+    title = str(properties.get("template_title") or "").strip() or f"Template {template_code}"
+    return {
+        "node_id": row["node_id"],
+        "template_id": row["node_id"],
+        "template_code": template_code,
+        "title": title,
+        "annex": None,
+        "source_url": row["source_url"],
+        "source_title": row["source_title"],
+        "cell_count": int(row["cell_count"] or 0),
+        "row_count": int(row["row_count"] or 0),
+        "column_count": int(row["column_count"] or 0),
+    }
+
+
+def _fill_graph_coordinate(result: dict[str, Any]) -> None:
+    match = re.search(
+        r":r([^:]+):c([^:]+)$",
+        str(result.get("datapoint_id") or ""),
+    )
+    if match:
+        result["row_code"] = result.get("row_code") or match.group(1)
+        result["column_code"] = result.get("column_code") or match.group(2)
+    for axis in ("row", "column"):
+        code = str(result.get(f"{axis}_code") or "")
+        label = str(result.get(f"{axis}_label") or "")
+        if code and label:
+            result[f"{axis}_label"] = re.sub(
+                rf"^.*?\b{axis}\s+{re.escape(code)}\s*",
+                "",
+                label,
+                count=1,
+                flags=re.I,
+            ) or label
+
+
 def _template_id(conn: sqlite3.Connection, value: str) -> str:
     if value.startswith("template:"):
         return value
@@ -1340,9 +2635,11 @@ def _datapoint_result(row: sqlite3.Row) -> dict[str, Any]:
         "row_id": d.get("row_id"),
         "row_code": d.get("row_code"),
         "row_label": d.get("row_label"),
+        "row_order": d.get("row_order"),
         "column_id": d.get("column_id"),
         "column_code": d.get("column_code"),
         "column_label": d.get("column_label"),
+        "column_order": d.get("column_order"),
         "concept_label": d.get("concept_label"),
         "data_type": d.get("data_type"),
         "unit_type": d.get("unit_type"),

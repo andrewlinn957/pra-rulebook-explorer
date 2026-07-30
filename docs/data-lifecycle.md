@@ -22,6 +22,10 @@ search, enrichment, and reporting rows to drift apart.
   representation.
 - `node_fts` is the rulebook full-text search index.
 - `embedding` and similarity edges are optional semantic-search products.
+- `InstructionProvision`, `ReportingCoordinate`, and their projector-owned
+  edges are rebuilt from `instruction`, `source_span`, template dimensions and
+  exact materialized legal keys by
+  `scripts/project_reporting_instruction_coordinates.py`.
 
 Node changes mark the canonical/search projection as dirty. API startup rebuilds
 dirty canonical and FTS projections. The explicit maintenance command does the
@@ -47,6 +51,31 @@ The integrity gate covers foreign keys, graph endpoints, enrichment ownership,
 canonical-node coverage, and FTS coverage. Audit/LLM workflow tables remain
 script-owned, but their scripts must not bypass the gate above.
 
+## Numbered Article references
+
+Run the deterministic Article-reference materialiser after a Rulebook or
+guidance refresh. It scans atomic provisions, expands joined lists and ranges,
+resolves named/same-Part references, and uses the latest revised UK CRR XML for
+external Article text:
+
+```bash
+curl --fail --location \
+  https://www.legislation.gov.uk/eur/2013/575/data.xml \
+  --output backend/data/raw/uk-crr/regulation.xml
+.venv/bin/python scripts/backfill_uk_crr_article_references.py
+.venv/bin/python scripts/backfill_uk_crr_article_references.py --apply
+.venv/bin/python scripts/backfill_uk_crr_article_references.py \
+  --audit-output outputs/uk-crr-article-reference-zero-gap-audit.json
+```
+
+Dry-run is the default. Do not apply when `review_required` or
+`range_expansion_errors` is non-zero. After apply, `missing_before_apply` must
+be zero on the final dry run. Reviewed anaphoric or truncated-source exceptions
+belong in `config/article_reference_classification_overrides.json`, with the
+instrument and rationale recorded. The materialiser owns only edges whose
+source method ends in `article_reference_v2`; it prunes stale edges in that
+owned set and preserves independently sourced links.
+
 ## Reporting graph quality gate
 
 Before claiming the reporting graph is fixed, run the reporting-specific gate:
@@ -67,6 +96,17 @@ Audit and cleanup facts must stay in internal tables such as
 `source_document_inspection`. Do not write `audit_cleanup`, model names, prompt
 versions, cleanup decisions, or family classifications into `graph_node`
 properties or frontend-facing API payloads.
+
+After instruction or template ingestion, preview and then replace the
+instruction-coordinate projection:
+
+```bash
+.venv/bin/python scripts/project_reporting_instruction_coordinates.py
+.venv/bin/python scripts/project_reporting_instruction_coordinates.py --apply
+```
+
+The preview is read-only. Apply deletes and recreates only graph records owned
+by this projector in one transaction.
 
 Taxonomy child artefacts must keep distinct source identities. Do not dedupe
 XML, XSD, or XBRL children by parent ZIP URL, inherited URL, title, or checksum

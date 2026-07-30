@@ -86,6 +86,24 @@ class ReportingReferenceCorrectionTests(unittest.TestCase):
         self.assertIn("Annex XXIII", target["label"])
         self.assertIn("1025608", target["props"]["url"])
 
+    def test_resolver_rejects_a_source_document_targeting_itself(self):
+        source = {
+            "node_id": "source_document:annex-ii",
+            "node_type": "SourceDocument",
+            "label": "Annex II (PDF)",
+        }
+
+        target, method, score = reporting_refs.reject_self_reference(
+            source["node_id"],
+            source,
+            "annex_source_document",
+            0.86,
+        )
+
+        self.assertIsNone(target)
+        self.assertEqual(method, "self_reference_rejected")
+        self.assertEqual(score, 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()

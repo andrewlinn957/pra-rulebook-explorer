@@ -9,6 +9,7 @@ canonical duplicates.
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import hashlib
 import json
 import re
@@ -193,10 +194,13 @@ def rewire_graph_source(conn: sqlite3.Connection, duplicate_source_id: str, cano
     for row in conn.execute("SELECT * FROM graph_edge WHERE source_node_id=? OR target_node_id=?", (duplicate_node, duplicate_node)).fetchall():
         src = canonical_node if row["source_node_id"] == duplicate_node else row["source_node_id"]
         tgt = canonical_node if row["target_node_id"] == duplicate_node else row["target_node_id"]
-        if conn.execute("SELECT 1 FROM graph_edge WHERE source_node_id=? AND target_node_id=? AND edge_type=?", (src, tgt, row["edge_type"])).fetchone():
-            conn.execute("DELETE FROM graph_edge WHERE edge_id=?", (row["edge_id"],))
-        else:
-            conn.execute("UPDATE graph_edge SET source_node_id=?, target_node_id=? WHERE edge_id=?", (src, tgt, row["edge_id"]))
+        # Keep parallel relationships. Two snapshots of the same official URL
+        # can carry different evidence spans or extraction metadata; collapsing
+        # solely on endpoints and edge type would silently discard provenance.
+        conn.execute(
+            "UPDATE graph_edge SET source_node_id=?, target_node_id=? WHERE edge_id=?",
+            (src, tgt, row["edge_id"]),
+        )
         changed += 1
     if not conn.execute("SELECT 1 FROM graph_edge WHERE source_node_id=? OR target_node_id=?", (duplicate_node, duplicate_node)).fetchone():
         conn.execute("DELETE FROM graph_node WHERE node_id=?", (duplicate_node,))
@@ -205,7 +209,8 @@ def rewire_graph_source(conn: sqlite3.Connection, duplicate_source_id: str, cano
 
 def run_source_cleanup(db_path: Path = DB_PATH, *, apply: bool = False) -> dict[str, Any]:
     conn = connect(db_path)
-    ensure_schema(conn)
+    if apply:
+        ensure_schema(conn)
     has_inspection = bool(
         conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='source_document_inspection'"
@@ -233,24 +238,54 @@ def run_source_cleanup(db_path: Path = DB_PATH, *, apply: bool = False) -> dict[
         groups.setdefault(item[3], []).append(item)
 
     duplicates = rewired_total = 0
-    for key, items in groups.items():
-        canonical = canonical_source([item[0] for item in items])
-        for row, kind, classify_reason, _ in items:
-            is_duplicate = row["source_id"] != canonical["source_id"] and (key.startswith("url:") or key.startswith("checksum:"))
-            rewired = 0
-            decision = "canonical"
-            reason = classify_reason
-            if is_duplicate:
-                duplicates += 1
-                decision = "duplicate_rewired" if apply else "duplicate_candidate"
-                reason = f"Duplicate of {canonical['source_id']} by {key.split(':', 1)[0]} key."
+    proposed: list[dict[str, Any]] = []
+    try:
+        if apply:
+            conn.execute("BEGIN IMMEDIATE")
+        for key, items in groups.items():
+            canonical = canonical_source([item[0] for item in items])
+            for row, kind, classify_reason, _ in items:
+                is_duplicate = row["source_id"] != canonical["source_id"] and (key.startswith("url:") or key.startswith("checksum:"))
+                rewired = 0
+                decision = "canonical"
+                reason = classify_reason
+                if is_duplicate:
+                    duplicates += 1
+                    decision = "duplicate_rewired" if apply else "duplicate_candidate"
+                    reason = f"Duplicate of {canonical['source_id']} by {key.split(':', 1)[0]} key."
+                    if apply:
+                        rewired = rewire_graph_source(conn, row["source_id"], canonical["source_id"])
+                        rewired_total += rewired
+                proposed.append(
+                    {
+                        "source_id": row["source_id"],
+                        "source_kind": kind,
+                        "canonical_source_id": canonical["source_id"],
+                        "key": key,
+                        "decision": decision,
+                        "reason": reason,
+                        "rewired": rewired,
+                    }
+                )
                 if apply:
-                    rewired = rewire_graph_source(conn, row["source_id"], canonical["source_id"])
-                    rewired_total += rewired
-            upsert_cleanup(conn, source_id=row["source_id"], source_kind=kind, canonical_source_id=canonical["source_id"], key=key, decision=decision, reason=reason, rewired=rewired)
-    conn.commit()
-    by_kind = dict(conn.execute("SELECT source_kind,COUNT(*) FROM source_document_cleanup GROUP BY source_kind").fetchall())
-    by_decision = dict(conn.execute("SELECT decision,COUNT(*) FROM source_document_cleanup GROUP BY decision").fetchall())
+                    upsert_cleanup(
+                        conn,
+                        source_id=row["source_id"],
+                        source_kind=kind,
+                        canonical_source_id=canonical["source_id"],
+                        key=key,
+                        decision=decision,
+                        reason=reason,
+                        rewired=rewired,
+                    )
+        if apply:
+            conn.commit()
+    except Exception:
+        if apply:
+            conn.rollback()
+        raise
+    by_kind = dict(Counter(item["source_kind"] for item in proposed))
+    by_decision = dict(Counter(item["decision"] for item in proposed))
     conn.close()
     return {"status": "applied" if apply else "dry_run", "sources": len(rows), "duplicate_candidates": duplicates, "duplicates_rewired": rewired_total, "by_kind": by_kind, "by_decision": by_decision}
 

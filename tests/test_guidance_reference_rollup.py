@@ -77,6 +77,7 @@ def test_neighbourhood_rolls_guidance_paragraph_reference_up_to_ss_document():
     assert graph['edges'][0]['from_node_id'] == 'rule-1'
     assert graph['edges'][0]['to_node_id'] == 'ss-doc'
     assert graph['edges'][0]['metadata']['rolled_up_from_node_ids'] == ['ss-para']
+    assert graph['edges'][0]['metadata']['rolled_up_from_to_node_ids'] == ['ss-para']
 
 
 def test_neighbourhood_deduplicates_multiple_references_to_same_ss_document():
@@ -103,6 +104,7 @@ def test_neighbourhood_deduplicates_multiple_references_to_same_ss_document():
     assert len(graph['edges']) == 1
     assert graph['edges'][0]['to_node_id'] == 'sop-doc'
     assert graph['edges'][0]['metadata']['rolled_up_from_node_ids'] == ['sop-para-1', 'sop-para-2']
+    assert graph['edges'][0]['metadata']['rolled_up_from_to_node_ids'] == ['sop-para-1', 'sop-para-2']
 
 
 def load_tests(loader, tests, pattern):

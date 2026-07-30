@@ -122,6 +122,29 @@ class ReportingOverviewGraphTests(unittest.TestCase):
         self.assertEqual(graph["available_edge_types"]["USES_TEMPLATE"], 1)
         self.assertEqual(graph["available_edge_types"]["REFERENCES_RULE"], 1)
 
+    def test_selected_return_suppresses_literal_self_reference_edges(self):
+        conn = self.make_conn()
+        self.add_node(conn, "data_item:COR001", "DataItem", "COR001")
+        self.add_node(conn, "source:COR001", "SourceDocument", "COR001 source")
+        self.add_edge(conn, "evidence", "data_item:COR001", "source:COR001", "EVIDENCED_BY")
+        self.add_edge(
+            conn,
+            "self-reference",
+            "source:COR001",
+            "source:COR001",
+            "REFERENCES_SOURCE",
+            "reporting_llm_reference",
+            0.86,
+        )
+
+        graph = reporting_overview_graph(conn, selected_return="COR001")
+
+        self.assertFalse([
+            edge for edge in graph["edges"]
+            if edge["from_node_id"] == edge["to_node_id"]
+        ])
+        self.assertNotIn("REFERENCES_SOURCE", graph["available_edge_types"])
+
     def test_selected_catalog_version_uses_exact_reporting_return_root(self):
         conn = self.make_conn()
         return_id = "reporting_return:future-version"

@@ -7,14 +7,39 @@ import { buildQualityQueues, filterQueueRows, summariseQueue } from './qualityWo
 import { displayNodeTitle, documentBadge, relativeNodeRole, edgeDirectionGlyph, edgeDirectionLabel } from './graphPresentation.js';
 import {
   REPORTING_EDGE_GROUPS,
+  REPORTING_OVERVIEW_EDGE_GROUP_KEYS,
+  REPORTING_REQUIREMENT_EDGE_GROUP_KEYS,
+  reportingEditionOptionLabel,
   reportingChildGroups,
   reportingEdgeGroup,
   reportingEdgeGroupCounts,
   reportingEdgeTypesForGroups,
   reportingOneHopGraph,
   reportingParentNodes,
+  reportingRequirementEditions,
   reportingSourceNodes,
 } from './reportingNavigation.js';
+import {
+  reportingCellCoordinate,
+  reportingCellCoverage,
+  reportingCellPath,
+  reportingCellTitle,
+  reportingNodeSelectsTemplate,
+  reportingTemplateForNode,
+  reportingTemplateGrid,
+  reportingTemplateTitle,
+  reportingWorkbookCellStyle,
+  reportingWorkbookColumnPixels,
+  reportingWorkbookDatapoints,
+} from './reportingCells.js';
+import {
+  READING_EDGE_TYPE_LIST,
+  assignReferencesToParagraphs,
+  paragraphCitationSegments,
+  readerReferences,
+  referenceShelfDensity,
+  splitLegalParagraphs,
+} from './readingMode.js';
 import './styles.css';
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/pra-rulebook-api';
@@ -83,6 +108,7 @@ function App(){
   const [feedbackNode,setFeedbackNode]=useState(null);
   const [feedbackText,setFeedbackText]=useState('');
   const [feedbackSaving,setFeedbackSaving]=useState(false);
+  const [readingNode,setReadingNode]=useState(null);
 
   const typesKey=useMemo(()=>[...types].sort().join('|'),[types]);
 
@@ -223,7 +249,14 @@ function App(){
     setNodeTypes(next);
   }
 
-  return <div className={`${graphExpanded?'shell graph-expanded':'shell'} ${panelOpen?'panel-open':'panel-closed'} ${view==='quality'?'quality-view':''} ${view==='reporting'?'reporting-view-mode':''}`}>
+  function openReadingMode(node){
+    if(!node) return;
+    setReadingNode(node);
+    setView('graph');
+    setPanelOpen(false);
+  }
+
+  return <div className={`${graphExpanded?'shell graph-expanded':'shell'} ${panelOpen?'panel-open':'panel-closed'} ${view==='quality'?'quality-view':''} ${view==='reporting'?'reporting-view-mode':''} ${readingNode?'reading-view-mode':''}`}>
     <header className="topbar">
       <a className="home" href="/">‹</a>
       <form className="command" onSubmit={search}>
@@ -254,14 +287,14 @@ function App(){
     </aside>
 
     <main className="canvas">
-      {view==='quality'?<ValidationDashboard data={validation} busy={busy}/>:view==='reporting'?<ReportingGraphView onFeedback={n=>{setFeedbackNode(n);setFeedbackText('');}}/>:<>
+      {readingNode?<ProvisionReader rootNode={readingNode} api={api} onClose={()=>setReadingNode(null)}/>:view==='quality'?<ValidationDashboard data={validation} busy={busy}/>:view==='reporting'?<ReportingGraphView onFeedback={n=>{setFeedbackNode(n);setFeedbackText('');}}/>:<>
         <div className="canvas-meta"><strong>{selected?.title||'Select a node'}</strong><span>{activeRep.label} · {visibleGraph.nodes.length} shown · {visibleGraph.edges.length} visible links · {Object.values(graph.available_edge_types||{}).reduce((a,b)=>a+b,0)} direct links available</span><button className="expand-graph" onClick={()=>setGraphExpanded(v=>!v)}>{graphExpanded?'Collapse graph':'Expand graph'}</button></div>
         <Graph graph={visibleGraph} selected={selected} detail={detail} nodeTypes={nodeTypes} relationshipTypes={types} relationshipFilters={relationshipFilters} availableEdgeTypes={graph.available_edge_types||{}} onToggleNodeType={toggleNodeType} onToggleRelationship={toggleType} onSelect={n=>{setDetail(n);setPanelOpen(true);}} onOpen={n=>choose(n,{drill:true})} onFeedback={n=>{setFeedbackNode(n);setFeedbackText('');}}/>
       </>}
     </main>
 
     <aside className={panelOpen?'inspector open':'inspector'}>
-      <Explore node={detail} edges={selectedEdges} graph={graph} onChoose={choose}/>
+      <Explore node={detail} edges={selectedEdges} graph={graph} onChoose={choose} onRead={openReadingMode}/>
     </aside>
     {feedbackNode&&<NodeFeedbackModal node={feedbackNode} text={feedbackText} setText={setFeedbackText} saving={feedbackSaving} onClose={()=>setFeedbackNode(null)} onSubmit={submitNodeFeedback}/>}  
   </div>;
@@ -278,6 +311,288 @@ function NodeFeedbackModal({node,text,setText,saving,onClose,onSubmit}){
   </div>;
 }
 
+function ProvisionReader({rootNode,api,onClose}){
+  const [root,setRoot]=useState(rootNode);
+  const [referenceGraph,setReferenceGraph]=useState({nodes:[rootNode],edges:[]});
+  const [loading,setLoading]=useState(true);
+  const [loadError,setLoadError]=useState('');
+  const [expandedId,setExpandedId]=useState('');
+  const [pinned,setPinned]=useState([]);
+  const [activePinnedId,setActivePinnedId]=useState('');
+  const [mobileShelfOpen,setMobileShelfOpen]=useState(false);
+  const readingScrollRef=useRef(null);
+
+  useEffect(()=>{
+    let cancelled=false;
+    setRoot(rootNode);
+    setReferenceGraph({nodes:[rootNode],edges:[]});
+    setExpandedId('');
+    setPinned([]);
+    setActivePinnedId('');
+    setMobileShelfOpen(false);
+    setLoading(true);
+    setLoadError('');
+    const params=new URLSearchParams({depth:'1',limit:'500',explicit_only:'false'});
+    READING_EDGE_TYPE_LIST.forEach(type=>params.append('edge_types',type));
+    Promise.all([
+      api(`/node/${encodeURIComponent(rootNode.id)}`),
+      api(`/node/${encodeURIComponent(rootNode.id)}/neighbourhood?${params}`),
+    ]).then(([full,neighbourhood])=>{
+      if(cancelled) return;
+      setRoot(full);
+      setReferenceGraph(neighbourhood);
+    }).catch(error=>{
+      if(!cancelled) setLoadError(error.message||String(error));
+    }).finally(()=>{
+      if(!cancelled) setLoading(false);
+    });
+    return ()=>{cancelled=true;};
+  },[rootNode.id]);
+
+  const paragraphs=useMemo(
+    ()=>splitLegalParagraphs(root?.text||''),
+    [root?.id,root?.text],
+  );
+  const references=useMemo(
+    ()=>assignReferencesToParagraphs(
+      paragraphs,
+      readerReferences(root,referenceGraph),
+    ),
+    [root?.id,paragraphs,referenceGraph],
+  );
+  const referenceById=useMemo(
+    ()=>new Map(references.map(reference=>[reference.id,reference])),
+    [references],
+  );
+  const placedByParagraph=useMemo(()=>{
+    const placed=new Map();
+    for(const reference of references){
+      if(reference.paragraphIndex<0) continue;
+      placed.set(
+        reference.paragraphIndex,
+        [...(placed.get(reference.paragraphIndex)||[]),reference],
+      );
+    }
+    return placed;
+  },[references]);
+  const unmatched=references.filter(reference=>reference.paragraphIndex<0);
+  const pinnedReferences=pinned.map(reference=>referenceById.get(reference.id)||reference);
+  const pinnedIds=useMemo(
+    ()=>new Set(pinnedReferences.map(reference=>reference.id)),
+    [pinnedReferences],
+  );
+
+  useEffect(()=>{
+    const scroller=readingScrollRef.current;
+    if(!scroller||!pinnedReferences.length) return;
+    function updateActivePin(){
+      const viewport=scroller.getBoundingClientRect();
+      const readingFocus=viewport.top+viewport.height*.45;
+      const rows=[...scroller.querySelectorAll('[data-reference-ids]')]
+        .sort((a,b)=>{
+          const aBox=a.getBoundingClientRect();
+          const bBox=b.getBoundingClientRect();
+          const aCentre=aBox.top+aBox.height/2;
+          const bCentre=bBox.top+bBox.height/2;
+          return Math.abs(aCentre-readingFocus)-Math.abs(bCentre-readingFocus);
+        });
+      for(const row of rows){
+        const ids=(row.dataset.referenceIds||'').split(',').filter(Boolean);
+        const match=ids.find(id=>pinnedIds.has(id));
+        if(match){
+          setActivePinnedId(match);
+          return;
+        }
+      }
+    }
+    updateActivePin();
+    scroller.addEventListener('scroll',updateActivePin,{passive:true});
+    return ()=>scroller.removeEventListener('scroll',updateActivePin);
+  },[[...pinnedIds].join(',')]);
+
+  function activateReference(reference){
+    if(pinnedIds.has(reference.id)){
+      setActivePinnedId(reference.id);
+      setMobileShelfOpen(true);
+      return;
+    }
+    setExpandedId(current=>current===reference.id?'':reference.id);
+  }
+  function pinReference(reference){
+    setPinned(current=>current.some(item=>item.id===reference.id)?current:[...current,reference]);
+    setExpandedId('');
+    setActivePinnedId(reference.id);
+  }
+  function returnInline(reference){
+    setPinned(current=>current.filter(item=>item.id!==reference.id));
+    setExpandedId(reference.id);
+    setMobileShelfOpen(false);
+    requestAnimationFrame(()=>{
+      const index=Math.max(0,reference.paragraphIndex);
+      readingScrollRef.current
+        ?.querySelector(`[data-paragraph-index="${index}"]`)
+        ?.scrollIntoView({behavior:'smooth',block:'center'});
+    });
+  }
+  function removePin(reference){
+    setPinned(current=>current.filter(item=>item.id!==reference.id));
+    setActivePinnedId(current=>current===reference.id?'':current);
+  }
+
+  const sourceHeading=root?.metadata?.part_title
+    ||root?.metadata?.document_title
+    ||root?.metadata?.source_title
+    ||label(root?.node_type);
+  return <div className="provision-reader">
+    <header className="provision-reader-header">
+      <button type="button" className="provision-reader-back" onClick={onClose}>← Graph</button>
+      <div><span>Reading mode</span><strong>{displayNodeTitle(root)}</strong></div>
+      <button type="button" className="reference-shelf-toggle" onClick={()=>setMobileShelfOpen(true)}>
+        Pinned references <b>{pinnedReferences.length}</b>
+      </button>
+    </header>
+    <div className="provision-reader-layout">
+      <main className="provision-reading-scroll" ref={readingScrollRef}>
+        <article className="provision-reading-spine">
+          <header className="provision-title-block">
+            <span className="provision-kicker">Reading spine · {sourceHeading}</span>
+            <h1>{displayNodeTitle(root)}</h1>
+            <div className="provision-byline">
+              <span>{references.length} linked provision{references.length===1?'':'s'} · one reference level</span>
+              {root?.url&&<a href={root.url} target="_blank" rel="noopener noreferrer">Open original source ↗</a>}
+            </div>
+          </header>
+          {loadError&&<p className="reader-load-error">References could not be loaded: {loadError}</p>}
+          {!paragraphs.length&&!loading&&<p className="reader-empty">This node has no provision text. Its original source remains available above.</p>}
+          <div className="legal-paragraphs">
+            {paragraphs.map((paragraph,index)=>{
+              const paragraphReferences=placedByParagraph.get(index)||[];
+              const segments=paragraphCitationSegments(paragraph,paragraphReferences);
+              const expanded=paragraphReferences.find(reference=>reference.id===expandedId);
+              return <section
+                className="legal-paragraph"
+                key={`${index}-${paragraph.slice(0,30)}`}
+                data-paragraph-index={index}
+                data-reference-ids={paragraphReferences.map(reference=>reference.id).join(',')}
+              >
+                <span className="legal-paragraph-number">{String(index+1).padStart(2,'0')}</span>
+                <p>{segments.map((segment,segmentIndex)=>segment.type==='citation'
+                  ?<button
+                    type="button"
+                    key={`${segment.reference.id}-${segmentIndex}`}
+                    className={`legal-citation ${pinnedIds.has(segment.reference.id)?'is-pinned':''}`}
+                    onClick={()=>activateReference(segment.reference)}
+                    aria-expanded={expandedId===segment.reference.id}
+                  >{segment.text}<sup>{segment.reference.relationship.code}</sup></button>
+                  :<React.Fragment key={segmentIndex}>{segment.text}</React.Fragment>)}</p>
+                {expanded&&<InlineLegalReference
+                  reference={expanded}
+                  onCollapse={()=>setExpandedId('')}
+                  onPin={()=>pinReference(expanded)}
+                />}
+              </section>;
+            })}
+            {unmatched.length>0&&<section
+              className="legal-paragraph reader-reference-index"
+              data-paragraph-index={Math.max(0,paragraphs.length-1)}
+              data-reference-ids={unmatched.map(reference=>reference.id).join(',')}
+            >
+              <span className="legal-paragraph-number">REF</span>
+              <div>
+                <h2>Other linked provisions</h2>
+                <p>These relationships are recorded for this provision but are not anchored to a unique phrase in the source text.</p>
+                <div className="reader-reference-links">{unmatched.map(reference=><button type="button" key={reference.id} onClick={()=>activateReference(reference)}><b>{reference.relationship.code}</b>{reference.citation||displayNodeTitle(reference.node)}</button>)}</div>
+                {unmatched.find(reference=>reference.id===expandedId)&&<InlineLegalReference
+                  reference={unmatched.find(reference=>reference.id===expandedId)}
+                  onCollapse={()=>setExpandedId('')}
+                  onPin={()=>pinReference(unmatched.find(reference=>reference.id===expandedId))}
+                />}
+              </div>
+            </section>}
+          </div>
+          {loading&&<div className="reader-loading">Loading one-level references…</div>}
+        </article>
+      </main>
+      {mobileShelfOpen&&<button type="button" className="reference-shelf-backdrop" onClick={()=>setMobileShelfOpen(false)} aria-label="Close pinned references"/>}
+      <ReferenceShelf
+        references={pinnedReferences}
+        activeId={activePinnedId}
+        mobileOpen={mobileShelfOpen}
+        onMobileClose={()=>setMobileShelfOpen(false)}
+        onActivate={setActivePinnedId}
+        onReturnInline={returnInline}
+        onRemove={removePin}
+      />
+    </div>
+  </div>;
+}
+
+function InlineLegalReference({reference,onCollapse,onPin}){
+  const paragraphs=splitLegalParagraphs(reference.node?.text||'');
+  const sourceUrl=reference.node?.url||reference.edge?.source_url;
+  return <aside className={`inline-legal-reference relationship-${reference.relationship.code.toLowerCase()}`}>
+    <header>
+      <div><span>{reference.relationship.code} · {reference.relationship.label}</span><small>{reference.sourceHeading}</small></div>
+      <button type="button" onClick={onCollapse} aria-label="Collapse reference">Collapse ↑</button>
+    </header>
+    <h2>{displayNodeTitle(reference.node)}</h2>
+    <div className="inline-reference-text">{paragraphs.length
+      ?paragraphs.map((paragraph,index)=><p key={index}>{paragraph}</p>)
+      :<p>No body text is available for this reference.</p>}</div>
+    <footer>
+      {sourceUrl&&<a href={sourceUrl} target="_blank" rel="noopener noreferrer">Open original source ↗</a>}
+      <button type="button" onClick={onPin}>Pin to shelf</button>
+    </footer>
+  </aside>;
+}
+
+function ReferenceShelf({references,activeId,mobileOpen,onMobileClose,onActivate,onReturnInline,onRemove}){
+  const bodyRef=useRef(null);
+  const [availableHeight,setAvailableHeight]=useState(640);
+  const [temporaryId,setTemporaryId]=useState('');
+  useEffect(()=>{
+    const body=bodyRef.current;
+    if(!body||typeof ResizeObserver==='undefined') return;
+    const update=()=>setAvailableHeight(body.getBoundingClientRect().height);
+    update();
+    const observer=new ResizeObserver(update);
+    observer.observe(body);
+    return ()=>observer.disconnect();
+  },[]);
+  const density=referenceShelfDensity(availableHeight,references.length);
+  useEffect(()=>{if(density!=='summary') setTemporaryId('');},[density]);
+  return <aside className={`reference-shelf density-${density} ${mobileOpen?'is-mobile-open':''}`} aria-label="Pinned references">
+    <header>
+      <div><span>Reference shelf</span><strong>{references.length} pinned</strong></div>
+      <button type="button" onClick={onMobileClose} aria-label="Close pinned references">×</button>
+    </header>
+    <div className="reference-shelf-list" ref={bodyRef}>
+      {!references.length&&<div className="reference-shelf-empty"><span>PIN</span><strong>Keep provisions in view</strong><p>Pin an expanded reference and it will remain here while the main reading spine stays fixed.</p></div>}
+      {references.map((reference,index)=>{
+        const temporarilyExpanded=density==='summary'&&temporaryId===reference.id;
+        const sourceUrl=reference.node?.url||reference.edge?.source_url;
+        return <article
+          key={reference.id}
+          className={`reference-shelf-card ${activeId===reference.id?'is-current':''} ${temporarilyExpanded?'is-temporarily-expanded':''}`}
+          aria-current={activeId===reference.id?'location':undefined}
+          onClick={()=>{
+            onActivate(reference.id);
+            if(density==='summary') setTemporaryId(current=>current===reference.id?'':reference.id);
+          }}
+        >
+          <header><span>{String(index+1).padStart(2,'0')}</span><b>{reference.relationship.code}</b><button type="button" onClick={event=>{event.stopPropagation();onRemove(reference);}} aria-label={`Remove ${displayNodeTitle(reference.node)}`}>×</button></header>
+          <h3>{displayNodeTitle(reference.node)}</h3>
+          <p>{truncate(reference.node?.text||'No excerpt available.',240)}</p>
+          <footer>
+            <button type="button" onClick={event=>{event.stopPropagation();onReturnInline(reference);}}>Return inline</button>
+            {sourceUrl&&<a href={sourceUrl} target="_blank" rel="noopener noreferrer" onClick={event=>event.stopPropagation()}>Source ↗</a>}
+          </footer>
+        </article>;
+      })}
+    </div>
+  </aside>;
+}
+
 function ReportingGraphView({onFeedback}){
   const [query,setQuery]=useState('');
   const [estate,setEstate]=useState('supervisory_reporting');
@@ -287,7 +602,18 @@ function ReportingGraphView({onFeedback}){
   const [catalogDetail,setCatalogDetail]=useState(null);
   const [graph,setGraph]=useState({nodes:[],edges:[],available_edge_types:{}});
   const [nodeDetail,setNodeDetail]=useState(null);
-  const [edgeGroups,setEdgeGroups]=useState(new Set(['structure','documents','rules']));
+  const [reportingSurface,setReportingSurface]=useState('graph');
+  const [cellData,setCellData]=useState(null);
+  const [cellQuery,setCellQuery]=useState('');
+  const [cellTemplate,setCellTemplate]=useState('');
+  const [selectedCell,setSelectedCell]=useState(null);
+  const cellLoadId=useRef(0);
+  const [impactQuery,setImpactQuery]=useState('');
+  const [impactResults,setImpactResults]=useState([]);
+  const [impactTarget,setImpactTarget]=useState(null);
+  const [impactData,setImpactData]=useState(null);
+  const [catalogOpen,setCatalogOpen]=useState(true);
+  const [edgeGroups,setEdgeGroups]=useState(new Set(REPORTING_OVERVIEW_EDGE_GROUP_KEYS));
   const [nodeTypes,setNodeTypes]=useState(new Set(REPORTING_NODE_TYPES.filter(t=>!['DataPoint','TemplateRow','TemplateColumn'].includes(t))));
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
@@ -295,14 +621,18 @@ function ReportingGraphView({onFeedback}){
   const visibleEdgeTypes=useMemo(()=>reportingEdgeTypesForGroups(edgeGroups),[edgeGroups]);
   const edgeGroupCounts=useMemo(()=>reportingEdgeGroupCounts(graph),[graph]);
   const activeGraph=useMemo(()=>{
-    if(!selectedId) return graph;
+    if(!selectedId){
+      return nodeDetail?.node_type==='ReportingCollection'
+        ? reportingOneHopGraph(graph,nodeDetail.id)
+        : graph;
+    }
     const filtered=filterGraph(graph,nodeTypes,visibleEdgeTypes,'all',nodeDetail?.id,true);
     return reportingOneHopGraph(filtered,nodeDetail?.id);
   },[graph,nodeTypes,visibleEdgeTypes,nodeDetail?.id,selectedId]);
   const graphRoot=useMemo(()=>graph.nodes?.find(n=>['RequirementEdition','DataItem','ReportingReturn','DisclosureSet'].includes(n.node_type))||null,[graph]);
   const selectedEdges=useMemo(()=>activeGraph.edges.filter(edge=>nodeDetail&&(edge.from_node_id===nodeDetail.id||edge.to_node_id===nodeDetail.id)),[activeGraph,nodeDetail]);
-  const childGroups=useMemo(()=>reportingChildGroups(nodeDetail,graph),[graph,nodeDetail]);
-  const parentNodes=useMemo(()=>reportingParentNodes(nodeDetail,graph),[graph,nodeDetail]);
+  const childGroups=useMemo(()=>reportingChildGroups(nodeDetail,activeGraph),[activeGraph,nodeDetail]);
+  const parentNodes=useMemo(()=>reportingParentNodes(nodeDetail,activeGraph),[activeGraph,nodeDetail]);
 
   async function loadCatalog(search=query){
     setBusy(true); setError('');
@@ -311,13 +641,20 @@ function ReportingGraphView({onFeedback}){
       if(search.trim()) p.set('q',search.trim());
       const data=await fetchJson(API_BASE+`/reporting/catalog?${p}`);
       setCatalog(data);
-      if(selectedId && !data.returns.some(row=>row.return_id===selectedId)){ setSelectedId(''); setCatalogDetail(null); setNodeDetail(null); }
-      if(!selectedId) setGraph(reportingCatalogOverviewGraph(data.returns||[]));
+      if(selectedId && !data.returns.some(row=>row.return_id===selectedId)){ setSelectedId(''); setCatalogDetail(null); setNodeDetail(null); setReportingSurface('graph'); setCellData(null); setSelectedCell(null); setCatalogOpen(true); }
+      if(!selectedId){
+        const overview=reportingCatalogOverviewGraph(data.returns||[]);
+        setGraph(overview);
+        setNodeDetail(overview.nodes.find(node=>node.node_type==='ReportingCollection')||overview.nodes[0]||null);
+      }
     }catch(err){ setError(err.message||String(err)); }
     finally{ setBusy(false); }
   }
   async function openReturn(row){
     setSelectedId(row.return_id); setBusy(true); setError('');
+    setEdgeGroups(new Set(REPORTING_REQUIREMENT_EDGE_GROUP_KEYS));
+    setReportingSurface('graph'); setCellData(null); setCellQuery(''); setCellTemplate(''); setSelectedCell(null);
+    setCatalogOpen(false);
     try{
       const graphKey=row.edition_id||row.return_id;
       const [detailData,graphData]=await Promise.all([
@@ -330,8 +667,94 @@ function ReportingGraphView({onFeedback}){
     catch(err){ setError(err.message||String(err)); }
     finally{ setBusy(false); }
   }
-  function showOverview(){ setSelectedId(''); setCatalogDetail(null); setNodeDetail(null); setGraph(reportingCatalogOverviewGraph(catalog.returns||[])); }
+  async function loadCells({template=cellTemplate,preferredNode=nodeDetail}={}){
+    if(!selectedId) return;
+    const loadId=++cellLoadId.current;
+    setBusy(true); setError('');
+    try{
+      let selectedTemplate=template;
+      if(!selectedTemplate){
+        const summary=await fetchJson(API_BASE+`/reporting/catalog/${encodeURIComponent(selectedId)}/cells?limit=1&offset=0`);
+        const graphTemplate=reportingTemplateForNode(preferredNode,summary.templates);
+        if(reportingNodeSelectsTemplate(preferredNode)&&!graphTemplate){
+          if(loadId!==cellLoadId.current) return;
+          setCellTemplate('');
+          setCellData({...summary,cells:[],selected_template_id:'',coverage:'selected_template_unavailable',requested_template:{title:preferredNode.title||preferredNode.metadata?.name||'Selected template'}});
+          setSelectedCell(null);
+          return;
+        }
+        selectedTemplate=graphTemplate?.template_id||summary.templates?.[0]?.template_id||'';
+        if(loadId!==cellLoadId.current) return;
+        setCellTemplate(selectedTemplate);
+        if(!selectedTemplate){
+          setCellData(summary);
+          setSelectedCell(null);
+          return;
+        }
+      }
+      const pageSize=500;
+      const layoutPromise=fetchJson(API_BASE+`/reporting/templates/${encodeURIComponent(selectedTemplate)}/layout`).catch(()=>null);
+      const firstParams=new URLSearchParams({limit:String(pageSize),offset:'0',template_id:selectedTemplate});
+      const first=await fetchJson(API_BASE+`/reporting/catalog/${encodeURIComponent(selectedId)}/cells?${firstParams}`);
+      const total=first.counts?.matched_cells||0;
+      const offsets=[];
+      for(let offset=pageSize;offset<total;offset+=pageSize) offsets.push(offset);
+      const pages=[];
+      for(let index=0;index<offsets.length;index+=4){
+        const batch=offsets.slice(index,index+4);
+        pages.push(...await Promise.all(batch.map(offset=>{
+          const params=new URLSearchParams({limit:String(pageSize),offset:String(offset),template_id:selectedTemplate});
+          return fetchJson(API_BASE+`/reporting/catalog/${encodeURIComponent(selectedId)}/cells?${params}`);
+        })));
+        if(loadId!==cellLoadId.current) return;
+      }
+      const cells=[...(first.cells||[]),...pages.flatMap(page=>page.cells||[])];
+      const layout=await layoutPromise;
+      const data={...first,cells,layout,limit:cells.length,offset:0,selected_template_id:selectedTemplate};
+      if(loadId!==cellLoadId.current) return;
+      setCellData(data);
+      setSelectedCell(current=>current&&cells.some(cell=>cell.datapoint_id===current.datapoint_id)?current:null);
+    }catch(err){ setError(err.message||String(err)); }
+    finally{ if(loadId===cellLoadId.current) setBusy(false); }
+  }
+  function showCellExplorer(){
+    setReportingSurface('cells');
+    const selectedTemplate=reportingTemplateForNode(nodeDetail,cellData?.templates)?.template_id||'';
+    if(selectedTemplate && selectedTemplate!==cellData?.selected_template_id){
+      setCellTemplate(selectedTemplate);
+      loadCells({template:selectedTemplate,preferredNode:nodeDetail});
+    }else if(!cellData||reportingNodeSelectsTemplate(nodeDetail)&&!selectedTemplate){
+      loadCells({preferredNode:nodeDetail});
+    }
+  }
+  async function searchImpactTargets(search=impactQuery){
+    setReportingSurface('impact'); setBusy(true); setError('');
+    setImpactTarget(null); setImpactData(null);
+    try{
+      const p=new URLSearchParams({q:search.trim(),limit:'30'});
+      for(const type of ['Provision','LegalInstrument','ExternalReference']) p.append('types',type);
+      const data=await fetchJson(API_BASE+`/reporting/nodes/search?${p}`);
+      setImpactResults(data.results||[]);
+    }catch(err){ setError(err.message||String(err)); }
+    finally{ setBusy(false); }
+  }
+  async function loadImpact(target){
+    setImpactTarget(target); setImpactData(null); setBusy(true); setError('');
+    try{ setImpactData(await fetchJson(API_BASE+`/reporting/impact/${encodeURIComponent(target.node_id||target.id)}?sample_cells=5&limit=80`)); }
+    catch(err){ setError(err.message||String(err)); }
+    finally{ setBusy(false); }
+  }
+  function showOverview(){
+    const overview=reportingCatalogOverviewGraph(catalog.returns||[]);
+    setEdgeGroups(new Set(REPORTING_OVERVIEW_EDGE_GROUP_KEYS));
+    setSelectedId(''); setCatalogDetail(null); setReportingSurface('graph'); setCellData(null); setSelectedCell(null); setCatalogOpen(true); setGraph(overview);
+    setNodeDetail(overview.nodes.find(node=>node.node_type==='ReportingCollection')||overview.nodes[0]||null);
+  }
   function inspectNode(node){ setNodeDetail(node); }
+  function focusCollection(name){
+    const collection=graph.nodes?.find(node=>node.node_type==='ReportingCollection'&&node.title===name);
+    if(collection){ setNodeDetail(collection); setReportingSurface('graph'); }
+  }
   function openGraphNode(node){
     if(!selectedId && node?.metadata?.return_id){ const row=(catalog.returns||[]).find(item=>item.return_id===node.metadata.return_id); if(row) openReturn(row); return; }
     setNodeDetail(node);
@@ -344,26 +767,315 @@ function ReportingGraphView({onFeedback}){
     for(const row of catalog.returns||[]){ const group=row.collection_name||row.family;if(!groups.has(group)) groups.set(group,[]); groups.get(group).push(row); }
     return [...groups].map(([name,rows])=>({name,rows}));
   },[catalog.returns]);
+  const selectedRow=useMemo(()=>(catalog.returns||[]).find(row=>row.return_id===selectedId)||null,[catalog.returns,selectedId]);
+  const requirementEditions=useMemo(
+    ()=>reportingRequirementEditions(selectedRow,catalog.returns||[]),
+    [selectedRow,catalog.returns],
+  );
 
-  return <section className="reporting-view">
+  return <section className={`reporting-view reporting-surface-${reportingSurface}`}>
     <div className="reporting-toolbar">
-      <div><span className="eyebrow">Reporting estate</span><h2>Returns, templates and instructions</h2></div>
-      <form onSubmit={submit}><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Find a return, e.g. PRA115, capital forecast, liquidity…"/><button>{busy?'Loading…':'Search'}</button></form>
-      <div className="reporting-estate-tabs"><button className={estate==='supervisory_reporting'?'active':''} onClick={()=>{setEstate('supervisory_reporting');setSelectedId('');setCatalogDetail(null);setNodeDetail(null);}}>Regulatory returns</button><button className={estate==='pillar3_disclosure'?'active':''} onClick={()=>{setEstate('pillar3_disclosure');setSelectedId('');setCatalogDetail(null);setNodeDetail(null);}}>Pillar 3 disclosures</button></div>
-      <label className="check"><input type="checkbox" checked={includeHistoric} onChange={e=>setIncludeHistoric(e.target.checked)}/> Include superseded versions</label>
+      <div className="reporting-product"><span aria-hidden="true">R</span><div><small>Rulebook Explorer</small><h2>PRA Reporting</h2></div></div>
+      <div className="reporting-surface-tabs" aria-label="Reporting workspace">
+        <button type="button" className={reportingSurface==='graph'?'active':''} onClick={()=>setReportingSurface('graph')}><span aria-hidden="true">⌘</span>Estate</button>
+        <button type="button" disabled={!selectedId} className={reportingSurface==='cells'?'active':''} onClick={showCellExplorer}><span aria-hidden="true">▦</span>Cells</button>
+        <button type="button" className={reportingSurface==='impact'?'active':''} onClick={()=>{setReportingSurface('impact');if(!impactResults.length&&impactQuery.trim())searchImpactTargets();}}><span aria-hidden="true">↳</span>Impact</button>
+      </div>
+      <form className="reporting-return-search" onSubmit={submit}><span aria-hidden="true">⌕</span><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Find a return, template or topic"/><button aria-label="Search reporting estate">{busy?'···':'↵'}</button></form>
+      <div className="reporting-estate-tabs"><button type="button" className={estate==='supervisory_reporting'?'active':''} onClick={()=>{setEstate('supervisory_reporting');setEdgeGroups(new Set(REPORTING_OVERVIEW_EDGE_GROUP_KEYS));setSelectedId('');setCatalogDetail(null);setNodeDetail(null);setCatalogOpen(true);}}>Returns</button><button type="button" className={estate==='pillar3_disclosure'?'active':''} onClick={()=>{setEstate('pillar3_disclosure');setEdgeGroups(new Set(REPORTING_OVERVIEW_EDGE_GROUP_KEYS));setSelectedId('');setCatalogDetail(null);setNodeDetail(null);setCatalogOpen(true);}}>Pillar 3</button></div>
+      <details className="reporting-view-menu"><summary aria-label="Reporting view options" title="View options">•••</summary><div><label><input type="checkbox" checked={includeHistoric} onChange={e=>setIncludeHistoric(e.target.checked)}/> Show superseded editions</label></div></details>
     </div>
     {error&&<div className="error">{error}</div>}
-    <div className="reporting-graph-layout">
+    <div className={`reporting-graph-layout surface-${reportingSurface} ${selectedId?'has-selection':'is-overview'}`}>
       <aside className="reporting-catalog-list reporting-graph-nav">
-        <div className="reporting-list-summary"><strong>{catalog.returns?.length||0}</strong><span>{estate==='pillar3_disclosure'?'disclosure sets':'return versions'}</span></div>{selectedId&&<button className="reporting-overview-button" onClick={showOverview}>‹ Entire reporting estate</button>}
-        {selectedId&&nodeDetail&&<ReportingChildNavigation node={nodeDetail} root={graphRoot} groups={childGroups} parents={parentNodes} onSelect={inspectNode}/>}
-        {selectedId&&<h3 className="reporting-browse-heading">Browse returns</h3>}
-        {families.map(group=><section key={group.name}><h3>{group.name}<span>{group.rows.length}</span></h3>{group.rows.map(row=><button key={row.return_id} className={selectedId===row.return_id?'active':''} onClick={()=>openReturn(row)}><strong>{row.return_code}</strong><span>{row.name}</span>{row.status==='future'&&<em>Future</em>}</button>)}</section>)}
+        <div className="reporting-nav-head">
+          <div className="reporting-list-summary"><strong>{catalog.returns?.length||0}</strong><span>{estate==='pillar3_disclosure'?'disclosure sets':'editions'}</span></div>
+          {selectedId&&<button className="reporting-overview-button" onClick={showOverview} aria-label="Return to entire reporting estate">←</button>}
+        </div>
+        {selectedRow&&<div className="reporting-scope-card"><span>Active requirement</span><strong>{selectedRow.return_code}</strong><p>{selectedRow.name}</p>{requirementEditions.length>1&&<label className="reporting-edition-switcher"><span>Edition / history</span><select value={selectedId} onChange={event=>{const row=requirementEditions.find(item=>item.return_id===event.target.value);if(row) openReturn(row);}} aria-label={`Edition of ${selectedRow.return_code}`}>{requirementEditions.map(row=><option key={row.return_id} value={row.return_id}>{reportingEditionOptionLabel(row)}</option>)}</select></label>}<button type="button" onClick={()=>setCatalogOpen(open=>!open)}>{catalogOpen?'Close browser':'Switch return'} <i aria-hidden="true">{catalogOpen?'×':'⌄'}</i></button></div>}
+        {selectedId&&reportingSurface==='graph'&&nodeDetail&&<ReportingChildNavigation node={nodeDetail} root={graphRoot} groups={childGroups} parents={parentNodes} onSelect={inspectNode}/>}
+        {(!selectedId||catalogOpen)&&<div className="reporting-return-browser">{selectedId&&<h3 className="reporting-browse-heading">Browse returns</h3>}{families.map(group=><section key={group.name}><h3><button type="button" className={!selectedId&&nodeDetail?.node_type==='ReportingCollection'&&nodeDetail.title===group.name?'active':''} onClick={()=>focusCollection(group.name)}>{group.name}</button><span>{group.rows.length}</span></h3>{group.rows.map(row=><button key={row.return_id} className={selectedId===row.return_id?'active':''} onClick={()=>openReturn(row)}><strong>{row.return_code}</strong><span>{row.name}</span>{row.status==='future'&&<em>Future</em>}</button>)}</section>)}</div>}
       </aside>
-      <main className="reporting-graph-canvas"><div className="canvas-meta reporting-meta"><strong>{catalogDetail?`${catalogDetail.return_code}: ${catalogDetail.name}`:estate==='pillar3_disclosure'?'Pillar 3 disclosure graph':'Regulatory returns graph'}</strong><span>{activeGraph.nodes.length} nodes · {activeGraph.edges.length} links</span></div><Graph graph={activeGraph} selected={nodeDetail||graphRoot} detail={nodeDetail} nodeTypes={nodeTypes} relationshipTypes={edgeGroups} relationshipFilters={REPORTING_EDGE_GROUPS.map(group=>group.key)} materialFilters={reportingMaterialFilters(graph)} availableEdgeTypes={edgeGroupCounts} onToggleNodeType={toggleNode} onToggleRelationship={toggleEdge} onSelect={openGraphNode} onOpen={openGraphNode} onFeedback={onFeedback}/></main>
-      <aside className="reporting-graph-inspector"><ReportingGraphInfo node={nodeDetail} catalogDetail={catalogDetail} edges={selectedEdges} graph={activeGraph} onSelect={inspectNode} onFeedback={onFeedback}/></aside>
+      <main className="reporting-graph-canvas">
+        {reportingSurface==='cells'
+          ? <div className="reporting-cell-canvas"><ReportingCellExplorer data={cellData} busy={busy} query={cellQuery} setQuery={setCellQuery} template={cellTemplate} setTemplate={setCellTemplate} onLoad={loadCells} selected={selectedCell} onSelect={setSelectedCell}/></div>
+          : reportingSurface==='impact'
+          ? <div className="reporting-cell-canvas"><ReportingImpactExplorer query={impactQuery} setQuery={setImpactQuery} results={impactResults} target={impactTarget} data={impactData} busy={busy} onSearch={searchImpactTargets} onSelect={loadImpact}/></div>
+          : <><div className="canvas-meta reporting-meta"><strong>{catalogDetail?`${catalogDetail.return_code}: ${catalogDetail.name}`:estate==='pillar3_disclosure'?'Pillar 3 disclosure graph':'Regulatory returns graph'}</strong><span>{activeGraph.nodes.length} nodes · {activeGraph.edges.length} links</span></div><Graph graph={activeGraph} selected={nodeDetail||graphRoot} detail={nodeDetail} nodeTypes={nodeTypes} relationshipTypes={edgeGroups} relationshipFilters={REPORTING_EDGE_GROUPS.map(group=>group.key)} materialFilters={reportingMaterialFilters(graph)} availableEdgeTypes={edgeGroupCounts} onToggleNodeType={toggleNode} onToggleRelationship={toggleEdge} onSelect={openGraphNode} onOpen={openGraphNode} onFeedback={onFeedback}/></>}
+      </main>
+      <aside className="reporting-graph-inspector">
+        {reportingSurface==='cells'
+          ? <ReportingCellInfo cell={selectedCell} data={cellData}/>
+          : reportingSurface==='impact'
+          ? <ReportingImpactInfo target={impactTarget} data={impactData}/>
+          : <ReportingGraphInfo node={nodeDetail} catalogDetail={catalogDetail} edges={selectedEdges} graph={activeGraph} onSelect={inspectNode} onFeedback={onFeedback}/>}
+      </aside>
     </div>
   </section>;
+}
+
+function ReportingImpactExplorer({query,setQuery,results,target,data,busy,onSearch,onSelect}){
+  function submit(e){ e.preventDefault(); if(query.trim()) onSearch(query); }
+  return <section className="reporting-impact-explorer">
+    <header className="reporting-impact-head">
+      <span className="eyebrow">Change impact</span>
+      <h2>Trace a rule change into reporting</h2>
+      <form onSubmit={submit}><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search for a provision, e.g. Article 4(1), liquidity, own funds…"/><button disabled={!query.trim()||busy}>{busy?'Working…':'Find rule'}</button></form>
+    </header>
+    {!target&&<div className="reporting-impact-results">
+      {results.length>0&&<div className="reporting-impact-result-head"><strong>{results.length} matching graph nodes</strong><span>Choose the exact changed provision before calculating impact.</span></div>}
+      {results.map(node=>{const context=node.properties?.description||node.properties?.url;return <button type="button" key={node.node_id} onClick={()=>onSelect(node)}><span>{materialLabel(materialType(node.node_type))}</span><strong>{node.label||node.node_id}</strong>{context&&<small>{truncate(context,180)}</small>}</button>;})}
+      {!results.length&&!busy&&<div className="reporting-impact-empty is-prompt">Search the reporting-aware graph for the provision or legal instrument that changed.</div>}
+    </div>}
+    {target&&busy&&!data&&<div className="reporting-impact-empty">Tracing instruction references and downstream reporting scope…</div>}
+    {data&&<ReportingImpactResults data={data}/>}
+  </section>;
+}
+
+function ReportingImpactResults({data}){
+  return <div className="reporting-impact-results-view">
+    <div className="reporting-impact-target"><div><span>Changed node</span><strong>{data.target.title}</strong></div><em>{materialLabel(materialType(data.target))}</em></div>
+    <div className="reporting-cell-metrics reporting-impact-metrics">
+      <div><strong>{fmt(data.counts.affected_returns)}</strong><span>affected returns</span></div>
+      <div><strong>{fmt(data.counts.instruction_sources)}</strong><span>instruction sources</span></div>
+      <div><strong>{fmt(data.counts.direct_references)}</strong><span>direct references</span></div>
+      <div><strong>{fmt(data.counts.direct_coordinates)}</strong><span>direct coordinates</span></div>
+      <div><strong>{fmt(data.counts.materialized_direct_cells)}</strong><span>parsed direct cells</span></div>
+      <div><strong>{fmt(data.counts.candidate_cells)}</strong><span>candidate cells</span></div>
+    </div>
+    <div className="reporting-impact-tier-note"><strong>Evidence boundary</strong><span>Direct coordinates mean that the same instruction passage names this rule and row, column or cell. They sharply narrow review but are not automatically confirmed edits; the remaining templates and cells are candidate scope.</span></div>
+    <div className="reporting-impact-return-list">{data.returns.map(item=><ReportingImpactReturn key={item.data_item_id} item={item}/>)}</div>
+    {!data.returns.length&&<div className="reporting-impact-empty">No reporting instruction in the existing database directly references this node.</div>}
+  </div>;
+}
+
+function ReportingImpactReturn({item}){
+  const [open,setOpen]=useState(false);
+  const name=item.catalog_entries?.[0]?.name || item.return_label || item.return_code;
+  return <article className="reporting-impact-return">
+    <button type="button" className="reporting-impact-return-head" onClick={()=>setOpen(v=>!v)}>
+      <span><b>{item.return_code}</b><strong>{name}</strong></span>
+      <span className="reporting-impact-badges"><em>{fmt(item.reference_count)} direct ref{item.reference_count===1?'':'s'}</em>{item.direct_coordinate_count>0&&<em className="coordinate">{fmt(item.direct_coordinate_count)} direct coordinate{item.direct_coordinate_count===1?'':'s'}</em>}<em className="candidate">{fmt(item.candidate_cell_count)} candidate cells</em></span>
+      <i>{open?'−':'+'}</i>
+    </button>
+    {open&&<div className="reporting-impact-return-body">
+      <section><h3>Instruction sources <span>direct evidence</span></h3><div className="reporting-impact-sources">{item.instruction_sources.map(source=><a key={source.source_id||source.source_node_id} href={source.url||'#'} target="_blank" rel="noopener noreferrer"><strong>{source.title||'Reporting instruction source'}</strong><small>{source.file_type?.toUpperCase()||'SOURCE'}</small><em>Open source ↗</em></a>)}</div></section>
+      <section><h3>Reference evidence <span>{item.references_truncated?`showing ${item.references.length} of ${item.reference_count}`:`${item.reference_count} passages`}</span></h3><div className="reporting-impact-evidence">{item.references.slice(0,12).map(ref=><blockquote key={ref.edge_id}><p>{truncate(ref.evidence_text||'Reference detected without extracted passage text.',520)}</p><footer>{[ref.source_title,ref.page_number&&`page ${ref.page_number}`,`${Math.round((ref.confidence||0)*100)}% confidence`].filter(Boolean).join(' · ')}</footer></blockquote>)}</div></section>
+      {item.direct_coordinate_count>0&&<section className="reporting-impact-direct-section"><h3>Direct coordinate evidence <span>{item.direct_coordinates_truncated?`showing ${item.direct_coordinates.length} of ${item.direct_coordinate_count}`:`${item.direct_coordinate_count} evidence links`} · review, not confirmed edits</span></h3><div className="reporting-impact-direct-grid">{item.direct_coordinates.map(coordinate=><article key={`${coordinate.legal_edge_id}-${coordinate.coordinate_edge_id}`}><div><strong>{coordinate.template_code}</strong><b>{`r${coordinate.row_code||'—'}${coordinate.column_code?` / c${coordinate.column_code}`:''}`}</b><em className={coordinate.coverage_status==='materialized_datapoint'?'materialized':'defined'}>{coordinate.coverage_status==='materialized_datapoint'?'Parsed cell':'Instruction-defined coordinate'}</em></div><p>{truncate(coordinate.instruction_text||coordinate.evidence_text||'Instruction passage',360)}</p><footer>{truncate([coordinate.row_label,coordinate.column_label,coordinate.source_title,coordinate.page_number&&`page ${coordinate.page_number}`].filter(Boolean).join(' · '),180)}</footer>{(coordinate.source_url||coordinate.template_source_url)&&<a href={coordinate.source_url||coordinate.template_source_url} target="_blank" rel="noopener noreferrer">Open evidence ↗</a>}</article>)}</div></section>}
+      <section><h3>Candidate templates and cells <span>review scope, not confirmed edits</span></h3><div className="reporting-impact-templates">{item.templates.map(template=><div key={template.template_id}><strong>{template.template_code}</strong><span>{template.title||template.annex||'Reporting template'}</span><em>{fmt(template.instruction_count)} instructions · {fmt(template.cell_count)} cells</em>{template.source_url&&<a href={template.source_url} target="_blank" rel="noopener noreferrer">Open template ↗</a>}</div>)}</div>{!item.templates.length&&<p className="muted">No parsed cell-bearing template is mapped to this return.</p>}</section>
+    </div>}
+  </article>;
+}
+
+function ReportingImpactInfo({target,data}){
+  if(!target&&!data) return <div className="pane reporting-cell-info reporting-impact-primer"><span className="eyebrow">Impact method</span><h2>Evidence before inference</h2><ol><li><i>01</i><div><strong>Direct reference</strong><span>An instruction expressly names the changed rule.</span></div></li><li><i>02</i><div><strong>Direct coordinate</strong><span>The same passage identifies a row, column or cell.</span></div></li><li><i>03</i><div><strong>Candidate scope</strong><span>Mapped templates and cells are kept separate for review.</span></div></li></ol></div>;
+  const node=data?.target||target;
+  return <div className="pane reporting-impact-info">
+    <span className="kind">Changed graph node</span>
+    <h2>{node?.title||node?.label||node?.node_id}</h2>
+    {data&&<><div className="reporting-impact-model"><h3>Direct instruction reference</h3><p>{data.impact_model.direct_instruction_reference}</p><h3>Direct coordinate evidence</h3><p>{data.impact_model.direct_coordinate_evidence}</p><h3>Candidate scope</h3><p>{data.impact_model.candidate_scope}</p></div><Collapsible title="Limitations" count={`${data.limitations.length}`} open><ul className="reporting-impact-limitations">{data.limitations.map(text=><li key={text}>{text}</li>)}</ul></Collapsible></>}
+  </div>;
+}
+
+function ReportingCellExplorer({data,busy,query,setQuery,template,setTemplate,onLoad,selected,onSelect}){
+  if(!data) return <div className="reporting-cell-loading">{busy?'Loading cell-level reporting data…':'Open a reporting edition to explore its cells.'}</div>;
+  const coverage=reportingCellCoverage(data.coverage);
+  const selectedTemplate=(data.templates||[]).find(item=>item.template_id===(data.selected_template_id||template))||(data.coverage==='selected_template_unavailable'?null:data.templates?.[0])||null;
+  const grid=reportingTemplateGrid(data.cells||[],query);
+  function submit(e){ e.preventDefault(); }
+  function chooseTemplate(e){ const next=e.target.value;setTemplate(next);setQuery('');onLoad({template:next}); }
+  return <section className="reporting-cell-explorer">
+    <header className="reporting-cell-head">
+      <div><span className="eyebrow">Cell explorer</span><h2>{data.return.return_code}: {data.return.name}</h2></div>
+      <div className={`reporting-cell-coverage ${coverage.tone}`}><strong>{coverage.title}</strong><span>{coverage.detail}</span></div>
+    </header>
+    <div className="reporting-cell-metrics">
+      <div><strong>{fmt(data.counts.templates)}</strong><span>parsed templates</span></div>
+      <div><strong>{fmt(data.counts.cells)}</strong><span>cells in this edition</span></div>
+      <div><strong>{fmt(query?grid.matchingCells:grid.populatedCells)}</strong><span>{query?'matching this search':'positioned cells in this template'}</span></div>
+    </div>
+    <form className="reporting-cell-search" onSubmit={submit}>
+      <label><span>Template</span><select value={selectedTemplate?.template_id||template} onChange={chooseTemplate}>{data.coverage==='selected_template_unavailable'&&<option value="">{data.requested_template?.title||'Selected template'} — no parsed cells</option>}{data.templates.map(item=><option key={item.template_id} value={item.template_id}>{item.template_code}{reportingTemplateTitle(item)!==item.template_code?` — ${reportingTemplateTitle(item)}`:''} ({fmt(item.cell_count)})</option>)}</select></label>
+      <label><span>Find within this template</span><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search row, column, concept or coordinate…"/></label>
+      <button type="submit" disabled={busy}>{busy?'Loading template…':'Find in template'}</button>
+    </form>
+    {['available','template_layout_available'].includes(data.coverage)?<>
+      <div className="reporting-cell-result-head"><strong>{query?`${fmt(grid.matchingCells)} matching cells`:(data.layout?.format==='pdf'?`${fmt(data.layout.page_count)} page official PDF template`:data.layout?`${fmt(data.layout.rows.length)} worksheet rows × ${fmt(data.layout.columns.length)} worksheet columns`:`${fmt(grid.allRows.length)} rows × ${fmt(grid.columns.length)} columns`)}</strong><span>{data.layout?.format==='pdf'?'Rendered directly from the official PDF template.':data.layout?'Rendered from the official workbook, including its merged headers, dimensions and cell styles.':'Rows and columns retain the template’s reporting coordinates.'} {data.cells?.length?'Choose a populated cell for its complete path.':''}</span></div>
+      <ReportingTemplateMatrix template={selectedTemplate} layout={data.layout} cells={data.cells||[]} grid={grid} query={query} selected={selected} onSelect={onSelect}/>
+    </>:<ReportingCellCoverageDetails data={data}/>}
+  </section>;
+}
+
+function ReportingTemplateMatrix({template,layout,cells,grid,query,selected,onSelect}){
+  const gridRef=useRef(null);
+  useEffect(()=>{
+    if(gridRef.current) gridRef.current.scrollTo({top:0,left:0});
+  },[template?.template_id,query]);
+  return <section className="reporting-template-matrix">
+    <header>
+      <div><span>{template?.template_code||'Template'}</span><h3>{reportingTemplateTitle(template)}</h3></div>
+      <p>{layout?.format==='pdf'?`Official PDF · ${fmt(layout.page_count)} page${layout.page_count===1?'':'s'}`:layout?`${layout.sheet_name} worksheet · ${fmt(layout.rows.length)} rows · ${fmt(layout.columns.length)} columns`:`${fmt(grid.populatedCoordinates)} populated positions · ${fmt(grid.allRows.length)} rows · ${fmt(grid.columns.length)} columns${grid.unpositionedCells?` · ${fmt(grid.unpositionedCells)} cells without complete coordinates excluded`:''}`}</p>
+      {template?.source_url&&<a href={template.source_url} target="_blank" rel="noopener noreferrer">Open official template ↗</a>}
+    </header>
+    {template&&layout?(layout.format==='pdf'?<ReportingPdfTemplate template={template} layout={layout}/>:<ReportingWorkbookTemplate layout={layout} cells={cells} query={query} selected={selected} onSelect={onSelect}/>):<div className="reporting-template-grid-wrap" ref={gridRef}>
+      <table className="reporting-template-grid" aria-label={`${template?.template_code||'Reporting'} template cells`}>
+        <thead><tr><th className="reporting-template-corner"><span>Row</span><strong>Reported item</strong></th>{grid.columns.map(column=><th key={column.id} scope="col"><code>c{column.code}</code><span>{column.label}</span></th>)}</tr></thead>
+        <tbody>
+          {grid.rows.map(row=><tr key={row.id}>
+            <th scope="row"><code>r{row.code}</code><span>{row.label}</span></th>
+            {grid.columns.map(column=>{
+              const cells=grid.cellsByCoordinate.get(`${row.id}\u0000${column.id}`)||[];
+              const cell=cells[0];
+              if(!cell) return <td key={column.id} className="empty" aria-label={`No cell at r${row.code} / c${column.code}`}/>;
+              const active=selected?.datapoint_id===cell.datapoint_id;
+              const match=query&&cells.some(item=>grid.matchingIds.has(item.datapoint_id));
+              return <td key={column.id} className={`${active?'active ':''}${match?'match':''}`.trim()}><button type="button" onClick={()=>onSelect(cell)} title={`${reportingCellCoordinate(cell)} — ${reportingCellTitle(cell)}`}><span>{reportingCellTitle(cell)}</span>{cells.length>1&&<b>+{cells.length-1}</b>}</button></td>;
+            })}
+          </tr>)}
+          {!grid.rows.length&&<tr><td className="reporting-template-no-match" colSpan={Math.max(1,grid.columns.length+1)}>No cells match this search. Try another row code, column code, concept or coordinate.</td></tr>}
+        </tbody>
+      </table>
+    </div>}
+  </section>;
+}
+
+function ReportingPdfTemplate({template,layout}){
+  const documentUrl=`${API_BASE}/reporting/templates/${encodeURIComponent(template.template_id)}/document#page=1&toolbar=0&navpanes=0&view=FitH`;
+  return <div className="reporting-pdf-template">
+    <iframe src={documentUrl} title={`${template.template_code||'Reporting'} official PDF template`}/>
+    <p>{fmt(layout.page_count)} page{layout.page_count===1?'':'s'} · rendered from the official PDF file</p>
+  </div>;
+}
+
+function ReportingWorkbookTemplate({layout,cells,query,selected,onSelect}){
+  const [scrollTop,setScrollTop]=useState(0);
+  const workbook=useMemo(()=>reportingWorkbookDatapoints(layout,cells),[layout,cells]);
+  const scale=(Number(layout.zoom)||100)/100;
+  const columnWidths=useMemo(()=>new Map(
+    (layout.columns||[]).map(column=>[
+      column.index,
+      reportingWorkbookColumnPixels(column.width,layout.zoom),
+    ]),
+  ),[layout]);
+  const rowHeights=useMemo(()=>new Map(
+    (layout.rows||[]).map(row=>[
+      row.index,
+      Math.max(1,Math.round((Number(row.height)||layout.default_row_height||15)*96/72*scale)),
+    ]),
+  ),[layout,scale]);
+  const frozenRows=new Set((layout.rows||[]).slice(0,layout.freeze?.rows||0).map(row=>row.index));
+  const frozenColumns=new Set((layout.columns||[]).slice(0,layout.freeze?.columns||0).map(column=>column.index));
+  const rowTops=new Map();
+  let rowTop=0;
+  for(const row of layout.rows||[]){rowTops.set(row.index,rowTop);rowTop+=rowHeights.get(row.index)||0;}
+  const columnLefts=new Map();
+  let columnLeft=0;
+  for(const column of layout.columns||[]){columnLefts.set(column.index,columnLeft);columnLeft+=columnWidths.get(column.index)||0;}
+  const allRows=layout.rows||[];
+  let visibleRows=allRows;
+  let topSpacer=0;
+  let bottomSpacer=0;
+  if(layout.sparse){
+    const viewportTop=Math.max(0,scrollTop-500);
+    const viewportBottom=scrollTop+1400;
+    let first=0;
+    while(first<allRows.length&&(rowTops.get(allRows[first].index)||0)+(rowHeights.get(allRows[first].index)||0)<viewportTop) first+=1;
+    let last=first;
+    while(last<allRows.length&&(rowTops.get(allRows[last].index)||0)<viewportBottom) last+=1;
+    visibleRows=allRows.slice(first,last);
+    topSpacer=visibleRows.length?(rowTops.get(visibleRows[0].index)||0):rowTop;
+    const visibleEnd=visibleRows.length?(rowTops.get(visibleRows.at(-1).index)||0)+(rowHeights.get(visibleRows.at(-1).index)||0):rowTop;
+    bottomSpacer=Math.max(0,rowTop-visibleEnd);
+  }
+  function workbookCells(row){
+    if(!layout.sparse) return row.cells;
+    const explicit=new Map((row.cells||[]).map(cell=>[cell.column,cell]));
+    return (layout.columns||[]).flatMap(column=>{
+      const merge=(layout.merged_ranges||[]).find(range=>(
+        range.start_row<=row.index&&row.index<=range.end_row
+        &&range.start_column<=column.index&&column.index<=range.end_column
+      ));
+      if(merge&&(merge.start_row!==row.index||merge.start_column!==column.index)) return [];
+      const cell=explicit.get(column.index)||{
+        reference:`${column.letter}${row.index}`,
+        column:column.index,
+        value:'',
+        raw_value:'',
+        formula:null,
+        style_id:row.style_id||column.style_id||0,
+      };
+      if(merge) return [{...cell,row_span:merge.end_row-merge.start_row+1,column_span:merge.end_column-merge.start_column+1}];
+      return [cell];
+    });
+  }
+  const needle=String(query||'').trim().toLowerCase();
+  return <div className="reporting-workbook-wrap" aria-label={`${layout.template_code||layout.sheet_name} source workbook sheet`} onScroll={layout.sparse?event=>setScrollTop(event.currentTarget.scrollTop):undefined}>
+    <table className="reporting-workbook-sheet" style={{width:`${columnLeft}px`}}>
+      <colgroup>{(layout.columns||[]).map(column=><col key={column.index} style={{width:`${columnWidths.get(column.index)}px`,display:column.hidden?'none':undefined}}/>)}</colgroup>
+      <tbody>
+        {topSpacer>0&&<tr className="reporting-workbook-spacer" style={{height:`${topSpacer}px`}}><td colSpan={layout.columns.length}/></tr>}
+        {visibleRows.map(row=><tr key={row.index} style={{height:`${rowHeights.get(row.index)}px`,display:row.hidden?'none':undefined}}>
+        {workbookCells(row).map(cell=>{
+          const datapoint=workbook.cellFor(row,cell);
+          const style=reportingWorkbookCellStyle(layout.styles?.[cell.style_id]||{},layout.zoom);
+          const active=datapoint&&selected?.datapoint_id===datapoint.datapoint_id;
+          const haystack=[cell.value,datapoint?.concept_label,datapoint?.row_label,datapoint?.column_label].filter(Boolean).join(' ').toLowerCase();
+          const match=needle&&haystack.includes(needle);
+          const stickyRow=frozenRows.has(row.index);
+          const stickyColumn=frozenColumns.has(cell.column);
+          const stickyStyle=stickyRow||stickyColumn?{
+            position:'sticky',
+            top:stickyRow?`${rowTops.get(row.index)}px`:undefined,
+            left:stickyColumn?`${columnLefts.get(cell.column)}px`:undefined,
+            zIndex:stickyRow&&stickyColumn?4:stickyRow?3:2,
+          }:{};
+          const content=<span className="reporting-workbook-cell-content" style={{
+            justifyContent:style.justifyContent,
+            alignItems:style.alignItems,
+            whiteSpace:style.whiteSpace,
+            paddingLeft:style.paddingLeft,
+            transform:style.transform,
+            writingMode:style.writingMode,
+          }}>{cell.value}</span>;
+          return <td key={cell.reference}
+            rowSpan={cell.row_span||1}
+            colSpan={cell.column_span||1}
+            className={`${datapoint?'has-datapoint ':''}${active?'active ':''}${match?'match':''}`.trim()}
+            style={{...style,...stickyStyle}}
+            title={datapoint?`${cell.reference} · ${reportingCellCoordinate(datapoint)}`:cell.reference}>
+            {datapoint?<button type="button" onClick={()=>onSelect(datapoint)}>{content}</button>:content}
+          </td>;
+        })}
+      </tr>)}
+        {bottomSpacer>0&&<tr className="reporting-workbook-spacer" style={{height:`${bottomSpacer}px`}}><td colSpan={layout.columns.length}/></tr>}
+      </tbody>
+    </table>
+  </div>;
+}
+
+function ReportingCellCoverageDetails({data}){
+  return <div className="reporting-cell-unavailable">
+    <h3>What is available</h3>
+    {data.templates?.length?<div className="reporting-template-coverage">{data.templates.map(item=><article key={item.template_id}><div><strong>{item.template_code}</strong><span>{item.title}</span></div><em>{fmt(item.row_count)} rows · {fmt(item.column_count)} columns · {fmt(item.cell_count)} cells</em>{item.source_url&&<a href={item.source_url} target="_blank" rel="noopener noreferrer">Open official template ↗</a>}</article>)}</div>:<p>The catalogue entry and official resources are available, but no parsed template is linked to this edition yet.</p>}
+  </div>;
+}
+
+function ReportingCellInfo({cell,data}){
+  if(!cell) return <div className="pane reporting-cell-info"><span className="eyebrow">Cell information</span><h2>Select a cell</h2><p className="muted">Choose any result to see how it sits inside the return, its row and column meaning, datatype, unit and official source.</p></div>;
+  const path=reportingCellPath(cell,data?.return);
+  const template=(data?.templates||[]).find(item=>item.template_id===cell.template_id);
+  return <div className="pane reporting-cell-info">
+    <span className="kind">Reporting cell</span>
+    <h2>{reportingCellTitle(cell)}</h2>
+    <code className="reporting-cell-coordinate">{reportingCellCoordinate(cell)}</code>
+    <div className="reporting-cell-path">{path.map((item,index)=><div key={`${item.kind}:${item.code}`}><i>{index+1}</i><span>{item.kind}</span><strong>{item.code}</strong><p>{item.label}</p></div>)}</div>
+    <div className="reporting-cell-properties">
+      <div><span>Datatype</span><strong>{cell.data_type||'Not recorded'}</strong></div>
+      <div><span>Unit</span><strong>{cell.unit_type||'Not recorded'}</strong></div>
+      <div><span>Datapoint ID</span><strong>{cell.datapoint_id}</strong></div>
+    </div>
+    {template?.source_url&&<a className="reporting-cell-source" href={template.source_url} target="_blank" rel="noopener noreferrer"><span>Official template source</span><strong>{template.source_title||template.title||template.template_code}</strong><em>Open file ↗</em></a>}
+  </div>;
 }
 
 function ReportingChildNavigation({node,root,groups,parents,onSelect}){
@@ -385,7 +1097,16 @@ function ReportingChildNavigation({node,root,groups,parents,onSelect}){
 }
 
 function reportingCatalogOverviewGraph(returns){
-  return {level:'reporting_ontology',nodes:returns.map(row=>({id:row.edition_id||row.return_id,node_type:'RequirementEdition',title:row.edition_display_name||`${row.return_code} — ${row.name}`,text:row.description||'',url:row.source_page_url||'',metadata:{...row,return_id:row.return_id,data_item_code:row.return_code}})),edges:[],available_edge_types:{}};
+  const groups=new Map();
+  for(const row of returns){
+    const key=row.collection_id||row.collection_name||row.family||'reporting';
+    if(!groups.has(key)) groups.set(key,{id:`collection:${key}`,node_type:'ReportingCollection',title:row.collection_name||row.family||'Reporting',text:'',metadata:{collection_id:row.collection_id||key,return_count:0}});
+    groups.get(key).metadata.return_count+=1;
+  }
+  const groupNodes=[...groups.values()].map(node=>({...node,text:`${node.metadata.return_count} reporting edition${node.metadata.return_count===1?'':'s'}`}));
+  const returnNodes=returns.map(row=>({id:row.edition_id||row.return_id,node_type:'RequirementEdition',title:row.edition_display_name||`${row.return_code} — ${row.name}`,text:row.description||'',url:row.source_page_url||'',metadata:{...row,return_id:row.return_id,data_item_code:row.return_code}}));
+  const edges=returns.map(row=>{const key=row.collection_id||row.collection_name||row.family||'reporting';return {id:`overview:${key}:${row.edition_id||row.return_id}`,from_node_id:`collection:${key}`,to_node_id:row.edition_id||row.return_id,edge_type:'HAS_EDITION',confidence:1,source_method:'reporting_catalog'};});
+  return {level:'reporting_ontology',nodes:[...groupNodes,...returnNodes],edges,available_edge_types:{HAS_EDITION:edges.length}};
 }
 
 function ReportingGraphInfo({node,catalogDetail,edges,graph,onSelect,onFeedback}){
@@ -395,10 +1116,11 @@ function ReportingGraphInfo({node,catalogDetail,edges,graph,onSelect,onFeedback}
   const links=reportingSourceUrls(node,edges,graph);
   const templates=(catalogDetail?.artifacts||[]).filter(a=>a.relationship==='template');
   const instructions=(catalogDetail?.artifacts||[]).filter(a=>a.relationship==='instructions');
-  const contextualName=(edges||[]).map(edge=>edge.metadata?.display_name).find(Boolean);
+  const contextualName=isRoot?'':(edges||[]).map(edge=>edge.metadata?.display_name).find(Boolean);
+  const visibleTitle=contextualName||displayNodeTitle(node);
   return <div className="pane reporting-graph-info">
     <span className="kind">{materialLabel(materialType(node))}</span>
-    <h2>{contextualName||displayNodeTitle(node)}</h2>
+    <h2>{visibleTitle}</h2>
     {contextualName&&contextualName!==displayNodeTitle(node)&&<p className="muted">Official resource: {displayNodeTitle(node)}</p>}
     {(isRoot?catalogDetail?.description:node.text)&&<p className="text">{truncate(isRoot?catalogDetail.description:node.text,1500)}</p>}
     {isRoot&&catalogDetail?.effective_text&&<span className="reporting-effective">Effective {catalogDetail.effective_text}</span>}
@@ -1094,8 +1816,8 @@ function parallelEdgeKey(edge){
   return `${a}→${b}→${edge.edge_type||''}`;
 }
 
-function Explore({node,edges,graph,onChoose}){
-  return <div className="pane explore-pane"><Evidence node={node} edges={edges} graph={graph} onChoose={onChoose}/></div>;
+function Explore({node,edges,graph,onChoose,onRead}){
+  return <div className="pane explore-pane"><Evidence node={node} edges={edges} graph={graph} onChoose={onChoose} onRead={onRead}/></div>;
 }
 function ContentNode({node,onChoose}){
   const kids=node.children||[];
@@ -1110,7 +1832,7 @@ function ContentNode({node,onChoose}){
   </div>;
 }
 
-function Evidence({node,edges,graph,onChoose}){
+function Evidence({node,edges,graph,onChoose,onRead}){
   const byId=new Map(graph.nodes.map(n=>[n.id,n]));
   if(!node)return <section className="explore-layer evidence-layer"><p className="muted">Select a node.</p></section>;
   const analytical=edges.filter(e=>e.edge_type!=='contains');
@@ -1120,6 +1842,7 @@ function Evidence({node,edges,graph,onChoose}){
     <Collapsible title="Selected material" count={label(node.node_type)} open>
       <span className="kind">{label(node.node_type)}</span><h2><NodeTitle node={node}/></h2>{node.url&&<a className="source" href={node.url} target="_blank" rel="noopener noreferrer">Open source ↗</a>}
       <p className="text">{node.text?truncate(node.text,1300):emptyNodeMessage(node)}</p>
+      <button type="button" className="reading-mode-entry" onClick={()=>onRead(node)}><span>Reading mode</span><strong>Read this provision with its references →</strong></button>
     </Collapsible>
     {groups.length
       ? groups.map(([edgeType,items],i)=><Collapsible key={edgeType} title={evidenceLabel(edgeType)} count={`${items.length} link${items.length===1?'':'s'}`} open={i<2}>

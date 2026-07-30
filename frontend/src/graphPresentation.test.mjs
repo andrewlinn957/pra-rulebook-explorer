@@ -37,6 +37,21 @@ describe('graph presentation helpers', () => {
     assert.deepEqual(documentBadge(node), { label: 'PDF', kind: 'pdf' });
   });
 
+  it('uses recovered authoritative titles instead of raw reference URLs', () => {
+    const node = {
+      node_type: 'external_reference',
+      title: 'https://www.ifrs.org/issued-standards/ias-19.pdf',
+      url: 'https://www.ifrs.org/issued-standards/ias-19.pdf',
+      metadata: {
+        reader_reference_text: {
+          source_title: 'IAS 19 Employee Benefits',
+        },
+      },
+    };
+
+    assert.equal(displayNodeTitle(node), 'IAS 19 Employee Benefits · PDF');
+  });
+
   it('adds concise workbook template names to reporting template labels', () => {
     const node = {
       node_type: 'Template',
@@ -59,6 +74,21 @@ describe('graph presentation helpers', () => {
         source_url: 'https://www.bankofengland.co.uk/-/media/boe/files/prudential-regulation/regulatory-reporting/banking/finrep-national-accounting-framework.xlsx',
       },
     }), 'FINREP 42 · Annex IV');
+  });
+
+  it('labels a requirement edition with its requirement name', () => {
+    assert.equal(displayNodeTitle({
+      node_type: 'RequirementEdition',
+      title: 'CRR-ANNEXES-I-II — Reporting on own funds and own funds requirements',
+      metadata: {
+        status: 'current',
+        effective_text: '1 January 2022 – 31 December 2026',
+      },
+    }), 'CRR-ANNEXES-I-II — Reporting on own funds and own funds requirements');
+    assert.equal(displayNodeTitle({
+      node_type: 'ReportingRequirement',
+      title: 'CRR-ANNEXES-I-II — Reporting on own funds and own funds requirements',
+    }), 'CRR-ANNEXES-I-II — Reporting on own funds and own funds requirements');
   });
 
   it('gives reporting XML and XSD artefacts user-facing current taxonomy names', () => {

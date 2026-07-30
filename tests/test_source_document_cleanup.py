@@ -119,6 +119,105 @@ class SourceDocumentCleanupTests(unittest.TestCase):
         conn = sqlite3.connect(db)
         self.assertEqual(conn.execute("SELECT graph_edges_rewired FROM source_document_cleanup WHERE source_id='variant'").fetchone()[0], 1)
 
+    def test_dry_run_reports_candidates_without_mutating_cleanup_or_graph(self):
+        db = self.make_db()
+        conn = sqlite3.connect(db)
+        self.add_source(conn, "canonical", "Instructions", "https://example.test/instructions.pdf", "pdf")
+        self.add_source(conn, "variant", "Instructions", "https://example.test/instructions.pdf?download=1", "pdf")
+        conn.execute("INSERT INTO graph_node(node_id,node_type,label,properties_json) VALUES (?,?,?,?)", ("data_item:PRA001", "DataItem", "PRA001", "{}"))
+        conn.execute("INSERT INTO graph_edge(edge_id,source_node_id,target_node_id,edge_type) VALUES (?,?,?,?)", ("e1", "data_item:PRA001", "source_document:variant", "EVIDENCED_BY"))
+        conn.commit()
+        conn.close()
+
+        result = run_source_cleanup(db, apply=False)
+
+        self.assertEqual(result["status"], "dry_run")
+        self.assertEqual(result["duplicate_candidates"], 1)
+        self.assertEqual(result["by_decision"]["duplicate_candidate"], 1)
+        conn = sqlite3.connect(db)
+        self.assertFalse(
+            conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='source_document_cleanup'"
+            ).fetchone()
+        )
+        self.assertTrue(
+            conn.execute(
+                "SELECT 1 FROM graph_edge WHERE target_node_id='source_document:variant'"
+            ).fetchone()
+        )
+        conn.close()
+
+    def test_apply_repairs_edges_reintroduced_after_an_earlier_cleanup(self):
+        db = self.make_db()
+        conn = sqlite3.connect(db)
+        self.add_source(conn, "canonical", "Instructions", "https://example.test/instructions.pdf", "pdf")
+        self.add_source(conn, "variant", "Instructions", "https://example.test/instructions.pdf?download=1", "pdf")
+        conn.execute("INSERT INTO graph_node(node_id,node_type,label,properties_json) VALUES (?,?,?,?)", ("data_item:PRA001", "DataItem", "PRA001", "{}"))
+        conn.execute("INSERT INTO graph_edge(edge_id,source_node_id,target_node_id,edge_type) VALUES (?,?,?,?)", ("e1", "data_item:PRA001", "source_document:variant", "EVIDENCED_BY"))
+        conn.commit()
+        conn.close()
+        run_source_cleanup(db, apply=True)
+
+        conn = sqlite3.connect(db)
+        conn.execute(
+            "INSERT INTO graph_node(node_id,node_type,label,source_table,source_pk,properties_json) VALUES (?,?,?,?,?,?)",
+            ("source_document:variant", "SourceDocument", "Instructions", "source_document", "variant", "{}"),
+        )
+        conn.execute(
+            "INSERT INTO graph_edge(edge_id,source_node_id,target_node_id,edge_type) VALUES (?,?,?,?)",
+            ("late-edge", "data_item:PRA001", "source_document:variant", "EVIDENCED_BY"),
+        )
+        conn.commit()
+        conn.close()
+
+        result = run_source_cleanup(db, apply=True)
+
+        self.assertEqual(result["duplicates_rewired"], 1)
+        conn = sqlite3.connect(db)
+        self.assertFalse(
+            conn.execute(
+                "SELECT 1 FROM graph_edge WHERE target_node_id='source_document:variant'"
+            ).fetchone()
+        )
+        self.assertTrue(
+            conn.execute(
+                "SELECT 1 FROM graph_edge WHERE edge_id='late-edge' AND target_node_id='source_document:canonical'"
+            ).fetchone()
+        )
+        conn.close()
+
+    def test_rewire_preserves_parallel_edges_with_distinct_evidence(self):
+        db = self.make_db()
+        conn = sqlite3.connect(db)
+        self.add_source(conn, "canonical", "Instructions", "https://example.test/instructions.pdf", "pdf")
+        self.add_source(conn, "variant", "Instructions", "https://example.test/instructions.pdf?download=1", "pdf")
+        conn.execute("INSERT INTO graph_node(node_id,node_type,label,properties_json) VALUES (?,?,?,?)", ("data_item:PRA001", "DataItem", "PRA001", "{}"))
+        conn.execute(
+            "INSERT INTO graph_edge(edge_id,source_node_id,target_node_id,edge_type,evidence_span_id) VALUES (?,?,?,?,?)",
+            ("canonical-evidence", "data_item:PRA001", "source_document:canonical", "EVIDENCED_BY", "span:old"),
+        )
+        conn.execute(
+            "INSERT INTO graph_edge(edge_id,source_node_id,target_node_id,edge_type,evidence_span_id) VALUES (?,?,?,?,?)",
+            ("variant-evidence", "data_item:PRA001", "source_document:variant", "EVIDENCED_BY", "span:new"),
+        )
+        conn.commit()
+        conn.close()
+
+        run_source_cleanup(db, apply=True)
+
+        conn = sqlite3.connect(db)
+        rows = conn.execute(
+            """
+            SELECT edge_id,evidence_span_id FROM graph_edge
+            WHERE source_node_id='data_item:PRA001'
+              AND target_node_id='source_document:canonical'
+              AND edge_type='EVIDENCED_BY'
+            ORDER BY edge_id
+            """
+        ).fetchall()
+        self.assertEqual(rows, [("canonical-evidence", "span:old"), ("variant-evidence", "span:new")])
+        conn.close()
+
     def test_checksum_dedupe_ignores_taxonomy_xml_even_when_hashes_match(self):
         db = self.make_db()
         conn = sqlite3.connect(db)

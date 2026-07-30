@@ -37,6 +37,13 @@ function genericExternalTitle(title) {
   return GENERIC_EXTERNAL_TITLES.has(clean(title).toLowerCase());
 }
 
+function recoveredReferenceTitle(node, title) {
+  const sourceTitle = clean(node?.metadata?.reader_reference_text?.source_title);
+  if (!sourceTitle) return title;
+  const titleIsUrl = /^https?:\/\//i.test(title);
+  return titleIsUrl || genericExternalTitle(title) ? sourceTitle : title;
+}
+
 function documentBaseLabel(node, badge) {
   const url = clean(node?.url).toLowerCase();
   if (url.includes('regulatory-reporting') || url.includes('reporting') || url.includes('template')) return 'Reporting template';
@@ -142,7 +149,10 @@ function reportingArtefactRole(suffix, extension) {
 export function displayNodeTitle(node) {
   if (!node) return 'Unloaded node';
   const badge = documentBadge(node);
-  const title = clean(node.title) || 'Untitled node';
+  const title = recoveredReferenceTitle(
+    node,
+    clean(node.title) || 'Untitled node',
+  );
   const templateTitle = reportingTemplateDisplayTitle(node, title);
   if (templateTitle) return templateTitle;
   const artefactTitle = reportingArtefactDisplayTitle(node, title);

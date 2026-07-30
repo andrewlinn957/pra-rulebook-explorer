@@ -959,6 +959,18 @@ class Resolver:
         return None, "unresolved", 0.0
 
 
+def reject_self_reference(
+    source_node_id: str,
+    target: dict[str, Any] | None,
+    method: str,
+    confidence: float,
+) -> tuple[dict[str, Any] | None, str, float]:
+    """Reject a resolver result that points back to its source graph node."""
+    if target and target.get("node_id") == source_node_id:
+        return None, "self_reference_rejected", 0.0
+    return target, method, confidence
+
+
 def command_resolve(args: argparse.Namespace) -> None:
     conn = connect(args.db)
     ensure_curated_reference_targets(conn)
@@ -981,7 +993,10 @@ def command_resolve(args: argparse.Namespace) -> None:
             if not isinstance(ref, dict):
                 continue
             total += 1
-            target, method, rconf = resolver.resolve(ref, row["source_id"])
+            target, method, rconf = reject_self_reference(
+                source_node_id,
+                *resolver.resolve(ref, row["source_id"]),
+            )
             extracted = float(ref.get("confidence") or 0)
             target_id = target["node_id"] if target else ""
             if target_id:

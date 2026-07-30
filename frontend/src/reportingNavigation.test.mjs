@@ -3,11 +3,15 @@ import { describe, it } from 'node:test';
 
 import {
   REPORTING_EDGE_GROUPS,
+  REPORTING_OVERVIEW_EDGE_GROUP_KEYS,
+  REPORTING_REQUIREMENT_EDGE_GROUP_KEYS,
+  reportingEditionOptionLabel,
   reportingChildGroups,
   reportingEdgeGroupCounts,
   reportingEdgeTypesForGroups,
   reportingOneHopGraph,
   reportingParentNodes,
+  reportingRequirementEditions,
   reportingSourceNodes,
 } from './reportingNavigation.js';
 
@@ -71,6 +75,29 @@ describe('reporting child navigation', () => {
     assert.equal(visible.has('HAS_TEMPLATE_RESOURCE'), true);
     assert.equal(visible.has('REFERENCES_RULE'), true);
     assert.equal(visible.has('SUPPORTED_BY_TAXONOMY'), false);
+  });
+
+  it('keeps structure in the estate overview but hides it inside a requirement', () => {
+    assert.deepEqual(REPORTING_OVERVIEW_EDGE_GROUP_KEYS, ['structure', 'documents', 'rules']);
+    assert.deepEqual(REPORTING_REQUIREMENT_EDGE_GROUP_KEYS, ['documents', 'rules']);
+    const visible = reportingEdgeTypesForGroups(new Set(REPORTING_REQUIREMENT_EDGE_GROUP_KEYS));
+    assert.equal(visible.has('HAS_EDITION'), false);
+    assert.equal(visible.has('HAS_TEMPLATE_RESOURCE'), true);
+    assert.equal(visible.has('REFERENCES_RULE'), true);
+  });
+
+  it('offers a compact edition history only for rows of the same requirement', () => {
+    const selected = { return_id: 'current', requirement_id: 'requirement:a' };
+    const rows = [
+      { return_id: 'other', requirement_id: 'requirement:b', effective_from: '2025-01-01' },
+      { return_id: 'future', requirement_id: 'requirement:a', effective_from: '2027-01-01', status: 'future', effective_text: '1 January 2027' },
+      { ...selected, effective_from: '2022-01-01', status: 'current', effective_text: '1 January 2022 – 31 December 2026' },
+    ];
+    assert.deepEqual(
+      reportingRequirementEditions(selected, rows).map(row => row.return_id),
+      ['current', 'future'],
+    );
+    assert.equal(reportingEditionOptionLabel(rows[1]), 'Future · 1 January 2027');
   });
 
   it('counts underlying edge types under their combined categories', () => {
