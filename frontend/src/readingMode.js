@@ -308,10 +308,17 @@ export function referenceDisplayTitle(reference) {
   return reference?.node?.title || reference?.citation || 'Linked provision';
 }
 
-export function referenceShelfDensity(availableHeight, referenceCount) {
+export function referenceShelfDensity(
+  availableHeight,
+  referenceCount,
+  fullContentHeight = 0,
+) {
   if (!referenceCount) return 'full';
-  const spacePerReference = Math.max(0, Number(availableHeight) || 0) / referenceCount;
-  if (spacePerReference >= 150) return 'full';
+  const available = Math.max(0, Number(availableHeight) || 0);
+  const required = Math.max(0, Number(fullContentHeight) || 0);
+  const spacePerReference = available / referenceCount;
+  if (required > 0 && required <= available) return 'full';
+  if (!required && spacePerReference >= 150) return 'full';
   if (spacePerReference >= 104) return 'compact';
   if (spacePerReference >= 70) return 'dense';
   return 'summary';

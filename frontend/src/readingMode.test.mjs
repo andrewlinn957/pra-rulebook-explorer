@@ -317,12 +317,13 @@ test('defined terms remain clickable when the provision uses a simple plural', (
   assert.equal(segments[1].text, 'rules');
 });
 
-test('shelf density responds to remaining space per pinned reference', () => {
-  assert.equal(referenceShelfDensity(640, 3), 'full');
-  assert.equal(referenceShelfDensity(420, 4), 'compact');
-  assert.equal(referenceShelfDensity(320, 4), 'dense');
-  assert.equal(referenceShelfDensity(260, 6), 'summary');
-  assert.equal(referenceShelfDensity(320, 2), 'full');
+test('shelf density keeps complete cards visible whenever their measured content fits', () => {
+  assert.equal(referenceShelfDensity(640, 3, 620), 'full');
+  assert.equal(referenceShelfDensity(640, 3, 900), 'compact');
+  assert.equal(referenceShelfDensity(420, 4, 600), 'compact');
+  assert.equal(referenceShelfDensity(320, 4, 600), 'dense');
+  assert.equal(referenceShelfDensity(260, 6, 600), 'summary');
+  assert.equal(referenceShelfDensity(320, 2, 300), 'full');
 });
 
 test('graph inspector exposes reading mode with inline and pinned reference actions', () => {
@@ -336,11 +337,15 @@ test('graph inspector exposes reading mode with inline and pinned reference acti
 });
 
 test('reference shelf is space-aware, sticky, scrollable and becomes a narrow-screen drawer', () => {
-  assert.match(interfaceSource, /referenceShelfDensity\(availableHeight,references\.length\)/);
+  assert.match(interfaceSource, /referenceShelfDensity\(availableHeight,references\.length,fullContentHeight\)/);
   assert.match(interfaceSource, /new ResizeObserver\(update\)/);
+  assert.match(interfaceSource, /reference-shelf-measurement-list/);
+  assert.match(interfaceSource, /<p>{sourceNode\?\.text\|\|'No excerpt available\.'}<\/p>/);
+  assert.doesNotMatch(interfaceSource, /truncate\(sourceNode\?\.text/);
   assert.match(interfaceSource, /is-temporarily-expanded/);
   assert.match(interfaceStyles, /\.reference-shelf\{[^}]*position:sticky/);
   assert.match(interfaceStyles, /\.reference-shelf-list\{[^}]*overflow:auto/);
+  assert.match(interfaceStyles, /\.reference-shelf-measurement-list\{/);
   assert.match(interfaceStyles, /\.reference-shelf\.density-summary/);
   assert.match(interfaceStyles, /@media\(max-width:860px\)[\s\S]*\.reference-shelf\{[\s\S]*position:fixed/);
   assert.match(interfaceStyles, /\.reference-shelf\.is-mobile-open\{transform:translateX\(0\)\}/);

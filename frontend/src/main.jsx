@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import ForceGraph2D from 'react-force-graph-2d';
 import { forceCollide, forceX, forceY } from 'd3-force';
@@ -577,18 +577,36 @@ function InlineLegalReference({reference,onCollapse,onPin}){
 
 function ReferenceShelf({references,activeId,mobileOpen,onMobileClose,onActivate,onReturnInline,onRemove}){
   const bodyRef=useRef(null);
+  const measurementRef=useRef(null);
   const [availableHeight,setAvailableHeight]=useState(640);
+  const [fullContentHeight,setFullContentHeight]=useState(0);
   const [temporaryId,setTemporaryId]=useState('');
-  useEffect(()=>{
+  const shelfItems=references.map(reference=>{
+    const firstMember=reference.members?.[0];
+    const sourceNode=firstMember?.node||reference.node;
+    const sourceEdge=firstMember?.edge||reference.edge;
+    return {
+      reference,
+      sourceNode,
+      sourceUrl:sourceNode?.url||sourceEdge?.source_url,
+    };
+  });
+  useLayoutEffect(()=>{
     const body=bodyRef.current;
-    if(!body||typeof ResizeObserver==='undefined') return;
-    const update=()=>setAvailableHeight(body.getBoundingClientRect().height);
+    const measurement=measurementRef.current;
+    if(!body||!measurement) return;
+    const update=()=>{
+      setAvailableHeight(body.getBoundingClientRect().height);
+      setFullContentHeight(measurement.getBoundingClientRect().height);
+    };
     update();
+    if(typeof ResizeObserver==='undefined') return;
     const observer=new ResizeObserver(update);
     observer.observe(body);
+    observer.observe(measurement);
     return ()=>observer.disconnect();
-  },[]);
-  const density=referenceShelfDensity(availableHeight,references.length);
+  },[references]);
+  const density=referenceShelfDensity(availableHeight,references.length,fullContentHeight);
   useEffect(()=>{if(density!=='summary') setTemporaryId('');},[density]);
   return <aside className={`reference-shelf density-${density} ${mobileOpen?'is-mobile-open':''}`} aria-label="Pinned references">
     <header>
@@ -597,12 +615,8 @@ function ReferenceShelf({references,activeId,mobileOpen,onMobileClose,onActivate
     </header>
     <div className="reference-shelf-list" ref={bodyRef}>
       {!references.length&&<div className="reference-shelf-empty"><span>PIN</span><strong>Keep provisions in view</strong><p>Pin an expanded reference and it will remain here while the main reading spine stays fixed.</p></div>}
-      {references.map((reference,index)=>{
+      {shelfItems.map(({reference,sourceNode,sourceUrl},index)=>{
         const temporarilyExpanded=density==='summary'&&temporaryId===reference.id;
-        const firstMember=reference.members?.[0];
-        const sourceNode=firstMember?.node||reference.node;
-        const sourceEdge=firstMember?.edge||reference.edge;
-        const sourceUrl=sourceNode?.url||sourceEdge?.source_url;
         return <article
           key={reference.id}
           className={`reference-shelf-card ${activeId===reference.id?'is-current':''} ${temporarilyExpanded?'is-temporarily-expanded':''}`}
@@ -614,13 +628,21 @@ function ReferenceShelf({references,activeId,mobileOpen,onMobileClose,onActivate
         >
           <header><span>{String(index+1).padStart(2,'0')}</span><b>{reference.relationship.code}{reference.members?.length>1?` · ${reference.members.length}`:''}</b><button type="button" onClick={event=>{event.stopPropagation();onRemove(reference);}} aria-label={`Remove ${referenceDisplayTitle(reference)}`}>×</button></header>
           <h3>{referenceDisplayTitle(reference)}</h3>
-          <p>{truncate(sourceNode?.text||'No excerpt available.',240)}</p>
+          <p>{sourceNode?.text||'No excerpt available.'}</p>
           <footer>
             <button type="button" onClick={event=>{event.stopPropagation();onReturnInline(reference);}}>Return inline</button>
             {sourceUrl&&<a href={sourceUrl} target="_blank" rel="noopener noreferrer" onClick={event=>event.stopPropagation()}>Source ↗</a>}
           </footer>
         </article>;
       })}
+    </div>
+    <div className="reference-shelf-measurement-list" ref={measurementRef} aria-hidden="true">
+      {shelfItems.map(({reference,sourceNode,sourceUrl},index)=><article className="reference-shelf-card" key={reference.id}>
+        <header><span>{String(index+1).padStart(2,'0')}</span><b>{reference.relationship.code}{reference.members?.length>1?` · ${reference.members.length}`:''}</b><i>×</i></header>
+        <h3>{referenceDisplayTitle(reference)}</h3>
+        <p>{sourceNode?.text||'No excerpt available.'}</p>
+        <footer><span>Return inline</span>{sourceUrl&&<span>Source ↗</span>}</footer>
+      </article>)}
     </div>
   </aside>;
 }
