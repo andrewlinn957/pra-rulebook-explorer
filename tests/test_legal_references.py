@@ -177,6 +177,271 @@ class LegalReferenceTests(unittest.TestCase):
             "https://www.legislation.gov.uk/uksi/2018/1149/regulation/23",
         )
 
+    def test_fsma_acronym_section_is_extracted(self) -> None:
+        occurrences = citation_occurrences(
+            source_node_id="fsma-direct",
+            value="A person appointed under section 59 of FSMA must comply.",
+            registry=self.registry,
+        )
+
+        self.assertEqual(
+            [(item.instrument.instrument_id, item.provision_path) for item in occurrences],
+            [("fsma", "section/59")],
+        )
+
+    def test_fsma_acronym_without_of_is_extracted(self) -> None:
+        occurrences = citation_occurrences(
+            source_node_id="fsma-without-of",
+            value="The power in Section 425(1)(a) FSMA applies.",
+            registry=self.registry,
+        )
+
+        self.assertEqual(
+            [(item.instrument.instrument_id, item.provision_path) for item in occurrences],
+            [("fsma", "section/425/1/a")],
+        )
+
+    def test_fsma_coordinated_sections_are_all_extracted(self) -> None:
+        occurrences = citation_occurrences(
+            source_node_id="fsma-coordinated",
+            value=(
+                "The conditions in section 60(2A) or section 62A of FSMA and "
+                "sections 166 and 166A FSMA apply."
+            ),
+            registry=self.registry,
+        )
+
+        self.assertEqual(
+            [item.provision_path for item in occurrences],
+            ["section/60/2A", "section/62A", "section/166", "section/166A"],
+        )
+        self.assertTrue(all(item.instrument.instrument_id == "fsma" for item in occurrences))
+
+    def test_fsma_subsection_continuation_inherits_section_number(self) -> None:
+        occurrences = citation_occurrences(
+            source_node_id="fsma-subsection-continuation",
+            value="The requirements in section 183(1) and (2) of FSMA apply.",
+            registry=self.registry,
+        )
+
+        self.assertEqual(
+            [item.provision_path for item in occurrences],
+            ["section/183/1", "section/183/2"],
+        )
+
+    def test_fsma_s_shorthand_and_bare_number_are_extracted(self) -> None:
+        occurrences = citation_occurrences(
+            source_node_id="fsma-shorthand",
+            value=(
+                "The powers in s 312L(1) of FSMA and "
+                "138EA of FSMA 2000 are relevant."
+            ),
+            registry=self.registry,
+        )
+
+        self.assertEqual(
+            [item.provision_path for item in occurrences],
+            ["section/312L/1", "section/138EA"],
+        )
+
+    def test_fsma_2023_is_not_resolved_to_fsma_2000(self) -> None:
+        occurrences = citation_occurrences(
+            source_node_id="fsma-2023",
+            value=(
+                "The procedure is modified by section 19(4) of the "
+                "Financial Services and Markets Act 2023 (FSMA 2023)."
+            ),
+            registry=self.registry,
+        )
+
+        self.assertEqual(len(occurrences), 1)
+        self.assertEqual(occurrences[0].instrument.instrument_id, "fsma-2023")
+        self.assertEqual(occurrences[0].provision_path, "section/19/4")
+
+    def test_bare_section_inherits_unambiguous_fsma_context(self) -> None:
+        occurrences = citation_occurrences(
+            source_node_id="fsma-context",
+            value=(
+                "FSMA means the Financial Services and Markets Act 2000. "
+                "The regulator may act under section 55M."
+            ),
+            registry=self.registry,
+        )
+
+        self.assertEqual(
+            [(item.instrument.instrument_id, item.provision_path) for item in occurrences],
+            [("fsma", "section/55M")],
+        )
+
+    def test_internal_section_label_is_not_recovered_as_fsma(self) -> None:
+        occurrences = citation_occurrences(
+            source_node_id="fsma-internal-section",
+            value=(
+                "This chapter concerns FSMA. The process in section 3 of this "
+                "Chapter applies."
+            ),
+            registry=self.registry,
+        )
+
+        self.assertEqual(occurrences, [])
+
+    def test_ocr_footnote_after_fsma_does_not_hide_section(self) -> None:
+        occurrences = citation_occurrences(
+            source_node_id="fsma-ocr-footnote",
+            value="The power is set out in section 312J(2) of FSMA10 and applies.",
+            registry=self.registry,
+        )
+
+        self.assertEqual(len(occurrences), 1)
+        self.assertEqual(occurrences[0].instrument.instrument_id, "fsma")
+        self.assertEqual(occurrences[0].provision_path, "section/312J/2")
+
+    def test_spaced_ocr_footnote_before_fsma_does_not_hide_section(self) -> None:
+        occurrences = citation_occurrences(
+            source_node_id="fsma-spaced-footnote",
+            value="The information power is in section 165 3 of FSMA.",
+            registry=self.registry,
+        )
+
+        self.assertEqual(len(occurrences), 1)
+        self.assertEqual(occurrences[0].instrument.instrument_id, "fsma")
+        self.assertEqual(occurrences[0].provision_path, "section/165")
+
+    def test_table_layout_can_resolve_nearby_fsma_column(self) -> None:
+        occurrences = citation_occurrences(
+            source_node_id="fsma-table",
+            value=(
+                "NOTICE DESCRIPTION ACT REFERENCE Warning Notice States the "
+                "action which the PRA proposes Section 387 to take giving "
+                "reasons for the proposed FSMA action."
+            ),
+            registry=self.registry,
+        )
+
+        self.assertEqual(len(occurrences), 1)
+        self.assertEqual(occurrences[0].instrument.instrument_id, "fsma")
+        self.assertEqual(occurrences[0].provision_path, "section/387")
+
+    def test_audited_hint_recovers_bare_fsma_section(self) -> None:
+        occurrences = citation_occurrences(
+            source_node_id="fsma-hinted",
+            value="The interviewee may be accompanied at a section 169(7) interview.",
+            registry=self.registry,
+            contextual_instrument_hints={"169": "fsma"},
+        )
+
+        self.assertEqual(len(occurrences), 1)
+        self.assertEqual(occurrences[0].instrument.instrument_id, "fsma")
+        self.assertEqual(occurrences[0].provision_path, "section/169/7")
+
+    def test_fsma_part_is_not_misread_as_section(self) -> None:
+        occurrences = citation_occurrences(
+            source_node_id="fsma-part",
+            value="The firm has permission under Part 4A of FSMA.",
+            registry=self.registry,
+        )
+
+        self.assertEqual(len(occurrences), 1)
+        self.assertEqual(occurrences[0].kind, "part")
+        self.assertEqual(occurrences[0].provision_path, "part/4A")
+
+    def test_numeric_and_roman_fsma_parts_use_official_roman_path(self) -> None:
+        numeric = citation_occurrences(
+            source_node_id="fsma-part-23",
+            value="The confidentiality provisions are in Part 23 of FSMA.",
+            registry=self.registry,
+        )
+        roman = citation_occurrences(
+            source_node_id="fsma-part-vii",
+            value="The transfer is made under Part VII of FSMA.",
+            registry=self.registry,
+        )
+
+        self.assertEqual(numeric[0].provision_path, "part/XXIII")
+        self.assertEqual(roman[0].provision_path, "part/VII")
+
+    def test_fsma_schedule_and_schedule_paragraph_paths_are_extracted(self) -> None:
+        occurrences = citation_occurrences(
+            source_node_id="fsma-schedules",
+            value=(
+                "Paragraphs 31 and 35 of Schedule 1ZB of FSMA apply, while "
+                "section 4F(3) of Schedule 6 to FSMA defines close links."
+            ),
+            registry=self.registry,
+        )
+
+        self.assertEqual(
+            [(item.kind, item.provision_path) for item in occurrences],
+            [
+                ("schedule_paragraph", "schedule/1ZB/paragraph/31"),
+                ("schedule_paragraph", "schedule/1ZB/paragraph/35"),
+                ("schedule_paragraph", "schedule/6/paragraph/4F/3"),
+            ],
+        )
+
+    def test_direct_fsma_schedule_is_extracted(self) -> None:
+        occurrences = citation_occurrences(
+            source_node_id="fsma-schedule",
+            value="The powers are listed in Schedule 17A to FSMA.",
+            registry=self.registry,
+        )
+
+        self.assertEqual(len(occurrences), 1)
+        self.assertEqual(occurrences[0].kind, "schedule")
+        self.assertEqual(occurrences[0].provision_path, "schedule/17A")
+
+    def test_fsma_schedule_part_and_subparagraph_are_extracted(self) -> None:
+        occurrences = citation_occurrences(
+            source_node_id="fsma-schedule-details",
+            value=(
+                "Part 3 (Penalties and Fees) of Schedule 1ZB to FSMA and "
+                "sub-paragraph 3(2) of Schedule 19C to FSMA apply."
+            ),
+            registry=self.registry,
+        )
+
+        self.assertEqual(
+            [item.provision_path for item in occurrences],
+            [
+                "schedule/1ZB/part/3",
+                "schedule/19C/paragraph/3/2",
+            ],
+        )
+
+    def test_fsma_part_chapter_is_extracted(self) -> None:
+        occurrences = citation_occurrences(
+            source_node_id="fsma-part-chapter",
+            value="The objectives are set out in Part 1A, chapter 2 of FSMA.",
+            registry=self.registry,
+        )
+
+        self.assertEqual(len(occurrences), 1)
+        self.assertEqual(occurrences[0].kind, "part_chapter")
+        self.assertEqual(occurrences[0].provision_path, "part/1A/chapter/2")
+        self.assertEqual(occurrences[0].citation_text, "Part 1A, Chapter 2")
+
+    def test_fused_fsma_footnote_is_removed_from_section_number(self) -> None:
+        occurrences = citation_occurrences(
+            source_node_id="fsma-fused-footnote",
+            value="A copy is given under section 39316 of FSMA.17",
+            registry=self.registry,
+        )
+
+        self.assertEqual(len(occurrences), 1)
+        self.assertEqual(occurrences[0].provision_path, "section/393")
+
+    def test_compact_s_shorthand_is_extracted(self) -> None:
+        occurrences = citation_occurrences(
+            source_node_id="fsma-compact-s",
+            value="The firm acts under s138BA of FSMA and s.312R.",
+            registry=self.registry,
+        )
+
+        self.assertEqual(
+            [item.provision_path for item in occurrences],
+            ["section/138BA", "section/312R"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

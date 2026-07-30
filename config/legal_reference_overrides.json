@@ -3,6 +3,37 @@
   "description": "Auditable context rules for citations whose instrument is expressed outside the atomic citation phrase.",
   "rules": [
     {
+      "source_node_ids": ["a5d63d69658bcc0e"],
+      "citation_kinds": ["section"],
+      "citation_bases": ["31p"],
+      "instrument_id": "fsma",
+      "provision_path": "section/312P/5",
+      "reason": "The source has an OCR omission in s31P(5); the same paragraph correctly identifies the provision as section 312P and the quoted application of section 166 is in section 312P(5)."
+    },
+    {
+      "source_node_ids": ["8cf8d4c487d0a091", "94db8675ebf8f7f4"],
+      "citation_kinds": ["section"],
+      "citation_bases": ["4e"],
+      "instrument_id": "fsma",
+      "provision_path": "schedule/6/paragraph/4E",
+      "reason": "The source labels the insurers Threshold Condition as section 4E, but the official FSMA location is Schedule 6 paragraph 4E."
+    },
+    {
+      "source_node_ids": ["8cf8d4c487d0a091", "94db8675ebf8f7f4"],
+      "citation_kinds": ["section"],
+      "citation_bases": ["5e"],
+      "instrument_id": "fsma",
+      "provision_path": "schedule/6/paragraph/5E",
+      "reason": "The source labels the banks Threshold Condition as section 5E, but the official FSMA location is Schedule 6 paragraph 5E."
+    },
+    {
+      "source_node_ids": ["a0cb8d8f1b626408"],
+      "citation_kinds": ["section"],
+      "citation_bases": ["169"],
+      "instrument_id": "fsma",
+      "reason": "The section 169(7) interview is the overseas-regulator interview power under FSMA; the instrument label appears in the surrounding enforcement statement rather than this extracted paragraph."
+    },
+    {
       "source_node_ids": ["025267ac6855b951"],
       "citation_kinds": ["section"],
       "target_node_id": "acda4f3ef5f1bf19",

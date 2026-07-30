@@ -75,10 +75,86 @@ GENERIC_PROVISION_RE = re.compile(
     r"(?:\s*\((?:S\.?\s*I\.?\s*)?\d{4}/\d+\))?)",
     re.I,
 )
+FSMA_INSTRUMENT_PATTERN = (
+    r"(?:"
+    r"FSMA(?:\s*(?:2000|2023))?(?=\W|$)"
+    r"|FSMA(?=\d{1,2}\b)"
+    r"|Financial\s+Services\s+and\s+Markets\s+Act(?:\s+(?:2000|2023))?(?=\W|$)"
+    r")"
+)
+FSMA_NUMBER_REFERENCE_PATTERN = (
+    r"\d+[A-Za-z]*(?:\s*\([^)]*\))*"
+    r"(?:\s*(?:,|and|or|to|[-–—])\s*"
+    r"(?:(?:sections?|s{1,2}\.?)\s+)?"
+    r"(?:\d+[A-Za-z]*(?:\s*\([^)]*\))*|(?:\s*\([^)]*\))+))*"
+)
+FSMA_SECTION_RE = re.compile(
+    rf"\b(?P<prefix>sections?|s{{1,2}}\.?)\s*"
+    rf"(?P<references>{FSMA_NUMBER_REFERENCE_PATTERN})"
+    rf"(?:\s+\d{{1,2}})?"
+    rf"\s+(?:of\s+)?(?:the\s+)?"
+    rf"(?P<instrument>{FSMA_INSTRUMENT_PATTERN})",
+    re.I,
+)
+FSMA_BARE_NUMBER_RE = re.compile(
+    rf"\b(?P<references>{FSMA_NUMBER_REFERENCE_PATTERN})"
+    rf"(?:\s+\d{{1,2}})?"
+    rf"\s+of\s+(?:the\s+)?"
+    rf"(?P<instrument>{FSMA_INSTRUMENT_PATTERN})",
+    re.I,
+)
+FSMA_SCHEDULE_PROVISION_RE = re.compile(
+    rf"\b(?P<prefix>(?:sub-?)?paragraphs?|sections?)\s+"
+    rf"(?P<references>{FSMA_NUMBER_REFERENCE_PATTERN})"
+    r"\s+of\s+Schedule\s+(?P<schedule>[0-9A-Za-z]+)\s+"
+    rf"(?:to|of)\s*,?\s*(?:the\s+)?(?P<instrument>{FSMA_INSTRUMENT_PATTERN})",
+    re.I,
+)
+FSMA_SCHEDULE_PART_RE = re.compile(
+    r"\b(?P<prefix>Parts?)\s+"
+    r"(?P<references>[0-9A-Za-z]+)"
+    r"(?:\s*\([^)]*\))?"
+    r"\s+of\s+Schedule\s+(?P<schedule>[0-9A-Za-z]+)\s+"
+    rf"(?:to|of)\s*,?\s*(?:the\s+)?(?P<instrument>{FSMA_INSTRUMENT_PATTERN})",
+    re.I,
+)
+FSMA_SCHEDULE_RE = re.compile(
+    r"\b(?P<prefix>Schedules?)\s+"
+    r"(?P<references>[0-9A-Za-z]+)"
+    rf"\s+(?:to|of)\s*,?\s*(?:the\s+)?(?P<instrument>{FSMA_INSTRUMENT_PATTERN})",
+    re.I,
+)
+FSMA_PART_CHAPTER_RE = re.compile(
+    r"\b(?P<prefix>Parts?)\s+"
+    r"(?P<part>[0-9A-Za-z]+)\s*,?\s*"
+    r"chapters?\s+(?P<references>[0-9A-Za-z]+)"
+    rf"\s+of\s+(?:the\s+)?(?P<instrument>{FSMA_INSTRUMENT_PATTERN})",
+    re.I,
+)
+FSMA_PART_RE = re.compile(
+    r"\b(?P<prefix>Parts?)\s+"
+    r"(?P<references>[0-9A-Za-z]+)"
+    rf"\s+of\s+(?:the\s+)?(?P<instrument>{FSMA_INSTRUMENT_PATTERN})",
+    re.I,
+)
+BARE_SECTION_RE = re.compile(
+    rf"\b(?P<prefix>sections?\s+|ss\.?\s+|s\.?\s*)"
+    rf"(?P<references>{FSMA_NUMBER_REFERENCE_PATTERN})",
+    re.I,
+)
+INTERNAL_SECTION_TAIL_RE = re.compile(
+    r"^\s+(?:(?:of|under|in)\s+)?"
+    r"(?:this|that|the|these|those)\s+"
+    r"(?:Part|Chapter|Section|rule|rules|paragraph|document|statement)\b"
+    r"|^\s+(?:above|below)\b",
+    re.I,
+)
 NUMBER_TOKEN_RE = re.compile(
     r"(?P<base>\d+[A-Za-z]*)(?P<qualifiers>(?:\s*\([^)]*\))*)",
     re.I,
 )
+QUALIFIER_TOKEN_RE = re.compile(r"(?P<qualifiers>(?:\s*\([^)]*\))+)", re.I)
+SECTION_PREFIX_RE = re.compile(r"(?:sections?|s{1,2}\.?)\s*", re.I)
 SEPARATOR_RE = re.compile(r"\s*(?P<separator>,|and|or|to|[-–—])\s*", re.I)
 
 
@@ -157,6 +233,7 @@ class LegalCitationGroup:
     targets: list[CitationTarget]
     instrument_text: str = ""
     schedule: str = ""
+    part: str = ""
     separators: list[str] = field(default_factory=list)
 
 
@@ -292,6 +369,80 @@ def extract_legal_citation_groups(value: str) -> list[LegalCitationGroup]:
             )
         )
         occupied.append((match.start(), match.end()))
+
+    for matcher, kind in (
+        (FSMA_SCHEDULE_PROVISION_RE, "schedule_paragraph"),
+        (FSMA_SCHEDULE_PART_RE, "schedule_part"),
+        (FSMA_SCHEDULE_RE, "schedule"),
+        (FSMA_PART_CHAPTER_RE, "part_chapter"),
+        (FSMA_PART_RE, "part"),
+    ):
+        for match in matcher.finditer(text):
+            if _overlaps(match.start(), match.end(), occupied):
+                continue
+            targets, separators = (
+                _parse_structural_targets(
+                    match.group("references"),
+                    offset=match.start("references"),
+                )
+                if kind in {"part", "schedule_part", "schedule"}
+                else _parse_number_targets(
+                    match.group("references"),
+                    offset=match.start("references"),
+                )
+            )
+            if not targets:
+                continue
+            groups.append(
+                LegalCitationGroup(
+                    kind=kind,
+                    prefix=match.group("prefix"),
+                    text=compact(match.group(0)),
+                    start=match.start(),
+                    end=match.end(),
+                    targets=targets,
+                    instrument_text=compact(match.group("instrument")),
+                    schedule=compact(match.groupdict().get("schedule") or ""),
+                    part=compact(match.groupdict().get("part") or ""),
+                    separators=separators,
+                )
+            )
+            occupied.append((match.start(), match.end()))
+
+    for matcher, synthetic_prefix in (
+        (FSMA_SECTION_RE, False),
+        (FSMA_BARE_NUMBER_RE, True),
+    ):
+        for match in matcher.finditer(text):
+            if _overlaps(match.start(), match.end(), occupied):
+                continue
+            if synthetic_prefix and re.search(
+                r"\b(?:Part|Schedule|Chapter)\s*$",
+                text[max(0, match.start() - 24) : match.start()],
+                re.I,
+            ):
+                continue
+            targets, separators = _parse_number_targets(
+                match.group("references"),
+                offset=match.start("references"),
+            )
+            if not targets:
+                continue
+            targets = _normalize_fsma_ocr_targets(targets)
+            prefix = "section" if synthetic_prefix else match.group("prefix")
+            groups.append(
+                LegalCitationGroup(
+                    kind="section",
+                    prefix=prefix,
+                    text=compact(match.group(0)),
+                    start=match.start(),
+                    end=match.end(),
+                    targets=targets,
+                    instrument_text=compact(match.group("instrument")),
+                    separators=separators,
+                )
+            )
+            occupied.append((match.start(), match.end()))
 
     for match in GENERIC_PROVISION_RE.finditer(text):
         if _overlaps(match.start(), match.end(), occupied):
@@ -464,9 +615,20 @@ def citation_occurrences(
     value: str,
     registry: InstrumentRegistry,
     source_title: str = "",
+    contextual_instrument_hints: dict[str, str] | None = None,
 ) -> list[LegalCitationOccurrence]:
     occurrences: list[LegalCitationOccurrence] = []
-    for group in extract_legal_citation_groups(value):
+    groups = extract_legal_citation_groups(value)
+    groups.extend(
+        _contextual_fsma_section_groups(
+            value,
+            groups,
+            registry,
+            source_title=source_title,
+            instrument_hints=contextual_instrument_hints or {},
+        )
+    )
+    for group in sorted(groups, key=lambda item: (item.start, item.end)):
         resolution = resolve_group_instrument(
             value,
             group,
@@ -489,7 +651,7 @@ def citation_occurrences(
                 LegalCitationOccurrence(
                     group_id=group_id,
                     kind=group.kind,
-                    citation_text=f"{group.prefix} {target.display}",
+                    citation_text=_citation_text(group, target),
                     group_text=group.text,
                     span_start=target.span_start,
                     span_end=target.span_end,
@@ -504,10 +666,174 @@ def citation_occurrences(
                         "synthetic_range_member": target.synthetic,
                         "group_span": {"start": group.start, "end": group.end},
                         "schedule": group.schedule,
+                        "part": group.part,
                     },
                 )
             )
     return occurrences
+
+
+def _citation_text(
+    group: LegalCitationGroup,
+    target: CitationTarget,
+) -> str:
+    if group.kind == "part_chapter":
+        return f"Part {group.part}, Chapter {target.display}"
+    if group.kind == "schedule_part":
+        return f"Part {target.display} of Schedule {group.schedule}"
+    if group.kind == "schedule":
+        return f"Schedule {target.display}"
+    return compact(f"{group.prefix} {target.display}")
+
+
+def _contextual_fsma_section_groups(
+    value: str,
+    existing_groups: list[LegalCitationGroup],
+    registry: InstrumentRegistry,
+    *,
+    source_title: str = "",
+    instrument_hints: dict[str, str] | None = None,
+) -> list[LegalCitationGroup]:
+    """Recover bare section citations only when their context resolves to FSMA.
+
+    A global bare ``section 3`` grammar would turn Rulebook structure labels
+    into external-law links.  This second pass is deliberately constrained:
+    the candidate must not be an internal structural reference, must not
+    overlap a stronger citation, and must resolve to one of the two registered
+    Financial Services and Markets Acts from the surrounding atomic source.
+    """
+
+    text = value or ""
+    hints = instrument_hints or {}
+    occupied = [(group.start, group.end) for group in existing_groups]
+    explicit_instruments_by_base: dict[str, set[str]] = {}
+    for group in existing_groups:
+        resolution = resolve_group_instrument(
+            text,
+            group,
+            registry,
+            source_title=source_title,
+        )
+        if (
+            resolution.instrument is None
+            or resolution.instrument.instrument_id not in {"fsma", "fsma-2023"}
+        ):
+            continue
+        for target in group.targets:
+            explicit_instruments_by_base.setdefault(target.base.casefold(), set()).add(
+                resolution.instrument.instrument_id
+            )
+    recovered: list[LegalCitationGroup] = []
+    for match in BARE_SECTION_RE.finditer(text):
+        if _overlaps(match.start(), match.end(), occupied):
+            continue
+        tail = text[match.end() : min(len(text), match.end() + 80)]
+        if INTERNAL_SECTION_TAIL_RE.match(tail):
+            continue
+        targets, separators = _parse_number_targets(
+            match.group("references"),
+            offset=match.start("references"),
+        )
+        if not targets:
+            continue
+        candidate = LegalCitationGroup(
+            kind="section",
+            prefix=match.group("prefix"),
+            text=compact(match.group(0)),
+            start=match.start(),
+            end=match.end(),
+            targets=targets,
+            separators=separators,
+        )
+        hinted_ids = {
+            hints.get(target.base.casefold()) or hints.get("*") or ""
+            for target in targets
+        } - {""}
+        if len(hinted_ids) == 1:
+            hinted_id = next(iter(hinted_ids))
+            if hinted_id in {"fsma", "fsma-2023"}:
+                candidate.instrument_text = registry.by_id[hinted_id].title
+        resolution = resolve_group_instrument(
+            text,
+            candidate,
+            registry,
+            source_title=source_title,
+        )
+        local_before = text[max(0, candidate.start - 180) : candidate.start]
+        local_after = text[candidate.end : min(len(text), candidate.end + 180)]
+        fuzzy_fsma_after = re.search(
+            r"\bof\s+(FSMA(?:\s*(?:2000|2023))?)\b",
+            local_after,
+            re.I,
+        )
+        if fuzzy_fsma_after and fuzzy_fsma_after.start() <= 100:
+            fuzzy_resolution = _resolve_instrument_text(
+                fuzzy_fsma_after.group(1),
+                registry,
+            )
+            if fuzzy_resolution.instrument:
+                candidate.instrument_text = fuzzy_resolution.instrument.title
+                resolution = InstrumentResolution(
+                    fuzzy_resolution.instrument,
+                    f"table-layout following instrument: {fuzzy_fsma_after.group(1)}",
+                    "resolved",
+                )
+        local_matches: list[tuple[int, Instrument, str]] = []
+        normalized_before_length = len(normalize_alias(local_before))
+        for position, instrument, evidence in registry.match_aliases(local_before):
+            local_matches.append(
+                (
+                    normalized_before_length
+                    - position
+                    - len(normalize_alias(evidence)),
+                    instrument,
+                    evidence,
+                )
+            )
+        for position, instrument, evidence in registry.match_aliases(local_after):
+            local_matches.append((position, instrument, evidence))
+        if local_matches:
+            distance, local_instrument, evidence = min(
+                local_matches,
+                key=lambda item: (item[0], -len(item[2])),
+            )
+            if (
+                distance <= 120
+                and local_instrument.instrument_id in {"fsma", "fsma-2023"}
+            ):
+                candidate.instrument_text = local_instrument.title
+                resolution = InstrumentResolution(
+                    local_instrument,
+                    f"nearest local instrument: {evidence}",
+                    "resolved",
+                )
+        inherited_ids = {
+            instrument_id
+            for target in targets
+            for instrument_id in explicit_instruments_by_base.get(
+                target.base.casefold(),
+                set(),
+            )
+        }
+        if (
+            resolution.instrument is None
+            or resolution.instrument.instrument_id not in {"fsma", "fsma-2023"}
+        ) and len(inherited_ids) == 1:
+            instrument_id = next(iter(inherited_ids))
+            candidate.instrument_text = registry.by_id[instrument_id].title
+            resolution = InstrumentResolution(
+                registry.by_id[instrument_id],
+                "same section explicitly attributed to FSMA in source",
+                "resolved",
+            )
+        if (
+            resolution.instrument is None
+            or resolution.instrument.instrument_id not in {"fsma", "fsma-2023"}
+        ):
+            continue
+        recovered.append(candidate)
+        occupied.append((candidate.start, candidate.end))
+    return recovered
 
 
 def provision_path_for(
@@ -518,6 +844,24 @@ def provision_path_for(
     suffix = "/".join((target.base, *target.qualifiers))
     if group.kind == "schedule_paragraph":
         return f"schedule/{group.schedule}/paragraph/{suffix}"
+    if group.kind == "schedule_part":
+        return f"schedule/{group.schedule}/part/{suffix}"
+    if group.kind == "schedule":
+        return f"schedule/{suffix}"
+    if group.kind == "part":
+        part = target.base
+        if instrument and instrument.instrument_id == "fsma" and part.isdigit():
+            part = _to_roman(int(part))
+        return f"part/{part}" + (
+            "/" + "/".join(target.qualifiers)
+            if target.qualifiers
+            else ""
+        )
+    if group.kind == "part_chapter":
+        part = group.part
+        if instrument and instrument.instrument_id == "fsma" and part.isdigit():
+            part = _to_roman(int(part))
+        return f"part/{part}/chapter/{suffix}"
     if group.kind == "section":
         return f"section/{suffix}"
     if group.kind == "regulation":
@@ -560,7 +904,13 @@ def fetch_official_provision(
 
     requested_url = instrument.provision_url(provision_path)
     parts = provision_path.split("/")
-    minimum_parts = 4 if parts[:1] == ["schedule"] else 2
+    minimum_parts = (
+        4
+        if parts[:1] == ["schedule"]
+        and len(parts) >= 3
+        and parts[2] in {"paragraph", "part"}
+        else 2
+    )
     candidates = [
         "/".join(parts[:length])
         for length in range(len(parts), minimum_parts - 1, -1)
@@ -1060,6 +1410,9 @@ def _parse_number_targets(
     targets: list[CitationTarget] = []
     separators: list[str] = []
     cursor = 0
+    prefix_match = SECTION_PREFIX_RE.match(value, cursor)
+    if prefix_match:
+        cursor = prefix_match.end()
     token_match = NUMBER_TOKEN_RE.match(value, cursor)
     if not token_match:
         return targets, separators
@@ -1069,13 +1422,81 @@ def _parse_number_targets(
         separator_match = SEPARATOR_RE.match(value, cursor)
         if not separator_match:
             break
-        token_match = NUMBER_TOKEN_RE.match(value, separator_match.end())
-        if not token_match:
-            break
+        next_cursor = separator_match.end()
+        prefix_match = SECTION_PREFIX_RE.match(value, next_cursor)
+        if prefix_match:
+            next_cursor = prefix_match.end()
+        token_match = NUMBER_TOKEN_RE.match(value, next_cursor)
+        if token_match:
+            target = _target_from_match(token_match, offset)
+        else:
+            qualifier_match = QUALIFIER_TOKEN_RE.match(value, next_cursor)
+            if not qualifier_match:
+                break
+            previous = targets[-1]
+            continuation = qualifier_parts(qualifier_match.group("qualifiers"))
+            if not continuation:
+                break
+            target = CitationTarget(
+                base=previous.base,
+                qualifiers=(
+                    previous.qualifiers[:-1] + continuation
+                    if previous.qualifiers
+                    else continuation
+                ),
+                span_start=offset + qualifier_match.start(),
+                span_end=offset + qualifier_match.end(),
+            )
+            token_match = qualifier_match
         separators.append(compact(separator_match.group("separator")).casefold())
-        targets.append(_target_from_match(token_match, offset))
+        targets.append(target)
         cursor = token_match.end()
     return _expand_target_ranges(targets, separators), separators
+
+
+def _parse_structural_targets(
+    value: str,
+    *,
+    offset: int,
+) -> tuple[list[CitationTarget], list[str]]:
+    match = re.match(r"[0-9A-Za-z]+", value)
+    if not match:
+        return [], []
+    return [
+        CitationTarget(
+            base=compact(match.group(0)),
+            qualifiers=(),
+            span_start=offset + match.start(),
+            span_end=offset + match.end(),
+        )
+    ], []
+
+
+def _to_roman(value: int) -> str:
+    if value <= 0 or value > 3999:
+        return str(value)
+    numerals = (
+        (1000, "M"),
+        (900, "CM"),
+        (500, "D"),
+        (400, "CD"),
+        (100, "C"),
+        (90, "XC"),
+        (50, "L"),
+        (40, "XL"),
+        (10, "X"),
+        (9, "IX"),
+        (5, "V"),
+        (4, "IV"),
+        (1, "I"),
+    )
+    remainder = value
+    output: list[str] = []
+    for amount, numeral in numerals:
+        while remainder >= amount:
+            output.append(numeral)
+            remainder -= amount
+    return "".join(output)
 
 
 def _target_from_match(match: re.Match[str], offset: int) -> CitationTarget:
@@ -1085,6 +1506,43 @@ def _target_from_match(match: re.Match[str], offset: int) -> CitationTarget:
         span_start=offset + match.start(),
         span_end=offset + match.end(),
     )
+
+
+def _normalize_fsma_ocr_targets(
+    targets: list[CitationTarget],
+) -> list[CitationTarget]:
+    """Split footnote digits fused onto impossible FSMA section numbers."""
+
+    normalized: list[CitationTarget] = []
+    for target in targets:
+        if target.qualifiers or not target.base.isdigit() or int(target.base) <= 500:
+            normalized.append(target)
+            continue
+        split_base = ""
+        for split_at in range(len(target.base) - 1, 0, -1):
+            candidate = target.base[:split_at]
+            footnote = target.base[split_at:]
+            if (
+                1 <= int(candidate) <= 500
+                and 1 <= len(footnote) <= 2
+                and 1 <= int(footnote) <= 99
+            ):
+                split_base = candidate
+                break
+        normalized.append(
+            CitationTarget(
+                base=split_base or target.base,
+                qualifiers=target.qualifiers,
+                span_start=target.span_start,
+                span_end=(
+                    target.span_start + len(split_base)
+                    if split_base
+                    else target.span_end
+                ),
+                synthetic=target.synthetic,
+            )
+        )
+    return normalized
 
 
 def _expand_target_ranges(
@@ -1136,6 +1594,14 @@ def _display_provision_path(provision_path: str) -> str:
             f"Schedule {parts[1]} paragraph {parts[3]}"
             + "".join(f"({part})" for part in parts[4:])
         )
+    if len(parts) >= 4 and parts[0] == "schedule" and parts[2] == "part":
+        return f"Schedule {parts[1]} Part {parts[3]}"
+    if len(parts) == 2 and parts[0] == "schedule":
+        return f"Schedule {parts[1]}"
+    if len(parts) >= 2 and parts[0] == "part":
+        if len(parts) >= 4 and parts[2] == "chapter":
+            return f"Part {parts[1]} Chapter {parts[3]}"
+        return f"Part {parts[1]}" + "".join(f"({part})" for part in parts[2:])
     return provision_path.replace("/", " ")
 
 

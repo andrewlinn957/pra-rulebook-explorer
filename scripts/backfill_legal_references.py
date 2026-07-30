@@ -46,6 +46,40 @@ DEFAULT_CACHE = PROJECT_ROOT / "backend" / "data" / "raw" / "legal-provisions"
 DEFAULT_OVERRIDES = PROJECT_ROOT / "config" / "legal_reference_overrides.json"
 SOURCE_NODE_TYPES = ("rule", "guidance_paragraph", "defined_term")
 GENERATED_METHOD = "legal_reference_occurrence_v1"
+RAW_FSMA_INSTRUMENT_RE = (
+    r"(?:FSMA(?:\s*(?:2000|2023))?|"
+    r"Financial\s+Services\s+and\s+Markets\s+Act(?:\s+(?:2000|2023))?)"
+)
+RAW_FSMA_REFERENCES_RE = (
+    r"\d+[A-Za-z]*(?:\s*\([^)]*\))*"
+    r"(?:\s*(?:,|and|or|to|[-–—])\s*"
+    r"(?:(?:sections?|s{1,2}\.?)\s+)?"
+    r"(?:\d+[A-Za-z]*(?:\s*\([^)]*\))*|(?:\s*\([^)]*\))+))*"
+)
+RAW_EXPLICIT_FSMA_RE = re.compile(
+    rf"\b(?:sections?|s{{1,2}}\.?)\s*{RAW_FSMA_REFERENCES_RE}"
+    rf"(?:\s+\d{{1,2}})?\s+(?:of\s+)?(?:the\s+)?"
+    rf"(?P<instrument>{RAW_FSMA_INSTRUMENT_RE})(?:\d{{1,2}})?\b"
+    rf"|\b{RAW_FSMA_REFERENCES_RE}\s+of\s+(?:the\s+)?"
+    rf"(?P<bare_instrument>{RAW_FSMA_INSTRUMENT_RE})\b",
+    re.I,
+)
+RAW_EXPLICIT_FSMA_STRUCTURE_RE = re.compile(
+    rf"\b(?:"
+    rf"(?:sub-?)?paragraphs?|sections?"
+    rf")\s+{RAW_FSMA_REFERENCES_RE}\s+of\s+Schedule\s+[0-9A-Za-z]+"
+    rf"\s+(?:to|of)\s*,?\s*(?:the\s+)?(?P<schedule_instrument>{RAW_FSMA_INSTRUMENT_RE})\b"
+    rf"|\bParts?\s+[0-9A-Za-z]+(?:\s*\([^)]*\))?"
+    rf"\s+of\s+Schedule\s+[0-9A-Za-z]+\s+(?:to|of)\s*,?\s*"
+    rf"(?:the\s+)?(?P<schedule_part_instrument>{RAW_FSMA_INSTRUMENT_RE})\b"
+    rf"|\bSchedules?\s+[0-9A-Za-z]+\s+(?:to|of)\s*,?\s*"
+    rf"(?:the\s+)?(?P<schedule_only_instrument>{RAW_FSMA_INSTRUMENT_RE})\b"
+    rf"|\bParts?\s+[0-9A-Za-z]+\s*,?\s*chapters?\s+[0-9A-Za-z]+"
+    rf"\s+of\s+(?:the\s+)?(?P<chapter_instrument>{RAW_FSMA_INSTRUMENT_RE})\b"
+    rf"|\bParts?\s+[0-9A-Za-z]+\s+of\s+(?:the\s+)?"
+    rf"(?P<part_instrument>{RAW_FSMA_INSTRUMENT_RE})\b",
+    re.I,
+)
 ARTICLE16_REPLACEMENTS = [
     {
         "category": "private companies",
@@ -162,6 +196,130 @@ def apply_context_override(
             )
         return replace(occurrence, metadata=metadata, confidence=max(occurrence.confidence, 0.98))
     return occurrence
+
+
+def contextual_section_hints(
+    *,
+    source: sqlite3.Row,
+    rules: list[dict[str, Any]],
+) -> dict[str, str]:
+    """Return auditable instrument hints for otherwise bare section phrases."""
+
+    hints: dict[str, str] = {}
+    for rule in rules:
+        source_ids = set(rule.get("source_node_ids") or ())
+        if source_ids and source["id"] not in source_ids:
+            continue
+        title_prefix = str(rule.get("source_title_prefix") or "")
+        if title_prefix and not (source["title"] or "").startswith(title_prefix):
+            continue
+        kinds = set(rule.get("citation_kinds") or ())
+        if kinds and "section" not in kinds:
+            continue
+        instrument_id = str(rule.get("instrument_id") or "")
+        if instrument_id not in {"fsma", "fsma-2023"}:
+            continue
+        bases = {
+            str(value).casefold()
+            for value in (rule.get("citation_bases") or ("*",))
+        }
+        for base in bases:
+            existing = hints.get(base)
+            if existing and existing != instrument_id:
+                raise ValueError(
+                    f"Conflicting contextual section hints for {source['id']} "
+                    f"base {base}: {existing}, {instrument_id}"
+                )
+            hints[base] = instrument_id
+    return hints
+
+
+def audit_explicit_fsma_coverage(
+    *,
+    rows: list[sqlite3.Row],
+    extracted: list[tuple[sqlite3.Row, LegalCitationOccurrence]],
+) -> tuple[int, list[dict[str, Any]]]:
+    """Cross-check raw FSMA syntax independently from the citation parser."""
+
+    spans_by_source: dict[str, list[tuple[int, int, str]]] = defaultdict(list)
+    for source, occurrence in extracted:
+        if (
+            occurrence.instrument is None
+            or occurrence.instrument.instrument_id not in {"fsma", "fsma-2023"}
+        ):
+            continue
+        group_span = occurrence.metadata.get("group_span") or {}
+        spans_by_source[source["id"]].append(
+            (
+                int(group_span.get("start", occurrence.span_start)),
+                int(group_span.get("end", occurrence.span_end)),
+                occurrence.instrument.instrument_id,
+            )
+        )
+
+    groups_seen = 0
+    gaps: list[dict[str, Any]] = []
+    for source in rows:
+        text = source["text"] or ""
+        matches = [
+            *RAW_EXPLICIT_FSMA_RE.finditer(text),
+            *RAW_EXPLICIT_FSMA_STRUCTURE_RE.finditer(text),
+        ]
+        for match in sorted(matches, key=lambda item: (item.start(), item.end())):
+            matched_groups = match.groupdict()
+            if (
+                matched_groups.get("bare_instrument")
+                and re.search(
+                    r"\b(?:Part|Schedule|Chapter)\s*$",
+                    text[max(0, match.start() - 24) : match.start()],
+                    re.I,
+                )
+            ):
+                continue
+            groups_seen += 1
+            instrument_text = (
+                matched_groups.get("instrument")
+                or matched_groups.get("bare_instrument")
+                or next(
+                    (
+                        value
+                        for name, value in matched_groups.items()
+                        if name.endswith("_instrument") and value
+                    ),
+                    "",
+                )
+                or ""
+            )
+            expected_id = (
+                "fsma-2023"
+                if re.search(r"\b2023\b", instrument_text)
+                else "fsma"
+            )
+            if any(
+                start < match.end()
+                and end > match.start()
+                and instrument_id == expected_id
+                for start, end, instrument_id in spans_by_source.get(
+                    source["id"],
+                    (),
+                )
+            ):
+                continue
+            gaps.append(
+                {
+                    "source_node_id": source["id"],
+                    "source_title": source["title"],
+                    "citation": compact(match.group(0)),
+                    "expected_instrument_id": expected_id,
+                    "context": compact(
+                        text[
+                            max(0, match.start() - 140) :
+                            min(len(text), match.end() + 180)
+                        ]
+                    ),
+                }
+            )
+    return groups_seen, gaps
 
 
 def edge_id(source_id: str, target_id: str) -> str:
@@ -637,6 +795,10 @@ def audit_and_apply(
             value=text,
             registry=registry,
             source_title=source["title"] or "",
+            contextual_instrument_hints=contextual_section_hints(
+                source=source,
+                rules=override_rules,
+            ),
         ):
             occurrence = apply_context_override(
                 occurrence,
@@ -651,6 +813,11 @@ def audit_and_apply(
                 non_references.append((source, occurrence))
             else:
                 extracted.append((source, occurrence))
+
+    raw_fsma_groups, fsma_coverage_gaps = audit_explicit_fsma_coverage(
+        rows=rows,
+        extracted=extracted,
+    )
 
     # Existing UK CRR/internal Article targets remain authoritative; this pass
     # adds occurrence rows so repeated citations no longer collapse in the UI.
@@ -779,7 +946,7 @@ def audit_and_apply(
     # Never replace a previously valid materialisation with a partial run.  All
     # resolution and official-source fetch gates must pass before the generated
     # edge/occurrence layer is touched.
-    apply_succeeded = apply and not all_unresolved
+    apply_succeeded = apply and not all_unresolved and not fsma_coverage_gaps
     materialized = 0
     occurrence_rows = []
     if apply_succeeded:
@@ -924,6 +1091,31 @@ def audit_and_apply(
         for _, occurrence in extracted
         if occurrence.instrument
     )
+    fsma_text_gaps: list[dict[str, Any]] = []
+    if apply_succeeded:
+        fsma_text_gaps = [
+            dict(row)
+            for row in conn.execute(
+                """
+                SELECT ro.occurrence_id,ro.source_node_id,ro.instrument_id,
+                       ro.provision_path,ro.target_node_id,
+                       COALESCE(n.title,'') AS target_title,
+                       COALESCE(n.url,'') AS target_url,
+                       LENGTH(TRIM(COALESCE(n.text,''))) AS text_length
+                FROM reference_occurrence ro
+                LEFT JOIN node n ON n.id=ro.target_node_id
+                WHERE ro.source_method=?
+                  AND ro.instrument_id IN ('fsma','fsma-2023')
+                  AND (
+                    ro.target_node_id IS NULL
+                    OR LENGTH(TRIM(COALESCE(n.text,'')))=0
+                    OR LENGTH(TRIM(COALESCE(n.url,'')))=0
+                  )
+                ORDER BY ro.source_node_id,ro.span_start
+                """,
+                (GENERATED_METHOD,),
+            )
+        ]
     summary = {
         "apply_requested": apply,
         "applied": apply_succeeded,
@@ -939,8 +1131,15 @@ def audit_and_apply(
         "unresolved_genuine_references": (
             status_counts["unresolved"] + status_counts["ambiguous"]
             if apply_succeeded
-            else len(all_unresolved)
+            else len(all_unresolved) + len(fsma_coverage_gaps)
         ),
+        "raw_explicit_fsma_groups": raw_fsma_groups,
+        "uncovered_explicit_fsma_groups": len(fsma_coverage_gaps),
+        "fsma_occurrences": instrument_counts["fsma"],
+        "fsma_2023_occurrences": instrument_counts["fsma-2023"],
+        "fsma_occurrences_missing_source_text": len(fsma_text_gaps)
+        if apply_succeeded
+        else None,
         "by_instrument": dict(sorted(instrument_counts.items())),
     }
     return {
@@ -954,6 +1153,8 @@ def audit_and_apply(
             for (instrument_id, provision_path), error in sorted(official_errors.items())
         ],
         "unresolved": unresolved_rows,
+        "fsma_coverage_gaps": fsma_coverage_gaps,
+        "fsma_source_text_gaps": fsma_text_gaps,
     }
 
 
@@ -986,7 +1187,11 @@ def main() -> int:
         encoding="utf-8",
     )
     print(json.dumps(result["summary"], indent=2, ensure_ascii=False))
-    return 2 if result["summary"]["unresolved_genuine_references"] else 0
+    return 2 if (
+        result["summary"]["unresolved_genuine_references"]
+        or result["summary"]["uncovered_explicit_fsma_groups"]
+        or result["summary"]["fsma_occurrences_missing_source_text"]
+    ) else 0
 
 
 if __name__ == "__main__":

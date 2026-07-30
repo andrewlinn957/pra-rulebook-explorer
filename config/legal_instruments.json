@@ -311,7 +311,7 @@
       "legislation_type": "ukpga",
       "year": 2000,
       "number": 8,
-      "aliases": ["Financial Services and Markets Act 2000", "Financial Services and Markets Act", "FSMA"],
+      "aliases": ["Financial Services and Markets Act 2000", "Financial Services and Markets Act", "FSMA", "FSMA 2000"],
       "provision_sources": {
         "section/59ZZA": {
           "official_url": "https://www.legislation.gov.uk/uksi/2018/1149/regulation/23",
@@ -320,6 +320,14 @@
           "document_title": "EEA Passport Rights (Amendment, etc., and Transitional Provisions) (EU Exit) Regulations 2018"
         }
       }
+    },
+    {
+      "id": "fsma-2023",
+      "title": "Financial Services and Markets Act 2023",
+      "legislation_type": "ukpga",
+      "year": 2023,
+      "number": 29,
+      "aliases": ["Financial Services and Markets Act 2023", "FSMA 2023"]
     },
     {
       "id": "building-societies-act",
