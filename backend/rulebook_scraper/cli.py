@@ -9,7 +9,7 @@ from pathlib import Path
 from bs4 import BeautifulSoup
 
 from .fetch import fetch_url, normalise_url
-from .enrich import derive_phase4_edges_and_nodes, derive_richer_edges, derive_rollup_and_shared_analysis_edges, repair_internal_anchor_references
+from .enrich import derive_phase4_edges_and_nodes, derive_richer_edges, derive_rollup_and_shared_analysis_edges, repair_internal_anchor_references, repair_structured_definition_text
 from .advanced_enrich import derive_advanced_topics_and_obligations
 from .parse import (
     extract_crr_terms,
@@ -109,6 +109,15 @@ def command_repair_internal_links(args: argparse.Namespace) -> None:
     print_stats(conn)
 
 
+def command_repair_structured_definitions(args: argparse.Namespace) -> None:
+    conn = connect(args.db)
+    counts = repair_structured_definition_text(conn)
+    if args.out:
+        export_json(conn, args.out)
+    print(f"structured-definition repair: {counts}")
+    print_stats(conn)
+
+
 def print_stats(conn) -> None:
     print("nodes by type:")
     for node_type, count in conn.execute("SELECT node_type, COUNT(*) FROM node GROUP BY node_type ORDER BY node_type"):
@@ -203,6 +212,13 @@ def build_parser() -> argparse.ArgumentParser:
     repair = sub.add_parser("repair-internal-links", help="Resolve /pra-rules/...#anchor links to parsed internal nodes")
     repair.add_argument("--out", type=Path, default=DEFAULT_OUT)
     repair.set_defaults(func=command_repair_internal_links)
+
+    repair_definitions = sub.add_parser(
+        "repair-structured-definitions",
+        help="Restore list limbs omitted from cached Part-local definitions",
+    )
+    repair_definitions.add_argument("--out", type=Path, default=DEFAULT_OUT)
+    repair_definitions.set_defaults(func=command_repair_structured_definitions)
     return parser
 
 

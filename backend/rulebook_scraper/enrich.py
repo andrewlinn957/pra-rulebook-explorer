@@ -6,7 +6,7 @@ from collections import defaultdict
 from itertools import combinations
 
 from .models import Edge, Node
-from .parse import edge_id, extract_part, node_id
+from .parse import clean_text, edge_id, extract_part, node_id
 from .store import upsert_edges, upsert_nodes
 
 
@@ -51,6 +51,95 @@ def repair_internal_anchor_references(conn: sqlite3.Connection) -> dict[str, int
     upsert_edges(conn, unresolved_edges)
     conn.commit()
     return {"heading_nodes": len({n.id for n in heading_nodes}), "heading_edges": len({e.id for e in heading_edges}), "html_anchor_resolved": len({e.id for e in resolved_edges}), "html_anchor_unresolved": len({e.id for e in unresolved_edges})}
+
+
+def repair_structured_definition_text(conn: sqlite3.Connection) -> dict[str, int]:
+    """Restore list limbs omitted from Part-local definition nodes.
+
+    Older parser versions retained only the paragraph immediately following a
+    definition heading. Reparse cached Part HTML with the current boundary
+    logic and apply only strict text expansions. Definitions with the same PRA
+    glossary hash are repaired as aliases as well, because reader citations
+    usually point at the central glossary node rather than the Part-local node.
+    """
+    parsed: dict[str, tuple[Node, str]] = {}
+    source_count = 0
+    for url, raw_html in conn.execute(
+        "SELECT url,raw_html FROM document_source WHERE source_type='part' ORDER BY url"
+    ):
+        source_count += 1
+        nodes, _ = extract_part(raw_html, url)
+        for node in nodes:
+            if (node.metadata or {}).get("source") != "inline_part_definition":
+                continue
+            previous = parsed.get(node.stable_key)
+            if previous is None or len(clean_text(node.text)) > len(clean_text(previous[0].text)):
+                parsed[node.stable_key] = (node, url)
+
+    repaired_inline: set[str] = set()
+    repaired_aliases: set[str] = set()
+    for node, source_url in parsed.values():
+        current = conn.execute(
+            "SELECT id,text,metadata_json FROM node WHERE stable_key=?",
+            (node.stable_key,),
+        ).fetchone()
+        if current is None:
+            continue
+        if _definition_text_expands(current["text"], node.text):
+            metadata = json.loads(current["metadata_json"] or "{}")
+            metadata["structured_definition_text"] = {
+                "method": "reparsed_part_html",
+                "source_node_id": node.id,
+                "source_url": source_url,
+            }
+            conn.execute(
+                "UPDATE node SET text=?,metadata_json=? WHERE id=?",
+                (clean_text(node.text), json.dumps(metadata, ensure_ascii=False, sort_keys=True), current["id"]),
+            )
+            repaired_inline.add(current["id"])
+
+        glossary_hash = str((node.metadata or {}).get("glossary_hash") or "")
+        if not glossary_hash:
+            continue
+        aliases = conn.execute(
+            """
+            SELECT id,text,metadata_json FROM node
+            WHERE node_type='defined_term'
+              AND id<>?
+              AND json_extract(metadata_json,'$.glossary_hash')=?
+            """,
+            (node.id, glossary_hash),
+        ).fetchall()
+        for alias in aliases:
+            if not _definition_text_expands(alias["text"], node.text):
+                continue
+            metadata = json.loads(alias["metadata_json"] or "{}")
+            metadata["structured_definition_text"] = {
+                "method": "matching_glossary_hash",
+                "source_node_id": node.id,
+                "source_url": source_url,
+            }
+            conn.execute(
+                "UPDATE node SET text=?,metadata_json=? WHERE id=?",
+                (clean_text(node.text), json.dumps(metadata, ensure_ascii=False, sort_keys=True), alias["id"]),
+            )
+            repaired_aliases.add(alias["id"])
+
+    conn.commit()
+    return {
+        "part_sources": source_count,
+        "definition_candidates": len(parsed),
+        "inline_definitions_repaired": len(repaired_inline),
+        "glossary_aliases_repaired": len(repaired_aliases),
+    }
+
+
+def _definition_text_expands(current: str, candidate: str) -> bool:
+    current_text = clean_text(current)
+    candidate_text = clean_text(candidate)
+    if len(candidate_text) <= len(current_text):
+        return False
+    return not current_text or candidate_text.casefold().startswith(current_text.casefold())
 
 
 def _resolve_html_anchor_reference_edges(conn: sqlite3.Connection) -> list[Edge]:

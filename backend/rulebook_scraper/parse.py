@@ -258,8 +258,11 @@ def _append_inline_definition_nodes(nodes: list[Node], edges: list[Edge], from_n
         # prose references as definitions.
         if not term_text or len(block_text) > len(term_text) + 8:
             continue
-        definition_block = blocks[i + 1]
-        definition = clean_text(definition_block.get_text(" "))
+        definition = _inline_definition_text(block)
+        if not definition:
+            # Retain support for older markup where the term and definition
+            # are not siblings beneath the same container.
+            definition = clean_text(blocks[i + 1].get_text(" "))
         if not re.match(r"^(means|includes|has the meaning|is|are)\b", definition, re.IGNORECASE):
             continue
         href = term_link.get("href", "")
@@ -280,6 +283,36 @@ def _append_inline_definition_nodes(nodes: list[Node], edges: list[Edge], from_n
         nodes.append(term_node)
         edges.append(Edge(edge_id(from_node.id, term_node.id, "defines", stable), from_node.id, term_node.id, "defines", "inline_part_definition", 1.0, term_text, source_url, {"part_title": part_title, "glossary_hash": glossary_hash, "glossary_id": glossary_id}))
         edges.append(Edge(edge_id(from_node.id, term_node.id, "uses_defined_term", stable), from_node.id, term_node.id, "uses_defined_term", "inline_part_definition", 1.0, term_text, source_url, {"part_title": part_title, "glossary_hash": glossary_hash, "glossary_id": glossary_id}))
+
+
+def _inline_definition_text(term_block: Tag) -> str:
+    """Return every sibling block belonging to an inline definition.
+
+    Definitions in the Rulebook are commonly represented as a term ``<p>``,
+    a lead-in ``<p>`` and then one or more ``<ol>``/``<ul>`` blocks. Taking
+    only the next paragraph silently loses the enumerated limbs. The next term
+    heading is the reliable boundary because it uses the same short linked-term
+    markup as the current heading.
+    """
+    parts: list[str] = []
+    for sibling in term_block.next_siblings:
+        if not isinstance(sibling, Tag):
+            continue
+        if _inline_term_heading(sibling):
+            break
+        text = clean_text(sibling.get_text(" "))
+        if text:
+            parts.append(text)
+    return clean_text(" ".join(parts))
+
+
+def _inline_term_heading(block: Tag) -> str:
+    term_link = block.select_one("a.glossary-link[href]") or block.find("a", href=GLOSSARY_HASH_RE)
+    if not term_link:
+        return ""
+    term_text = clean_text(term_link.get("title") or term_link.get_text(" "))
+    block_text = clean_text(block.get_text(" "))
+    return term_text if term_text and len(block_text) <= len(term_text) + 8 else ""
 
 
 def _article_or_annex_number(title: str) -> str:
