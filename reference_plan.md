@@ -111,3 +111,14 @@ Validation gates:
 
 Implement a dry-run `reference-recall-audit` pipeline and produce the gap ledger. Then run a pilot over approximately 200 high-priority provisions before processing the full queue. Review the pilot metrics and adjudication quality before applying any new edges corpus-wide.
 
+## Implementation status (2026-07-31)
+
+The first milestone is implemented as a read-only workflow:
+
+- `scripts/reference_recall_audit.py` scans the source node types, exact legal-citation groups, lexical structure/named-document candidates, HTML reference edges, `reference_occurrence` rows, graph edges and prior LLM findings into a separate SQLite ledger. Each source is hashed; `--resume` skips an unchanged source and long text is split into overlapping chunks with absolute offsets.
+- `scripts/reference_recall_batches.py` turns a pilot JSONL into independent reviewer requests. It requires the reviewer to return exact quoted text, absolute spans, a target hint/kind, `REFERENCE`/`NOT_REFERENCE`/`AMBIGUOUS`, and confidence. It does not submit requests or write graph data.
+- `scripts/validate_reference_recall_reviews.py` validates direct or OpenAI Batch JSONL responses against the pilot. It rejects missing source identity, non-exact quotes, invalid absolute spans and invalid decisions before any resolver sees a finding.
+- The full dry run used the current corpus and produced `logs/reference-recall-ledger-20260731.sqlite3`. It scanned 29,693 eligible source provisions and recorded 106,558 candidates: 54,666 already covered by an edge, 5,818 by an occurrence, 839 by a prior LLM result, 4,877 unresolved prior LLM findings, 8,028 deterministic candidates needing review, and 23,333 candidates in text beyond the old 6,000-character LLM prefix. It also produced 2,974 overlapping chunks.
+- The first pilot contains 200 distinct provision/chunk items in `logs/reference-recall-pilot-20260731.jsonl`; the first 50 read-only reviewer requests are in `logs/reference-recall-review-batches-20260731/`.
+
+No occurrence rows or graph edges were changed by this milestone. The next gate is to review/adjudicate the pilot output, then run deterministic repairs and only apply findings whose exact span, target resolution and duplicate/self-reference checks pass.
