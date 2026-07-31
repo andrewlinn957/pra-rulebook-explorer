@@ -24,26 +24,6 @@ from reference_recall_batches import load_pilot, request_id
 
 
 DECISIONS = {"REFERENCE", "NOT_REFERENCE", "AMBIGUOUS"}
-TARGET_KINDS = {
-    "rule",
-    "part",
-    "chapter",
-    "article",
-    "paragraph",
-    "annex",
-    "table",
-    "template",
-    "form",
-    "definition",
-    "guidance",
-    "statute",
-    "regulation",
-    "directive",
-    "external",
-    "unknown",
-}
-
-
 def parse_content(record: dict[str, Any]) -> dict[str, Any]:
     """Extract the reviewer object from direct or OpenAI Batch JSONL."""
     if isinstance(record.get("findings"), list):
@@ -77,7 +57,7 @@ def validate_finding(finding: dict[str, Any], row: dict[str, Any]) -> list[str]:
     if decision not in DECISIONS:
         errors.append("invalid_decision")
     target_kind = finding.get("target_kind")
-    if not isinstance(target_kind, str) or target_kind not in TARGET_KINDS:
+    if not isinstance(target_kind, str) or not target_kind.strip():
         errors.append("invalid_target_kind")
     confidence = finding.get("confidence")
     if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not 0 <= confidence <= 1:
