@@ -114,6 +114,27 @@ def test_deterministic_candidates_keep_adjacent_named_citations_separate():
     assert "Annexes I and II" in values
 
 
+def test_generic_instrument_fragments_are_not_sent_to_review():
+    assert reference_recall_audit.generic_named_instrument_label("Rules")
+    assert reference_recall_audit.generic_named_instrument_label("Regulations Regulations")
+    assert reference_recall_audit.generic_named_instrument_label("This Code")
+    assert not reference_recall_audit.generic_named_instrument_label("Bank of England Act 1998")
+
+
+def test_generic_instrument_candidate_is_excluded_context():
+    status, priority, reasons = reference_recall_audit.classify_candidate(
+        {"kind": "named_instrument", "start": 0, "end": 5, "text": "Rules"},
+        "Rules apply.",
+        {"occurrences": [], "edges": [], "llm": []},
+        "1.1",
+        "guidance_paragraph",
+        6000,
+    )
+    assert status == "excluded_context"
+    assert priority == 10
+    assert "generic_or_table_instrument_label" in reasons
+
+
 def test_scan_node_marks_existing_occurrence_as_covered(tmp_path):
     text = "The committee must comply with Article 26(6) of the Statutory Audit Regulation."
     source_path = tmp_path / "source.sqlite3"

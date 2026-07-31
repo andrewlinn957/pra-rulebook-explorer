@@ -33,7 +33,7 @@ if str(ROOT) not in sys.path:
 DEFAULT_DB = ROOT / "backend" / "data" / "rulebook.sqlite3"
 DEFAULT_LEDGER = ROOT / "outputs" / "reference-recall-ledger.sqlite3"
 DEFAULT_PILOT = ROOT / "outputs" / "reference-recall-pilot.jsonl"
-SCANNER_VERSION = "reference-recall-audit-v1"
+SCANNER_VERSION = "reference-recall-audit-v2"
 DEFAULT_MAX_CHARS = 6000
 DEFAULT_CHUNK_OVERLAP = 800
 SOURCE_NODE_TYPES = (
@@ -101,6 +101,22 @@ SELF_REFERENCE_RE = re.compile(
     r"\b(?:above|below|following|preceding)\b",
     re.IGNORECASE,
 )
+
+GENERIC_INSTRUMENT_LABELS = {
+    "act",
+    "acts",
+    "code",
+    "directive",
+    "guideline",
+    "guidelines",
+    "handbook",
+    "notice",
+    "order",
+    "regulation",
+    "regulations",
+    "rule",
+    "rules",
+}
 
 LEDGER_SCHEMA = """
 CREATE TABLE IF NOT EXISTS ledger_run (
@@ -586,6 +602,33 @@ def evidence_for_candidate(
     return {"occurrences": occurrence_hits, "edges": edge_hits, "llm": llm_hits}
 
 
+def generic_named_instrument_label(value: str) -> bool:
+    """Identify detector fragments that are not a named instrument.
+
+    The broad instrument regex intentionally catches phrases such as
+    ``Rules`` or ``Regulations Regulations 2024``. Those fragments mostly
+    come from PDF tables, headings and ordinary prose; treating them as review
+    candidates overwhelms the substantive queue. Specific instruments that
+    include a year, number or distinctive multi-word title remain candidates.
+    """
+    text = normalised(value)
+    if not text:
+        return False
+    if text in GENERIC_INSTRUMENT_LABELS:
+        return True
+    if text in {
+        "this code",
+        "the code",
+        "prudential regulation",
+        "the prudential regulation",
+        "act reference",
+        "notice description act",
+    }:
+        return True
+    words = text.split()
+    return len(words) >= 2 and len(set(words)) == 1 and words[0] in GENERIC_INSTRUMENT_LABELS
+
+
 def classify_candidate(candidate: dict[str, Any], value: str, evidence: dict[str, Any], title: str, node_type: str, max_chars: int) -> tuple[str, int, list[str]]:
     start, end = candidate["start"], candidate["end"]
     reasons: list[str] = []
@@ -596,12 +639,14 @@ def classify_candidate(candidate: dict[str, Any], value: str, evidence: dict[str
         reasons.append("relative_or_self_reference_language")
     if normalised(candidate["text"]) == normalised(title) and title:
         reasons.append("candidate_matches_source_title")
+    if candidate["kind"] == "named_instrument" and generic_named_instrument_label(candidate["text"]):
+        reasons.append("generic_or_table_instrument_label")
 
     if any(item.get("status") == "not_reference" for item in evidence["occurrences"]):
         status = "classified_not_reference"
         priority = 0
         reasons.append("existing_occurrence_classifies_not_reference")
-    elif reasons and all(reason in {"boilerplate_or_navigation_context", "relative_or_self_reference_language", "candidate_matches_source_title"} for reason in reasons):
+    elif reasons and all(reason in {"boilerplate_or_navigation_context", "relative_or_self_reference_language", "candidate_matches_source_title", "generic_or_table_instrument_label"} for reason in reasons):
         status = "excluded_context"
         priority = 5
     elif evidence["occurrences"]:
