@@ -261,13 +261,14 @@ def build_target_indexes(nodes: dict[str, sqlite3.Row]) -> dict[str, Any]:
     exact_title: dict[str, list[sqlite3.Row]] = defaultdict(list)
     structural: dict[tuple[str, str], list[sqlite3.Row]] = defaultdict(list)
     for node in nodes.values():
-        title = normalised(node["title"] or "")
+        raw_title = str(node["title"] or "").strip()
+        title = normalised(raw_title)
         if title:
             exact_title[title].append(node)
         match = re.match(
             r"^(article|chapter|part|annex|schedule|template|table|form|rule|paragraph|section|point|subparagraph)\s+"
             r"([0-9a-z]+(?:\.[0-9a-z]+)*(?:\([^)]*\))?)",
-            title,
+            raw_title,
             re.IGNORECASE,
         )
         if match:
@@ -354,7 +355,11 @@ def candidate_targets(
     if not target_types:
         return [], "unsupported_structure", 0.0
     matches: list[sqlite3.Row] = []
-    identifier_norm = normalised(identifier)
+    # Structural identifiers use punctuation (for example ``2.4``) as part
+    # of their identity.  The general text normalizer intentionally removes
+    # punctuation, so use a structural-specific key here to stay consistent
+    # with ``build_target_indexes``.
+    identifier_norm = re.sub(r"\s+", "", identifier).casefold()
     indexed_nodes = indexes["structural"].get((label, identifier_norm), [])
     for node in indexed_nodes:
         if node["id"] == source["id"] or node["node_type"] not in target_types:
@@ -543,6 +548,18 @@ def stage_deterministic(
 ) -> int:
     registry = InstrumentRegistry.load(registry_path)
     source_texts = {node_id: source_text(row) for node_id, row in nodes.items()}
+    # These checks used to issue a full occurrence/edge query for every
+    # candidate.  The corpus-wide tail contains tens of thousands of
+    # candidates, so cache the immutable source relationships once per run.
+    existing_spans: dict[str, list[tuple[int | None, int | None]]] = defaultdict(list)
+    for row in source_conn.execute(
+        "SELECT source_node_id,span_start,span_end FROM reference_occurrence"
+    ):
+        existing_spans[row["source_node_id"]].append((row["span_start"], row["span_end"]))
+    existing_edges = {
+        (row["from_node_id"], row["to_node_id"])
+        for row in source_conn.execute("SELECT from_node_id,to_node_id FROM edge")
+    }
     candidate_rows = ledger.execute(
         """
         SELECT candidate_id,source_node_id,source_node_type,source_title,source_url,
@@ -551,7 +568,7 @@ def stage_deterministic(
         FROM reference_gap
         WHERE status IN ('needs_review','tail_unreviewed','llm_unresolved')
           AND candidate_kind IN ('legal_citation','article_citation','structure_reference','named_document','named_instrument','relative_structure')
-          AND source_node_type IN ('rule','guidance_paragraph','guidance_section','defined_term')
+          AND source_node_type IN ('rule','chapter','part','guidance_document','guidance_section','guidance_paragraph','defined_term')
         ORDER BY priority DESC,candidate_id
         """
     ).fetchall()
@@ -567,7 +584,7 @@ def stage_deterministic(
         quote = value[start:end] if start is not None and end is not None else candidate["candidate_text"]
         # Existing occurrence/edge evidence is checked again against the live
         # DB because the ledger may have been generated before another repair.
-        if existing_occurrence_overlap(source_conn, source["id"], start, end):
+        if any(overlap(start, end, old_start, old_end) > 0 for old_start, old_end in existing_spans.get(source["id"], [])):
             continue
 
         proposals: list[tuple[sqlite3.Row | None, str, float, list[str], dict[str, Any]]] = []
@@ -608,7 +625,7 @@ def stage_deterministic(
                 continue
             if target["id"] == source["id"]:
                 status, hold_reasons = "held_self_reference", ["source_and_target_are_identical"]
-            elif existing_relationship(source_conn, source["id"], target["id"]):
+            elif (source["id"], target["id"]) in existing_edges:
                 status, hold_reasons = "held_duplicate_edge", ["relationship_already_exists"]
             elif confidence < AUTO_MIN_CONFIDENCE:
                 status, hold_reasons = "held_low_confidence", ["detector_confidence_below_stage_threshold"]
