@@ -45,8 +45,11 @@ from scripts.reference_recall_stage import (  # noqa: E402
     build_target_indexes,
     candidate_targets,
     context_keys,
+    connect_stage,
     exact_spans,
     existing_relationship,
+    insert_stage,
+    relationship_for_target,
     same_context,
 )
 from scripts.validate_reference_recall_reviews import (  # noqa: E402
@@ -402,6 +405,52 @@ def import_reviews(args: argparse.Namespace) -> dict[str, Any]:
         (now(), json.dumps(summary, ensure_ascii=False, sort_keys=True), run_id),
     )
     review.commit()
+    promoted = 0
+    if args.promote_to_stage:
+        stage = connect_stage(args.stage)
+        for finding in review.execute(
+            "SELECT * FROM review_finding WHERE run_id=? AND status='eligible_reviewed' ORDER BY finding_id",
+            (run_id,),
+        ):
+            source = nodes.get(finding["source_node_id"])
+            target = nodes.get(finding["target_node_id"])
+            if source is None or target is None:
+                continue
+            relationship_type, _edge_type = relationship_for_target(target)
+            confidence = min(float(finding["confidence"] or 0), float(finding["resolution_confidence"] or 0))
+            insert_stage(
+                stage,
+                run_id=run_id,
+                source=source,
+                target=target,
+                candidate_id=f"review:{finding['finding_id']}",
+                start=finding["span_start"],
+                end=finding["span_end"],
+                quote=finding["quoted_text"],
+                candidate_text=finding["quoted_text"],
+                citation_kind=finding["target_kind"] or "reviewed_reference",
+                method="reviewed_reference_v1",
+                confidence=confidence,
+                status="eligible",
+                reasons=["independent_reviewer_and_local_resolution_pass"],
+                evidence={
+                    "review_run_id": run_id,
+                    "finding_id": finding["finding_id"],
+                    "target_hint": finding["target_hint"] or "",
+                    "review_confidence": float(finding["confidence"] or 0),
+                    "resolution_confidence": float(finding["resolution_confidence"] or 0),
+                },
+                relationship_type=relationship_type,
+            )
+            promoted += 1
+        stage.commit()
+        stage.close()
+    summary["promoted_to_stage"] = promoted
+    review.execute(
+        "UPDATE review_run SET summary_json=? WHERE run_id=?",
+        (json.dumps(summary, ensure_ascii=False, sort_keys=True), run_id),
+    )
+    review.commit()
     review.close()
     source_conn.close()
     return summary
@@ -413,6 +462,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--responses", type=Path, required=True)
     parser.add_argument("--db", type=Path, default=DEFAULT_DB)
     parser.add_argument("--review-db", type=Path, default=DEFAULT_REVIEW_DB)
+    parser.add_argument("--stage", type=Path, default=ROOT / "logs" / "reference-recall-stage-20260731.sqlite3")
+    parser.add_argument("--promote-to-stage", action="store_true", help="Promote only eligible_reviewed findings into the separate stage database.")
     parser.add_argument("--instrument-registry", type=Path, default=DEFAULT_INSTRUMENT_REGISTRY)
     parser.add_argument("--min-confidence", type=float, default=MIN_REVIEW_CONFIDENCE)
     parser.add_argument("--min-resolution-confidence", type=float, default=0.90)

@@ -84,12 +84,19 @@ def test_importer_records_exact_review_and_local_definition_target(tmp_path):
         encoding="utf-8",
     )
     review_db = tmp_path / "reviews.sqlite3"
+    stage_db = tmp_path / "stage.sqlite3"
     args = importer.build_parser().parse_args([
-        "--pilot", str(pilot), "--responses", str(responses), "--db", str(db), "--review-db", str(review_db)
+        "--pilot", str(pilot), "--responses", str(responses), "--db", str(db), "--review-db", str(review_db),
+        "--stage", str(stage_db), "--promote-to-stage"
     ])
     summary = importer.import_reviews(args)
     assert summary["status_counts"] == {"eligible_reviewed": 1}
+    assert summary["promoted_to_stage"] == 1
     review = sqlite3.connect(review_db)
     row = review.execute("SELECT target_node_id,target_node_type,status FROM review_finding").fetchone()
     assert row == ("term", "defined_term", "eligible_reviewed")
     review.close()
+    stage = sqlite3.connect(stage_db)
+    staged = stage.execute("SELECT proposal_method,status,relationship_type FROM staged_repair").fetchone()
+    assert staged == ("reviewed_reference_v1", "eligible", "DEF")
+    stage.close()
