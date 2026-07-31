@@ -72,6 +72,9 @@ Return exactly:
     }}
   ]
 }}
+Use one of the target_kind labels shown above (or a concise non-empty hint),
+and make confidence a JSON number between 0 and 1. Do not swap target_kind
+and confidence.
 """
 
 
