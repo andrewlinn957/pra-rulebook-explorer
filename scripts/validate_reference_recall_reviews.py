@@ -80,7 +80,7 @@ def validate_finding(finding: dict[str, Any], row: dict[str, Any]) -> list[str]:
     return errors
 
 
-def validate(pilot: Path, responses: Path) -> dict[str, Any]:
+def validate(pilot: Path, responses: Path, *, allow_partial: bool = False) -> dict[str, Any]:
     pilot_rows = load_pilot(pilot)
     expected: dict[str, dict[str, Any]] = {}
     for row in pilot_rows:
@@ -103,6 +103,7 @@ def validate(pilot: Path, responses: Path) -> dict[str, Any]:
         "findings": 0,
         "valid_findings": 0,
         "decisions": {},
+        "allow_partial": allow_partial,
     }
     seen: set[str] = set()
     decision_counts: Counter[str] = Counter()
@@ -144,7 +145,7 @@ def validate(pilot: Path, responses: Path) -> dict[str, Any]:
     report["received_requests"] = len(seen)
     report["missing_custom_ids"] = sorted(set(expected) - seen)
     report["decisions"] = dict(decision_counts)
-    report["valid"] = not report["missing_custom_ids"] and not report["unexpected_custom_ids"] and not report["invalid_records"]
+    report["valid"] = (allow_partial or not report["missing_custom_ids"]) and not report["unexpected_custom_ids"] and not report["invalid_records"]
     return report
 
 
@@ -153,12 +154,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--pilot", type=Path, required=True)
     parser.add_argument("--responses", type=Path, required=True)
     parser.add_argument("--output", type=Path)
+    parser.add_argument(
+        "--allow-partial",
+        action="store_true",
+        help="accept a subset of pilot requests as long as every received record and finding is valid",
+    )
     return parser
 
 
 def main() -> int:
     args = build_parser().parse_args()
-    report = validate(args.pilot, args.responses)
+    report = validate(args.pilot, args.responses, allow_partial=args.allow_partial)
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")

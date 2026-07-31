@@ -98,3 +98,49 @@ def test_validate_rejects_non_exact_quote_and_span(tmp_path):
     assert report["valid"] is False
     assert report["valid_findings"] == 0
     assert report["invalid_records"][0]["errors"] == ["quoted_text_not_exact_substring"]
+
+
+def test_validate_can_accept_a_valid_partial_batch(tmp_path):
+    pilot = tmp_path / "pilot.jsonl"
+    rows = []
+    for source_id in ("source-1", "source-2"):
+        rows.append(
+            {
+                "source_node_id": source_id,
+                "source_node_type": "rule",
+                "source_title": source_id,
+                "source_url": "",
+                "source_text_hash": f"hash-{source_id}",
+                "chunk_start": 0,
+                "chunk_end": 20,
+                "text": "See Article 26.",
+                "candidates": [],
+            }
+        )
+    pilot.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+    custom_id = validate_reference_recall_reviews.request_id("source-1", "hash-source-1", 0, 20)
+    responses = tmp_path / "responses.jsonl"
+    responses.write_text(
+        json.dumps(
+            {
+                "custom_id": custom_id,
+                "findings": [
+                    {
+                        "span_start": 4,
+                        "span_end": 14,
+                        "quoted_text": "Article 26",
+                        "target_kind": "article",
+                        "decision": "REFERENCE",
+                        "confidence": 0.9,
+                    }
+                ],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    strict = validate_reference_recall_reviews.validate(pilot, responses)
+    partial = validate_reference_recall_reviews.validate(pilot, responses, allow_partial=True)
+    assert strict["valid"] is False
+    assert partial["valid"] is True
+    assert partial["missing_custom_ids"]
