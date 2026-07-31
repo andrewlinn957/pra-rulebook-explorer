@@ -58,10 +58,24 @@
       "reason": "The supervisory statement uses the Act for FSMA."
     },
     {
-      "source_node_ids": ["3f616d2a63f322c4"],
+      "source_node_ids": ["3f616d2a63f322c4", "8f26834298dbf81c"],
       "citation_kinds": ["section"],
       "instrument_id": "fsma",
       "reason": "The Rulebook Part defines the unqualified Act as FSMA."
+    },
+    {
+      "source_node_ids": ["135673f8a23f532e", "7ddd0002d4497b6f"],
+      "citation_kinds": ["regulation"],
+      "citation_bases": ["36", "38a"],
+      "instrument_id": "llp-accounts-audit-regulations",
+      "reason": "The nested LLP title is truncated before the Companies Act phrase; regulations 36 and 38A are in the Limited Liability Partnerships (Accounts and Audit) Regulations 2008."
+    },
+    {
+      "source_node_ids": ["135673f8a23f532e", "7ddd0002d4497b6f"],
+      "citation_kinds": ["regulation"],
+      "citation_bases": ["6"],
+      "instrument_id": "insurance-accounts-misc-regulations",
+      "reason": "Regulation 6(1A) of those Regulations refers to the Insurance Accounts Directive (Miscellaneous Insurance Undertakings) Regulations 2008 named immediately before it."
     },
     {
       "source_node_ids": ["3a933e095e9d2fc4", "8fab73af23bf2178", "cf665b7b7c4cfd18", "eae10bd98f2a5192", "f6e9ed8d80caabb6"],

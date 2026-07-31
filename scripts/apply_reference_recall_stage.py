@@ -118,6 +118,8 @@ def proposal_result(
     source: sqlite3.Row | None,
     target: sqlite3.Row | None,
     source_conn: sqlite3.Connection,
+    *,
+    allow_existing_edge: bool = False,
 ) -> dict[str, Any]:
     result: dict[str, Any] = {
         "proposal_id": stage_row["proposal_id"],
@@ -147,13 +149,19 @@ def proposal_result(
     result.update(relationship_type=relation, edge_type=graph_type)
     existing = existing_edge(source_conn, source["id"], target["id"])
     if existing:
+        if not allow_existing_edge:
+            result.update(
+                status="duplicate_edge",
+                reasons=["source_target_relationship_already_exists"],
+                existing_edge_id=existing["id"],
+                existing_edge_type=existing["edge_type"],
+            )
+            return result
         result.update(
-            status="duplicate_edge",
-            reasons=["source_target_relationship_already_exists"],
             existing_edge_id=existing["id"],
             existing_edge_type=existing["edge_type"],
+            reasons=["source_target_relationship_reused_for_new_occurrence"],
         )
-        return result
     start, end = int(stage_row["span_start"]), int(stage_row["span_end"])
     if occurrence_exists(source_conn, source["id"], start, end):
         result.update(status="duplicate_occurrence", reasons=["source_span_already_has_materialized_occurrence"])
@@ -252,18 +260,32 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
     for row in staged_rows:
         source = nodes.get(row["source_node_id"])
         target = nodes.get(row["target_node_id"])
-        result = proposal_result(row, source, target, source_conn)
+        result = proposal_result(
+            row,
+            source,
+            target,
+            source_conn,
+            allow_existing_edge=bool(args.allow_existing_edge),
+        )
         if result["status"] == "eligible":
             relationship, graph_type = edge_type(row, target)
+            existing_edge_id = result.get("existing_edge_id")
             edge_values = edge_row(row, source, target, relationship, graph_type)
+            edge_id = existing_edge_id or edge_values[0]
             occurrence_values = occurrence_row(row, source, target, edge_values[0], relationship)
             # Multiple spans can share one edge; keep each occurrence but only
             # insert the edge once per apply transaction.
-            if edge_values[0] not in accepted_ids:
+            if not existing_edge_id and edge_values[0] not in accepted_ids:
                 edge_rows.append(edge_values)
                 accepted_ids.add(edge_values[0])
+            # Rebuild the occurrence when an existing edge is reused so its
+            # edge_id points at the already-materialised relationship.
+            if existing_edge_id:
+                occurrence_values = occurrence_row(
+                    row, source, target, existing_edge_id, relationship
+                )
             occurrence_rows.append(occurrence_values)
-            result.update(edge_id=edge_values[0], occurrence_id=occurrence_values[0])
+            result.update(edge_id=edge_id, occurrence_id=occurrence_values[0])
         results.append(result)
 
     counts = Counter(result["status"] for result in results)
@@ -280,7 +302,7 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
         "generated_at": now(),
         "applied": False,
     }
-    if args.apply and edge_rows:
+    if args.apply and (edge_rows or occurrence_rows):
         try:
             source_conn.execute("BEGIN IMMEDIATE")
             source_conn.executemany(
@@ -328,6 +350,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--stage", type=Path, default=DEFAULT_STAGE)
     parser.add_argument("--audit", type=Path, default=DEFAULT_AUDIT)
     parser.add_argument("--method", action="append", help="Limit to one staged proposal method (repeatable).")
+    parser.add_argument(
+        "--allow-existing-edge",
+        action="store_true",
+        help="Reuse an existing source-target edge when materialising a new exact occurrence.",
+    )
     parser.add_argument("--apply", action="store_true", help="Commit eligible edges and occurrences; default is read-only dry run.")
     return parser
 

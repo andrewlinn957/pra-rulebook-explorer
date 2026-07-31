@@ -1,14 +1,115 @@
 # Unresolved cross-reference analysis
 
-Date: 2026-07-31
+Date: 2026-07-31 (updated after the recommended-order implementation)
+
+## Recommended-order implementation status
+
+The earlier sections below are the initial pattern analysis. The following
+results are the authoritative post-implementation snapshot from
+`logs/reference-recall-corpus-review-recommended-final3-20260731.sqlite3` and
+`backend/data/rulebook.sqlite3`.
+
+### What was applied
+
+1. **CRR and exact local article targets.** The existing CRR pass added 161
+   missing relationships. The occurrence bridge added 79 exact CRR spans. The
+   aggregate legal pass then learned to map qualified CRR citations (for
+   example, `Article 277(3)` and `Article 277a(1)`) to the existing Rulebook
+   Article nodes instead of inventing missing external IDs.
+2. **Guidance-code and defined-term aliases.** 387 unique PRA document-code
+   proposals and 1,173 exact defined-term proposals were staged; unresolved,
+   duplicate-code and self-reference cases were held rather than guessed.
+3. **Legal-registry recovery.** The atomic legal pass materialised 8,046
+   genuine citation occurrences with zero unresolved fetch failures. A bounded
+   aggregate pass materialised a further 3,722 exact occurrences (2,650 in
+   the first pass and 1,072 after local CRR article mapping), reusing existing
+   relationships where necessary. The resolver uses short candidate snippets
+   so large Parts do not trigger a quadratic full-document scan.
+4. **Structural/contextual recovery.** 1,639 exact structural occurrences
+   were materialised (798 new relationships); ambiguous, duplicate and
+   self-reference candidates remain held. The structural stage also excluded
+   3,347 boilerplate-like candidates from automatic linking.
+
+### Final corpus counts
+
+Before this work the authoritative review had 70,993 covered candidates,
+10,532 external/unresolved references and 12,676 ambiguous candidates. After
+the stages above it reports:
+
+| Review outcome | Count |
+| --- | ---: |
+| Covered | 76,954 |
+| External/unresolved genuine references | 6,203 |
+| Ambiguous (multiple local targets) | 1,951 |
+| Ambiguous (structural context required) | 9,018 |
+| Ambiguous (unsupported candidate kind) | 77 |
+| Not a reference / excluded context | 12,355 |
+
+The remaining 6,203 genuine references are:
+
+| Candidate type | Count | Main source types |
+| --- | ---: | --- |
+| Legal citation | 2,962 | chapter 1,651; part 952; guidance document 332; guidance section 27 |
+| Named instrument | 1,242 | definitions and guidance paragraphs dominate |
+| Named document | 1,169 | guidance paragraphs/documents dominate |
+| Structure reference | 830 | guidance documents and paragraphs dominate |
+
+### Patterns in the remaining holds
+
+- **Legal citations:** the residuals are now concentrated in aggregate Parts,
+  Chapters and guidance documents. Common phrases include `Article 4(2)`,
+  `Article 13(2)`, `Articles 32 to 35`, `Article 117(2)`, `Article 118`, and
+  `Article 428f`. The remaining causes are primarily missing official target
+  nodes for non-CRR instruments, bare citations whose instrument is not
+  recoverable from the short local context, and malformed long spans.
+- **Named documents:** the largest exact labels are `the PRA Rulebook` (511),
+  `the Financial Services and Markets Act 2000` (68), `PRA Rulebook Rules`
+  (29), `EBA Guidelines` (26), and missing/old supervisory codes such as
+  `SS29/19`, `CP16/14`, `PS3/24` and `PS15/24`. These should remain document-
+  level or external holds unless an exact local document node exists.
+- **Named instruments:** the most frequent truncated or generic labels are
+  `EU Guidelines` (47), `Companies Act` (45), `Fundamental Rule` (47),
+  `EU Exit) Regulations` (36), `Council Directive` (34), `Banking Act` (33),
+  `Commission Delegated Regulation` (25), and `Interpretation Act` (22).
+  A year, number, jurisdiction or nearby defined term is required before
+  selecting a target.
+- **Structure references:** 830 remain, with recurring malformed spans such
+  as `Table 2 in 9`, `paragraph 9 of Part II of`, and concatenated PRA Rules,
+  EBA Guidelines and annex/table references. These are detector-span problems
+  rather than safe unique-target matches.
+
+### Integrity and verification
+
+The post-apply database passes `PRAGMA quick_check` (`ok`) and
+`PRAGMA foreign_key_check` (no rows). There are zero self-edges, zero edges
+with missing targets, and zero materialised occurrences with missing targets.
+One duplicate source/target/span remains from the pre-existing
+`legal_reference_occurrence_v1` layer (`025267ac6855b951` →
+`acda4f3ef5f1bf19`, span 146–152); no new duplicate was introduced by these
+stages.
+
+### Next work order
+
+1. Add a cached, batch official-source materialiser for the remaining
+   non-CRR registry targets, reporting fetch failures separately from detector
+   ambiguity.
+2. Repair long/truncated candidate spans at punctuation and instrument
+   boundaries, then rerun the bounded legal resolver.
+3. Resolve structural references against parent Part/Chapter/document
+   metadata, preserving only unique matches.
+4. Treat generic document labels as document-level/defined-term references,
+   not arbitrary provision links; keep absent PRA/EBA documents explicitly
+   external.
+5. Send only the residual competing-target cases to human/LLM adjudication.
 
 ## Scope
 
 This report analyses the 12,973 candidates in
 `logs/reference-recall-corpus-review-final-20260731.sqlite3` that were classified
 as genuine references but have no unique local target (`decision=REFERENCE`,
-`target_status=external_or_unresolved`). This is a read-only analysis; it does
-not change the Rulebook database.
+`target_status=external_or_unresolved`). That historical snapshot was
+read-only; the implementation status above records the subsequent
+evidence-checked materialisation work.
 
 The set is distributed across these candidate types:
 
