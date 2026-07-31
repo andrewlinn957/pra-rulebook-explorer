@@ -474,6 +474,19 @@ test('graph inspector exposes reading mode with inline and pinned reference acti
   assert.doesNotMatch(interfaceSource, /Loading one-level references/);
 });
 
+test('nested reader references expand and pin without collapsing their ancestors', () => {
+  const pinHandler = interfaceSource.match(
+    /function pinReference\(reference\)\{([\s\S]*?)\n  \}/,
+  )?.[1] || '';
+  assert.match(pinHandler, /setPinned\(/);
+  assert.doesNotMatch(pinHandler, /setExpandedId\(/);
+  assert.match(interfaceSource, /function activateNestedReference\(nestedReference\)/);
+  assert.match(interfaceSource, /pinnedIds\.has\(nestedReference\.id\)/);
+  assert.match(interfaceSource, /onPinnedActivate\(nestedReference\)/);
+  assert.match(interfaceSource, /onClick=\{\(\)=>\{onPin\(reference\);onCollapse\(\);\}\}/);
+  assert.match(interfaceSource, /level=\{level\+1\}[\s\S]*pinnedIds=\{pinnedIds\}/);
+});
+
 test('reference shelf is space-aware, sticky, scrollable and becomes a narrow-screen drawer', () => {
   assert.match(interfaceSource, /referenceShelfDensity\(availableHeight,measuredHeights\)/);
   assert.match(interfaceSource, /new ResizeObserver\(update\)/);

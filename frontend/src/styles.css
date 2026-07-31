@@ -1086,6 +1086,9 @@ button{cursor:pointer}
 .inline-reference-other-links>button{
   border:1px solid #cfc1ad;border-radius:4px;background:#f8f3ea;color:#5f513e;padding:5px 7px;font-size:8px;
 }
+.inline-reference-other-links>button.is-pinned{
+  border-color:#71806a;background:#e5e9df;color:#465040;
+}
 .inline-reference-applicability{
   margin:12px 0 0;padding:11px 12px;border:1px solid #c9cdbd;border-left:3px solid #6f7b62;
   background:#edf0e7;color:#454b3f;

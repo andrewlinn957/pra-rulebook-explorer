@@ -458,7 +458,6 @@ function ProvisionReader({rootNode,api,onClose}){
   }
   function pinReference(reference){
     setPinned(current=>current.some(item=>item.id===reference.id)?current:[...current,reference]);
-    setExpandedId('');
     setActivePinnedId(reference.id);
   }
   function returnInline(reference){
@@ -561,6 +560,8 @@ function ProvisionReader({rootNode,api,onClose}){
                       referenceEdgesBySource={referenceEdgesBySource}
                       maxDepth={referenceDepth}
                       requestedPath={returnInlinePath}
+                      pinnedIds={pinnedIds}
+                      onPinnedActivate={activateReference}
                     />}
                   </section>;
                 })}
@@ -582,6 +583,8 @@ function ProvisionReader({rootNode,api,onClose}){
                       referenceEdgesBySource={referenceEdgesBySource}
                       maxDepth={referenceDepth}
                       requestedPath={returnInlinePath}
+                      pinnedIds={pinnedIds}
+                      onPinnedActivate={activateReference}
                     />}
                   </div>
                 </section>}
@@ -614,6 +617,8 @@ function InlineLegalReference({
   maxDepth=1,
   level=1,
   requestedPath=[],
+  pinnedIds=new Set(),
+  onPinnedActivate=()=>{},
 }){
   const members=reference.members?.length
     ?reference.members
@@ -669,6 +674,13 @@ function InlineLegalReference({
   const sourceUrl=selectedNode?.url||selectedEdge?.source_url;
   const applicabilityNote=selectedNode?.metadata?.applicability_note;
   const relatedProvisions=selectedNode?.metadata?.related_provisions||[];
+  function activateNestedReference(nestedReference){
+    if(pinnedIds.has(nestedReference.id)){
+      onPinnedActivate(nestedReference);
+      return;
+    }
+    setExpandedNestedId(current=>current===nestedReference.id?'':nestedReference.id);
+  }
   return <aside className={`inline-legal-reference relationship-${reference.relationship.code.toLowerCase()}`}>
     <header>
       <div><span>{reference.relationship.code} · {reference.relationship.label}</span><small>{reference.sourceHeading}</small></div>
@@ -696,9 +708,9 @@ function InlineLegalReference({
         <p>{segments.map((segment,segmentIndex)=>segment.type==='citation'
           ?<button
             type="button"
-            className="legal-citation"
+            className={`legal-citation ${pinnedIds.has(segment.reference.id)?'is-pinned':''}`}
             key={`${segment.reference.id}-${segmentIndex}`}
-            onClick={()=>setExpandedNestedId(current=>current===segment.reference.id?'':segment.reference.id)}
+            onClick={()=>activateNestedReference(segment.reference)}
             aria-expanded={expandedNestedId===segment.reference.id}
           >{segment.text}<sup>{segment.reference.relationship.code}</sup></button>
           :<React.Fragment key={segmentIndex}>{segment.text}</React.Fragment>)}</p>
@@ -711,6 +723,8 @@ function InlineLegalReference({
           maxDepth={maxDepth}
           level={level+1}
           requestedPath={requestedPath}
+          pinnedIds={pinnedIds}
+          onPinnedActivate={onPinnedActivate}
         />}
       </div>;
     }):<p>No body text is available for this reference.</p>}
@@ -719,7 +733,8 @@ function InlineLegalReference({
         {unmatchedNested.map(item=><button
           type="button"
           key={item.id}
-          onClick={()=>setExpandedNestedId(current=>current===item.id?'':item.id)}
+          className={pinnedIds.has(item.id)?'is-pinned':''}
+          onClick={()=>activateNestedReference(item)}
         >{item.relationship.code} · {referenceDisplayTitle(item)}</button>)}
         {unmatchedNested.find(item=>item.id===expandedNestedId)&&<InlineLegalReference
           reference={unmatchedNested.find(item=>item.id===expandedNestedId)}
@@ -730,6 +745,8 @@ function InlineLegalReference({
           maxDepth={maxDepth}
           level={level+1}
           requestedPath={requestedPath}
+          pinnedIds={pinnedIds}
+          onPinnedActivate={onPinnedActivate}
         />}
       </div>}
     </div>
@@ -740,7 +757,7 @@ function InlineLegalReference({
     </aside>}
     <footer>
       {sourceUrl&&<a href={sourceUrl} target="_blank" rel="noopener noreferrer">Open original source ↗</a>}
-      <button type="button" onClick={()=>onPin(reference)}>Pin to shelf</button>
+      <button type="button" onClick={()=>{onPin(reference);onCollapse();}}>Pin to shelf</button>
     </footer>
   </aside>;
 }
