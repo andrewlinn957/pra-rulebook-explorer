@@ -66,7 +66,7 @@ Return exactly:
       "span_end": 0,
       "quoted_text": "exact text",
       "target_hint": "identifier/title as written, or empty",
-      "target_kind": "rule|part|chapter|article|paragraph|annex|table|template|definition|guidance|statute|regulation|external|unknown",
+      "target_kind": "rule|part|chapter|article|paragraph|annex|table|template|form|definition|guidance|statute|regulation|directive|external|unknown",
       "decision": "REFERENCE|NOT_REFERENCE|AMBIGUOUS",
       "confidence": 0.0
     }}

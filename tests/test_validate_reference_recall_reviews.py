@@ -144,3 +144,43 @@ def test_validate_can_accept_a_valid_partial_batch(tmp_path):
     assert strict["valid"] is False
     assert partial["valid"] is True
     assert partial["missing_custom_ids"]
+
+
+def test_validate_rejects_malformed_target_kind_and_confidence(tmp_path):
+    row = {
+        "source_node_id": "source-1",
+        "source_node_type": "rule",
+        "source_title": "2.4",
+        "source_url": "",
+        "source_text_hash": "hash-1",
+        "chunk_start": 0,
+        "chunk_end": 20,
+        "text": "See Article 26.",
+        "candidates": [],
+    }
+    pilot = tmp_path / "pilot.jsonl"
+    pilot.write_text(json.dumps(row) + "\n", encoding="utf-8")
+    responses = tmp_path / "responses.jsonl"
+    responses.write_text(
+        json.dumps(
+            {
+                "custom_id": validate_reference_recall_reviews.request_id("source-1", "hash-1", 0, 20),
+                "findings": [
+                    {
+                        "span_start": 4,
+                        "span_end": 14,
+                        "quoted_text": "Article 26",
+                        "target_hint": "Article 26",
+                        "target_kind": "rule",
+                        "confidence": "article",
+                        "decision": "REFERENCE",
+                    }
+                ],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    report = validate_reference_recall_reviews.validate(pilot, responses)
+    assert report["valid"] is False
+    assert report["invalid_records"][0]["errors"] == ["invalid_confidence"]

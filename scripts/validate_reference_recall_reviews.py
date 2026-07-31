@@ -24,6 +24,24 @@ from reference_recall_batches import load_pilot, request_id
 
 
 DECISIONS = {"REFERENCE", "NOT_REFERENCE", "AMBIGUOUS"}
+TARGET_KINDS = {
+    "rule",
+    "part",
+    "chapter",
+    "article",
+    "paragraph",
+    "annex",
+    "table",
+    "template",
+    "form",
+    "definition",
+    "guidance",
+    "statute",
+    "regulation",
+    "directive",
+    "external",
+    "unknown",
+}
 
 
 def parse_content(record: dict[str, Any]) -> dict[str, Any]:
@@ -58,6 +76,12 @@ def validate_finding(finding: dict[str, Any], row: dict[str, Any]) -> list[str]:
     decision = finding.get("decision")
     if decision not in DECISIONS:
         errors.append("invalid_decision")
+    target_kind = finding.get("target_kind")
+    if not isinstance(target_kind, str) or target_kind not in TARGET_KINDS:
+        errors.append("invalid_target_kind")
+    confidence = finding.get("confidence")
+    if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not 0 <= confidence <= 1:
+        errors.append("invalid_confidence")
     quote = finding.get("quoted_text")
     if not isinstance(quote, str) or not quote:
         errors.append("missing_quoted_text")
