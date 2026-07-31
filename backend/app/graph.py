@@ -372,6 +372,7 @@ def reader_bundle(
     conn: sqlite3.Connection,
     node_id: str,
     *,
+    reference_depth: int = 1,
     max_depth: int = 8,
     max_children: int = 5000,
 ) -> dict[str, Any]:
@@ -416,30 +417,46 @@ def reader_bundle(
             collect(child)
 
     collect({**contents["root"], "children": contents["children"]})
+    reference_depth = max(1, min(int(reference_depth), 3))
     source_ids = [node["id"] for node in reading_source_nodes]
     edges_by_id: dict[str, dict[str, Any]] = {}
     available: Counter[str] = Counter()
     edge_types = ("references", "uses_defined_term", "amends")
 
-    # Stay below conservative SQLite variable limits for very large Parts.
-    for start in range(0, len(source_ids), 750):
-        batch = source_ids[start:start + 750]
-        placeholders = ",".join("?" for _ in batch)
-        rows = conn.execute(
-            f"""
-            SELECT id,from_node_id,to_node_id,edge_type,source_method,confidence,
-                   evidence_text,source_url,metadata_json
-            FROM edge
-            WHERE from_node_id IN ({placeholders})
-              AND edge_type IN (?,?,?)
-            ORDER BY from_node_id,edge_type,confidence DESC,id
-            """,
-            [*batch, *edge_types],
-        ).fetchall()
-        for row in rows:
-            edge = row_to_edge(row)
-            edges_by_id[edge["id"]] = edge
-            available[edge["edge_type"]] += 1
+    # Expand only outgoing links at each requested level. This keeps reference
+    # depth independent from the hierarchy depth of the fixed reading spine.
+    frontier = set(source_ids)
+    expanded_sources: set[str] = set()
+    for _level in range(reference_depth):
+        frontier -= expanded_sources
+        if not frontier:
+            break
+        next_frontier: set[str] = set()
+        ordered_frontier = sorted(frontier)
+        # Stay below conservative SQLite variable limits for very large Parts.
+        for start in range(0, len(ordered_frontier), 750):
+            batch = ordered_frontier[start:start + 750]
+            placeholders = ",".join("?" for _ in batch)
+            rows = conn.execute(
+                f"""
+                SELECT id,from_node_id,to_node_id,edge_type,source_method,confidence,
+                       evidence_text,source_url,metadata_json
+                FROM edge
+                WHERE from_node_id IN ({placeholders})
+                  AND edge_type IN (?,?,?)
+                ORDER BY from_node_id,edge_type,confidence DESC,id
+                """,
+                [*batch, *edge_types],
+            ).fetchall()
+            for row in rows:
+                edge = row_to_edge(row)
+                if edge["id"] not in edges_by_id:
+                    edges_by_id[edge["id"]] = edge
+                    available[edge["edge_type"]] += 1
+                if edge.get("to_node_id"):
+                    next_frontier.add(edge["to_node_id"])
+        expanded_sources.update(frontier)
+        frontier = next_frontier
 
     edges = list(edges_by_id.values())
     _attach_reference_occurrences(conn, edges)
@@ -479,7 +496,8 @@ def reader_bundle(
         },
         "spine_node_count": len(spine_nodes),
         "source_provision_count": len(reading_source_nodes),
-        "reference_level": 1,
+        "reference_level": reference_depth,
+        "reference_depth": reference_depth,
     }
 
 

@@ -941,6 +941,20 @@ button{cursor:pointer}
 }
 .provision-byline a{color:#705536;border-bottom:1px solid #b9a88e}
 .provision-byline a:hover{color:#3e2d18;border-color:#3e2d18}
+.reference-depth-control{
+  display:flex;align-items:center;gap:5px;margin-top:16px;font-family:Inter,ui-sans-serif,system-ui,sans-serif;
+}
+.reference-depth-control>span{
+  margin-right:3px;color:#776b5c;font-size:8px;font-weight:850;letter-spacing:.1em;text-transform:uppercase;
+}
+.reference-depth-control button{
+  display:grid;place-items:center;width:25px;height:24px;border:1px solid #cfc3b3;border-radius:4px;
+  background:#f8f3ea;color:#6f6251;font-size:9px;font-weight:800;
+}
+.reference-depth-control button:hover:not(:disabled){border-color:#8e704a;background:#eee2d1;color:#3d2e1d}
+.reference-depth-control button[aria-pressed=true]{border-color:#765936;background:#7b5e3a;color:#fff}
+.reference-depth-control button:disabled{cursor:wait;opacity:.58}
+.reference-depth-control small{margin-left:5px;color:#8b8276;font-size:8px}
 .legal-paragraphs{display:grid;gap:4px}
 .reading-provision-section{min-width:0}
 .reading-provision-section.is-child{margin-top:38px}
@@ -1058,6 +1072,20 @@ button{cursor:pointer}
 }
 .legal-text-block-note>span{display:none}
 .legal-text-block-note>p{margin:0!important}
+.inline-reference-text .inline-legal-reference{
+  grid-column:1/-1;margin:11px 0 8px;padding:13px 14px;max-width:100%;
+}
+.inline-reference-text .inline-reference-text{max-height:300px}
+.inline-reference-other-links{
+  display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin:10px 0 2px;padding:9px;
+  border-top:1px solid #d8ccbb;background:rgba(255,255,255,.25);
+}
+.inline-reference-other-links>strong{
+  width:100%;color:#7a684e;font-size:7px;letter-spacing:.1em;text-transform:uppercase;
+}
+.inline-reference-other-links>button{
+  border:1px solid #cfc1ad;border-radius:4px;background:#f8f3ea;color:#5f513e;padding:5px 7px;font-size:8px;
+}
 .inline-reference-applicability{
   margin:12px 0 0;padding:11px 12px;border:1px solid #c9cdbd;border-left:3px solid #6f7b62;
   background:#edf0e7;color:#454b3f;
@@ -1108,8 +1136,10 @@ button{cursor:pointer}
 .reference-shelf-list{
   min-height:0;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:8px;scrollbar-color:#c0b4a4 transparent;
 }
-.reference-shelf-measurement-list{
+.reference-shelf-measurements{
   position:absolute;z-index:-1;top:58px;right:0;left:0;visibility:hidden;pointer-events:none;
+}
+.reference-shelf-measurement-list{
   padding:12px;display:flex;flex-direction:column;gap:8px;
 }
 .reference-shelf-empty{margin:auto 8px;padding:24px 18px;border:1px dashed #c8bcac;text-align:center;color:#776e62}
@@ -1147,40 +1177,48 @@ button{cursor:pointer}
 .reference-shelf-measurement-list .reference-shelf-card>footer span{
   color:#715534;font-size:8px;font-weight:750;
 }
-.reference-shelf.density-compact .reference-shelf-list{gap:6px;padding:9px}
-.reference-shelf.density-compact .reference-shelf-card{padding:9px 10px}
-.reference-shelf.density-compact .reference-shelf-card h3{margin:5px 0 3px;font-size:13px}
-.reference-shelf.density-compact .reference-shelf-card>p{
+.reference-shelf.density-compact .reference-shelf-list,
+.reference-shelf-measurement-list.density-compact{gap:6px;padding:9px}
+.reference-shelf.density-compact .reference-shelf-card,
+.reference-shelf-measurement-list.density-compact .reference-shelf-card{padding:9px 10px}
+.reference-shelf.density-compact .reference-shelf-card h3,
+.reference-shelf-measurement-list.density-compact .reference-shelf-card h3{margin:5px 0 3px;font-size:13px}
+.reference-shelf.density-compact .reference-shelf-card>p,
+.reference-shelf-measurement-list.density-compact .reference-shelf-card>p{
   display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2;font-size:10px;line-height:1.35;
 }
-.reference-shelf.density-compact .reference-shelf-card>footer{margin-top:6px}
-.reference-shelf.density-dense .reference-shelf-list{gap:4px;padding:7px}
-.reference-shelf.density-dense .reference-shelf-card{padding:6px 8px}
-.reference-shelf.density-dense .reference-shelf-card h3{margin:3px 0;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.reference-shelf.density-dense .reference-shelf-card>p{
+.reference-shelf.density-compact .reference-shelf-card>footer,
+.reference-shelf-measurement-list.density-compact .reference-shelf-card>footer{margin-top:6px}
+.reference-shelf.density-dense .reference-shelf-list,
+.reference-shelf-measurement-list.density-dense{gap:4px;padding:7px}
+.reference-shelf.density-dense .reference-shelf-card,
+.reference-shelf-measurement-list.density-dense .reference-shelf-card{padding:6px 8px}
+.reference-shelf.density-dense .reference-shelf-card h3,
+.reference-shelf-measurement-list.density-dense .reference-shelf-card h3{margin:3px 0;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.reference-shelf.density-dense .reference-shelf-card>p,
+.reference-shelf-measurement-list.density-dense .reference-shelf-card>p{
   display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:1;font-size:9px;line-height:1.25;
 }
-.reference-shelf.density-dense .reference-shelf-card>footer{margin-top:4px}
-.reference-shelf.density-summary .reference-shelf-list{gap:3px;padding:6px}
-.reference-shelf.density-summary .reference-shelf-card{padding:5px 7px;cursor:pointer}
+.reference-shelf.density-dense .reference-shelf-card>footer,
+.reference-shelf-measurement-list.density-dense .reference-shelf-card>footer{margin-top:4px}
+.reference-shelf.density-summary .reference-shelf-list,
+.reference-shelf-measurement-list.density-summary{gap:3px;padding:6px}
+.reference-shelf.density-summary .reference-shelf-card,
+.reference-shelf-measurement-list.density-summary .reference-shelf-card{padding:5px 7px;cursor:pointer}
 .reference-shelf.density-summary .reference-shelf-card>header button,
 .reference-shelf.density-summary .reference-shelf-card>p,
-.reference-shelf.density-summary .reference-shelf-card>footer{display:none}
-.reference-shelf.density-summary .reference-shelf-card h3{margin:2px 0 0;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.reference-shelf.density-summary .reference-shelf-card>footer,
+.reference-shelf-measurement-list.density-summary .reference-shelf-card>header i,
+.reference-shelf-measurement-list.density-summary .reference-shelf-card>p,
+.reference-shelf-measurement-list.density-summary .reference-shelf-card>footer{display:none}
+.reference-shelf.density-summary .reference-shelf-card h3,
+.reference-shelf-measurement-list.density-summary .reference-shelf-card h3{margin:2px 0 0;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .reference-shelf.density-summary .reference-shelf-card.is-temporarily-expanded{padding:10px}
 .reference-shelf.density-summary .reference-shelf-card.is-temporarily-expanded>header button{display:block}
 .reference-shelf.density-summary .reference-shelf-card.is-temporarily-expanded>p{
   display:-webkit-box;margin-top:5px;-webkit-line-clamp:2;font-size:10px;
 }
 .reference-shelf.density-summary .reference-shelf-card.is-temporarily-expanded>footer{display:flex;margin-top:7px}
-.reference-shelf .reference-shelf-measurement-list .reference-shelf-card{padding:13px 13px 12px;cursor:default}
-.reference-shelf .reference-shelf-measurement-list .reference-shelf-card h3{
-  margin:7px 0 5px;font-size:15px;line-height:1.24;white-space:normal;overflow:visible;text-overflow:clip;
-}
-.reference-shelf .reference-shelf-measurement-list .reference-shelf-card>p{
-  display:block;margin:0;overflow:visible;-webkit-line-clamp:unset;font-size:11px;line-height:1.45;
-}
-.reference-shelf .reference-shelf-measurement-list .reference-shelf-card>footer{display:flex;margin-top:9px}
 .reference-shelf-backdrop{display:none}
 @media(max-width:860px){
   .provision-reader{grid-template-rows:54px minmax(0,1fr)}
@@ -1213,6 +1251,8 @@ button{cursor:pointer}
 }
 @media(max-width:520px){
   .provision-byline{align-items:flex-start;flex-direction:column;gap:7px}
+  .reference-depth-control{flex-wrap:wrap}
+  .reference-depth-control small{flex-basis:100%;margin-left:0}
   .provision-reading-spine{width:calc(100% - 22px)}
   .legal-paragraph{grid-template-columns:20px minmax(0,1fr);column-gap:8px}
   .legal-paragraph.legal-block-list-item.legal-depth-1{margin-left:14px}

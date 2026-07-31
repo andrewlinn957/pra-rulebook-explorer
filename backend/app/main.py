@@ -541,10 +541,14 @@ def api_contents(node_id: str) -> dict:
 
 
 @app.get("/node/{node_id}/reader")
-def api_reader(node_id: str) -> dict:
+def api_reader(node_id: str, reference_depth: int = 1) -> dict:
     conn = connect(DB_PATH)
     try:
-        return reader_bundle(conn, node_id)
+        return reader_bundle(
+            conn,
+            node_id,
+            reference_depth=_limit(reference_depth, 3),
+        )
     except ValueError:
         raise HTTPException(status_code=404, detail="Node not found")
 

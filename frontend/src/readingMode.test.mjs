@@ -442,12 +442,21 @@ test('defined terms remain clickable when the provision uses a simple plural', (
 });
 
 test('shelf density keeps complete cards visible whenever their measured content fits', () => {
-  assert.equal(referenceShelfDensity(640, 3, 620), 'full');
-  assert.equal(referenceShelfDensity(640, 3, 900), 'compact');
-  assert.equal(referenceShelfDensity(420, 4, 600), 'compact');
-  assert.equal(referenceShelfDensity(320, 4, 600), 'dense');
-  assert.equal(referenceShelfDensity(260, 6, 600), 'summary');
-  assert.equal(referenceShelfDensity(320, 2, 300), 'full');
+  assert.equal(referenceShelfDensity(640, {
+    full: 620, compact: 480, dense: 320, summary: 210,
+  }), 'full');
+  assert.equal(referenceShelfDensity(640, {
+    full: 641.5, compact: 580, dense: 360, summary: 230,
+  }), 'compact');
+  assert.equal(referenceShelfDensity(420, {
+    full: 900, compact: 421.5, dense: 380, summary: 240,
+  }), 'dense');
+  assert.equal(referenceShelfDensity(260, {
+    full: 900, compact: 600, dense: 340, summary: 220,
+  }), 'summary');
+  assert.equal(referenceShelfDensity(200, {
+    full: 900, compact: 600, dense: 340, summary: 220,
+  }), 'summary');
 });
 
 test('graph inspector exposes reading mode with inline and pinned reference actions', () => {
@@ -458,12 +467,17 @@ test('graph inspector exposes reading mode with inline and pinned reference acti
   assert.match(interfaceSource, /Return inline/);
   assert.match(interfaceSource, /setExpandedId\(current=>current===reference\.id\?'':reference\.id\)/);
   assert.match(interfaceSource, /\/reader/);
+  assert.match(interfaceSource, /reference_depth=\$\{referenceDepth\}/);
+  assert.match(interfaceSource, /aria-label="Reference depth"/);
+  assert.match(interfaceSource, /\[1,2,3\]\.map\(depth/);
+  assert.match(interfaceSource, /level<maxDepth/);
   assert.doesNotMatch(interfaceSource, /Loading one-level references/);
 });
 
 test('reference shelf is space-aware, sticky, scrollable and becomes a narrow-screen drawer', () => {
-  assert.match(interfaceSource, /referenceShelfDensity\(availableHeight,references\.length,fullContentHeight\)/);
+  assert.match(interfaceSource, /referenceShelfDensity\(availableHeight,measuredHeights\)/);
   assert.match(interfaceSource, /new ResizeObserver\(update\)/);
+  assert.match(interfaceSource, /\['full','compact','dense','summary'\]\.map\(measurementDensity/);
   assert.match(interfaceSource, /reference-shelf-measurement-list/);
   assert.match(interfaceSource, /<p>{sourceNode\?\.text\|\|'No excerpt available\.'}<\/p>/);
   assert.doesNotMatch(interfaceSource, /truncate\(sourceNode\?\.text/);

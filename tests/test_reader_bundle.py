@@ -120,6 +120,17 @@ def test_reader_bundle_loads_direct_references_from_every_contained_provision():
     }
     assert "nested" not in {node["id"] for node in bundle["graph"]["nodes"]}
 
+    depth_two = reader_bundle(conn, "chapter", reference_depth=2)
+    assert depth_two["reference_depth"] == 2
+    assert (
+        "article-26",
+        "nested",
+        "references",
+    ) in {
+        (edge["from_node_id"], edge["to_node_id"], edge["edge_type"])
+        for edge in depth_two["graph"]["edges"]
+    }
+
 
 def test_content_order_uses_every_numeric_component_of_rule_titles():
     items = [

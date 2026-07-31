@@ -315,6 +315,7 @@ function NodeFeedbackModal({node,text,setText,saving,onClose,onSubmit}){
 
 function ProvisionReader({rootNode,api,onClose}){
   const [root,setRoot]=useState(rootNode);
+  const [referenceDepth,setReferenceDepth]=useState(1);
   const [contents,setContents]=useState({root:null,children:[]});
   const [referenceGraph,setReferenceGraph]=useState({nodes:[rootNode],edges:[]});
   const [loading,setLoading]=useState(true);
@@ -323,7 +324,14 @@ function ProvisionReader({rootNode,api,onClose}){
   const [pinned,setPinned]=useState([]);
   const [activePinnedId,setActivePinnedId]=useState('');
   const [mobileShelfOpen,setMobileShelfOpen]=useState(false);
+  const [returnInlinePath,setReturnInlinePath]=useState([]);
   const readingScrollRef=useRef(null);
+
+  useEffect(()=>{
+    setPinned([]);
+    setActivePinnedId('');
+    setMobileShelfOpen(false);
+  },[rootNode.id]);
 
   useEffect(()=>{
     let cancelled=false;
@@ -331,12 +339,10 @@ function ProvisionReader({rootNode,api,onClose}){
     setContents({root:null,children:[]});
     setReferenceGraph({nodes:[rootNode],edges:[]});
     setExpandedId('');
-    setPinned([]);
-    setActivePinnedId('');
-    setMobileShelfOpen(false);
+    setReturnInlinePath([]);
     setLoading(true);
     setLoadError('');
-    api(`/node/${encodeURIComponent(rootNode.id)}/reader`).then(bundle=>{
+    api(`/node/${encodeURIComponent(rootNode.id)}/reader?reference_depth=${referenceDepth}`).then(bundle=>{
       if(cancelled) return;
       setRoot(bundle.contents?.root||rootNode);
       setContents(bundle.contents||{root:rootNode,children:[]});
@@ -347,7 +353,7 @@ function ProvisionReader({rootNode,api,onClose}){
       if(!cancelled) setLoading(false);
     });
     return ()=>{cancelled=true;};
-  },[rootNode.id]);
+  },[rootNode.id,referenceDepth]);
 
   const referenceEdgesBySource=useMemo(()=>{
     const bySource=new Map();
@@ -378,6 +384,8 @@ function ProvisionReader({rootNode,api,onClose}){
       readingBlockId:reference.paragraphIndex>=0
         ?`${entry.node.id}:${reference.paragraphIndex}`
         :`${entry.node.id}:references`,
+      rootReferenceId:reference.id,
+      inlinePath:[reference.id],
     })):[];
     return {...entry,blocks,references};
   }),[contents,referenceGraph.nodes,referenceEdgesBySource]);
@@ -426,7 +434,8 @@ function ProvisionReader({rootNode,api,onClose}){
         });
       for(const row of rows){
         const ids=(row.dataset.referenceIds||'').split(',').filter(Boolean);
-        const match=ids.find(id=>pinnedIds.has(id));
+        const match=ids.find(id=>pinnedIds.has(id))
+          ||pinnedReferences.find(reference=>reference.readingBlockId===row.dataset.readingBlockId)?.id;
         if(match){
           setActivePinnedId(match);
           return;
@@ -444,6 +453,7 @@ function ProvisionReader({rootNode,api,onClose}){
       setMobileShelfOpen(true);
       return;
     }
+    setReturnInlinePath([]);
     setExpandedId(current=>current===reference.id?'':reference.id);
   }
   function pinReference(reference){
@@ -453,7 +463,8 @@ function ProvisionReader({rootNode,api,onClose}){
   }
   function returnInline(reference){
     setPinned(current=>current.filter(item=>item.id!==reference.id));
-    setExpandedId(reference.id);
+    setExpandedId(reference.rootReferenceId||reference.id);
+    setReturnInlinePath(reference.inlinePath||[reference.id]);
     setMobileShelfOpen(false);
     requestAnimationFrame(()=>{
       readingScrollRef.current
@@ -489,8 +500,19 @@ function ProvisionReader({rootNode,api,onClose}){
             <div className="provision-byline">
               <span>{loading
                 ?'Loading contained provisions and citations…'
-                :`${linkedProvisionCount} linked provision${linkedProvisionCount===1?'':'s'} across ${references.length} citation${references.length===1?'':'s'} · ${provisionCount} source provision${provisionCount===1?'':'s'} · expansions stop after one level`}</span>
+                :`${linkedProvisionCount} linked provision${linkedProvisionCount===1?'':'s'} across ${references.length} citation${references.length===1?'':'s'} · ${provisionCount} source provision${provisionCount===1?'':'s'} · reference depth ${referenceDepth}`}</span>
               {root?.url&&<a href={root.url} target="_blank" rel="noopener noreferrer">Open original source ↗</a>}
+            </div>
+            <div className="reference-depth-control" role="group" aria-label="Reference depth">
+              <span>Reference depth</span>
+              {[1,2,3].map(depth=><button
+                type="button"
+                key={depth}
+                aria-pressed={referenceDepth===depth}
+                onClick={()=>setReferenceDepth(depth)}
+                disabled={loading}
+              >{depth}</button>)}
+              <small>{referenceDepth===1?'Direct references only':`Show references up to ${referenceDepth} levels deep`}</small>
             </div>
           </header>
           {loadError&&<p className="reader-load-error">Reader content could not be loaded: {loadError}</p>}
@@ -534,7 +556,11 @@ function ProvisionReader({rootNode,api,onClose}){
                     {expanded&&<InlineLegalReference
                       reference={expanded}
                       onCollapse={()=>setExpandedId('')}
-                      onPin={()=>pinReference(expanded)}
+                      onPin={pinReference}
+                      referenceGraph={referenceGraph}
+                      referenceEdgesBySource={referenceEdgesBySource}
+                      maxDepth={referenceDepth}
+                      requestedPath={returnInlinePath}
                     />}
                   </section>;
                 })}
@@ -551,7 +577,11 @@ function ProvisionReader({rootNode,api,onClose}){
                     {unmatched.find(reference=>reference.id===expandedId)&&<InlineLegalReference
                       reference={unmatched.find(reference=>reference.id===expandedId)}
                       onCollapse={()=>setExpandedId('')}
-                      onPin={()=>pinReference(unmatched.find(reference=>reference.id===expandedId))}
+                      onPin={pinReference}
+                      referenceGraph={referenceGraph}
+                      referenceEdgesBySource={referenceEdgesBySource}
+                      maxDepth={referenceDepth}
+                      requestedPath={returnInlinePath}
                     />}
                   </div>
                 </section>}
@@ -575,27 +605,67 @@ function ProvisionReader({rootNode,api,onClose}){
   </div>;
 }
 
-function LegalText({value,className=''}) {
-  const blocks=legalTextBlocks(value||'');
-  if(!blocks.length) return <p>No body text is available for this reference.</p>;
-  return <div className={`legal-text-blocks ${className}`}>{blocks.map((block,index)=><div
-    className={`legal-text-block legal-text-block-${block.kind} legal-depth-${Math.min(block.depth||0,3)}`}
-    key={`${index}-${block.marker}-${block.text.slice(0,24)}`}
-  >
-    <span aria-hidden={!block.marker}>{block.marker||''}</span>
-    <p>{block.text}</p>
-  </div>)}</div>;
-}
-
-function InlineLegalReference({reference,onCollapse,onPin}){
+function InlineLegalReference({
+  reference,
+  onCollapse,
+  onPin,
+  referenceGraph,
+  referenceEdgesBySource,
+  maxDepth=1,
+  level=1,
+  requestedPath=[],
+}){
   const members=reference.members?.length
     ?reference.members
     :[{id:reference.id,node:reference.node,edge:reference.edge,citation:reference.citation}];
   const [selectedMemberId,setSelectedMemberId]=useState(members[0]?.id||'');
+  const [expandedNestedId,setExpandedNestedId]=useState('');
   useEffect(()=>setSelectedMemberId(members[0]?.id||''),[reference.id]);
   const selectedMember=members.find(member=>member.id===selectedMemberId)||members[0];
   const selectedNode=selectedMember?.node||reference.node;
   const selectedEdge=selectedMember?.edge||reference.edge;
+  const blocks=useMemo(()=>legalTextBlocks(selectedNode?.text||''),[selectedNode?.id,selectedNode?.text]);
+  const nestedReferences=useMemo(()=>level<maxDepth?mergeOverlappingReferences(assignReferencesToParagraphs(
+    blocks,
+    readerReferences(selectedNode,{
+      nodes:referenceGraph?.nodes||[],
+      edges:referenceEdgesBySource?.get(selectedNode?.id)||[],
+    }),
+  )).map(nestedReference=>({
+    ...nestedReference,
+    readingBlockId:reference.readingBlockId,
+    rootReferenceId:reference.rootReferenceId||reference.id,
+    inlinePath:[...(reference.inlinePath||[reference.id]),nestedReference.id],
+  })):[],[
+    blocks,
+    level,
+    maxDepth,
+    reference.id,
+    reference.readingBlockId,
+    reference.rootReferenceId,
+    reference.inlinePath,
+    referenceGraph?.nodes,
+    referenceEdgesBySource,
+    selectedNode?.id,
+  ]);
+  const nestedByBlock=useMemo(()=>{
+    const placed=new Map();
+    for(const nestedReference of nestedReferences){
+      if(nestedReference.paragraphIndex<0) continue;
+      placed.set(
+        nestedReference.paragraphIndex,
+        [...(placed.get(nestedReference.paragraphIndex)||[]),nestedReference],
+      );
+    }
+    return placed;
+  },[nestedReferences]);
+  const unmatchedNested=nestedReferences.filter(item=>item.paragraphIndex<0);
+  useEffect(()=>setExpandedNestedId(''),[reference.id,selectedNode?.id,maxDepth]);
+  useEffect(()=>{
+    const currentIndex=requestedPath.indexOf(reference.id);
+    const nextId=currentIndex>=0?requestedPath[currentIndex+1]:'';
+    if(nextId&&nestedReferences.some(item=>item.id===nextId)) setExpandedNestedId(nextId);
+  },[reference.id,requestedPath.join('|'),nestedReferences.map(item=>item.id).join('|')]);
   const sourceUrl=selectedNode?.url||selectedEdge?.source_url;
   const applicabilityNote=selectedNode?.metadata?.applicability_note;
   const relatedProvisions=selectedNode?.metadata?.related_provisions||[];
@@ -614,7 +684,55 @@ function InlineLegalReference({reference,onCollapse,onPin}){
       ><span>{String(index+1).padStart(2,'0')}</span>{member.relationship&&<b>{member.relationship.code}</b>}{member.citation||displayNodeTitle(member.node)}</button>)}
     </div>}
     {members.length>1&&<h3 className="inline-reference-selected-title">{displayNodeTitle(selectedNode)}</h3>}
-    <div className="inline-reference-text"><LegalText value={selectedNode?.text||''}/></div>
+    <div className="inline-reference-text">{blocks.length?blocks.map((block,index)=>{
+      const blockReferences=nestedByBlock.get(index)||[];
+      const segments=paragraphCitationSegments(block,blockReferences);
+      const expandedNested=blockReferences.find(item=>item.id===expandedNestedId);
+      return <div
+        className={`legal-text-block legal-text-block-${block.kind} legal-depth-${Math.min(block.depth||0,3)}`}
+        key={`${index}-${block.marker}-${block.text.slice(0,24)}`}
+      >
+        <span aria-hidden={!block.marker}>{block.marker||''}</span>
+        <p>{segments.map((segment,segmentIndex)=>segment.type==='citation'
+          ?<button
+            type="button"
+            className="legal-citation"
+            key={`${segment.reference.id}-${segmentIndex}`}
+            onClick={()=>setExpandedNestedId(current=>current===segment.reference.id?'':segment.reference.id)}
+            aria-expanded={expandedNestedId===segment.reference.id}
+          >{segment.text}<sup>{segment.reference.relationship.code}</sup></button>
+          :<React.Fragment key={segmentIndex}>{segment.text}</React.Fragment>)}</p>
+        {expandedNested&&<InlineLegalReference
+          reference={expandedNested}
+          onCollapse={()=>setExpandedNestedId('')}
+          onPin={onPin}
+          referenceGraph={referenceGraph}
+          referenceEdgesBySource={referenceEdgesBySource}
+          maxDepth={maxDepth}
+          level={level+1}
+          requestedPath={requestedPath}
+        />}
+      </div>;
+    }):<p>No body text is available for this reference.</p>}
+      {unmatchedNested.length>0&&<div className="inline-reference-other-links">
+        <strong>Other links</strong>
+        {unmatchedNested.map(item=><button
+          type="button"
+          key={item.id}
+          onClick={()=>setExpandedNestedId(current=>current===item.id?'':item.id)}
+        >{item.relationship.code} · {referenceDisplayTitle(item)}</button>)}
+        {unmatchedNested.find(item=>item.id===expandedNestedId)&&<InlineLegalReference
+          reference={unmatchedNested.find(item=>item.id===expandedNestedId)}
+          onCollapse={()=>setExpandedNestedId('')}
+          onPin={onPin}
+          referenceGraph={referenceGraph}
+          referenceEdgesBySource={referenceEdgesBySource}
+          maxDepth={maxDepth}
+          level={level+1}
+          requestedPath={requestedPath}
+        />}
+      </div>}
+    </div>
     {applicabilityNote&&<aside className="inline-reference-applicability">
       <strong>UK applicability</strong>
       <p>{applicabilityNote}</p>
@@ -622,7 +740,7 @@ function InlineLegalReference({reference,onCollapse,onPin}){
     </aside>}
     <footer>
       {sourceUrl&&<a href={sourceUrl} target="_blank" rel="noopener noreferrer">Open original source ↗</a>}
-      <button type="button" onClick={onPin}>Pin to shelf</button>
+      <button type="button" onClick={()=>onPin(reference)}>Pin to shelf</button>
     </footer>
   </aside>;
 }
@@ -631,7 +749,7 @@ function ReferenceShelf({references,activeId,mobileOpen,onMobileClose,onActivate
   const bodyRef=useRef(null);
   const measurementRef=useRef(null);
   const [availableHeight,setAvailableHeight]=useState(640);
-  const [fullContentHeight,setFullContentHeight]=useState(0);
+  const [measuredHeights,setMeasuredHeights]=useState({});
   const [temporaryId,setTemporaryId]=useState('');
   const shelfItems=references.map(reference=>{
     const firstMember=reference.members?.[0];
@@ -645,20 +763,25 @@ function ReferenceShelf({references,activeId,mobileOpen,onMobileClose,onActivate
   });
   useLayoutEffect(()=>{
     const body=bodyRef.current;
-    const measurement=measurementRef.current;
-    if(!body||!measurement) return;
+    const measurements=measurementRef.current;
+    if(!body||!measurements) return;
     const update=()=>{
       setAvailableHeight(body.getBoundingClientRect().height);
-      setFullContentHeight(measurement.getBoundingClientRect().height);
+      const next={};
+      measurements.querySelectorAll('[data-shelf-density]').forEach(element=>{
+        next[element.dataset.shelfDensity]=element.getBoundingClientRect().height;
+      });
+      setMeasuredHeights(current=>Object.keys(next).every(key=>Math.abs((current[key]||0)-next[key])<.5)
+        &&Object.keys(current).length===Object.keys(next).length?current:next);
     };
     update();
     if(typeof ResizeObserver==='undefined') return;
     const observer=new ResizeObserver(update);
     observer.observe(body);
-    observer.observe(measurement);
+    measurements.querySelectorAll('[data-shelf-density]').forEach(element=>observer.observe(element));
     return ()=>observer.disconnect();
   },[references]);
-  const density=referenceShelfDensity(availableHeight,references.length,fullContentHeight);
+  const density=references.length?referenceShelfDensity(availableHeight,measuredHeights):'full';
   useEffect(()=>{if(density!=='summary') setTemporaryId('');},[density]);
   return <aside className={`reference-shelf density-${density} ${mobileOpen?'is-mobile-open':''}`} aria-label="Pinned references">
     <header>
@@ -688,13 +811,19 @@ function ReferenceShelf({references,activeId,mobileOpen,onMobileClose,onActivate
         </article>;
       })}
     </div>
-    <div className="reference-shelf-measurement-list" ref={measurementRef} aria-hidden="true">
-      {shelfItems.map(({reference,sourceNode,sourceUrl},index)=><article className="reference-shelf-card" key={reference.id}>
-        <header><span>{String(index+1).padStart(2,'0')}</span><b>{reference.relationship.code}{reference.members?.length>1?` · ${reference.members.length}`:''}</b><i>×</i></header>
-        <h3>{referenceDisplayTitle(reference)}</h3>
-        <p>{sourceNode?.text||'No excerpt available.'}</p>
-        <footer><span>Return inline</span>{sourceUrl&&<span>Source ↗</span>}</footer>
-      </article>)}
+    <div className="reference-shelf-measurements" ref={measurementRef} aria-hidden="true">
+      {['full','compact','dense','summary'].map(measurementDensity=><div
+        className={`reference-shelf-measurement-list density-${measurementDensity}`}
+        data-shelf-density={measurementDensity}
+        key={measurementDensity}
+      >
+        {shelfItems.map(({reference,sourceNode,sourceUrl},index)=><article className="reference-shelf-card" key={reference.id}>
+          <header><span>{String(index+1).padStart(2,'0')}</span><b>{reference.relationship.code}{reference.members?.length>1?` · ${reference.members.length}`:''}</b><i>×</i></header>
+          <h3>{referenceDisplayTitle(reference)}</h3>
+          <p>{sourceNode?.text||'No excerpt available.'}</p>
+          <footer><span>Return inline</span>{sourceUrl&&<span>Source ↗</span>}</footer>
+        </article>)}
+      </div>)}
     </div>
   </aside>;
 }

@@ -517,16 +517,12 @@ export function referenceDisplayTitle(reference) {
 
 export function referenceShelfDensity(
   availableHeight,
-  referenceCount,
-  fullContentHeight = 0,
+  measuredHeights = {},
 ) {
-  if (!referenceCount) return 'full';
   const available = Math.max(0, Number(availableHeight) || 0);
-  const required = Math.max(0, Number(fullContentHeight) || 0);
-  const spacePerReference = available / referenceCount;
-  if (required > 0 && required <= available) return 'full';
-  if (!required && spacePerReference >= 150) return 'full';
-  if (spacePerReference >= 104) return 'compact';
-  if (spacePerReference >= 70) return 'dense';
+  for (const density of ['full', 'compact', 'dense', 'summary']) {
+    const required = Math.max(0, Number(measuredHeights[density]) || 0);
+    if (required > 0 && required <= available + 1) return density;
+  }
   return 'summary';
 }
