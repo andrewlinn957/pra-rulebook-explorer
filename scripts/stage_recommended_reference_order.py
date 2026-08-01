@@ -51,6 +51,7 @@ DEFAULT_AUDIT = ROOT / "logs" / "reference-recall-recommended-order-stage-202607
 METHOD_CODE = "corpus_guidance_code_alias_v1"
 METHOD_TERM = "corpus_defined_term_alias_v1"
 METHOD_CRR = "corpus_crr_occurrence_v1"
+METHOD_DOCUMENT = "corpus_generic_document_label_v1"
 
 # Include document families present in the corpus as well as the PS/FG/CP
 # families which often have no local document node and are therefore held.
@@ -67,6 +68,29 @@ GENERIC_TERM_PATTERNS: tuple[tuple[str, str], ...] = (
     (
         "Capital Requirements Regulations",
         r"\bCapital\s+Requirements?\s+Regulations?\b",
+    ),
+)
+
+# These labels are meaningful references, but they are not provisions.  Only
+# link one when the corpus has an exact document/defined-term node; otherwise
+# record an explicit external hold so the unresolved ledger does not invite a
+# guessed link to an arbitrary Rulebook provision.
+GENERIC_DOCUMENT_PATTERNS: tuple[tuple[str, str], ...] = (
+    (
+        "PRA Rulebook Rules",
+        r"\b(?:the\s+)?PRA\s+Rulebook\s+Rules\b",
+    ),
+    (
+        "PRA Rulebook",
+        r"\b(?:the\s+)?PRA\s+Rulebook\b",
+    ),
+    (
+        "EBA Guidelines",
+        r"\b(?:the\s+)?EBA\s+Guidelines?\b",
+    ),
+    (
+        "Financial Services and Markets Act 2000",
+        r"\b(?:the\s+)?Financial\s+Services\s+and\s+Markets\s+Act\s+2000\b",
     ),
 )
 
@@ -294,10 +318,6 @@ def stage_generic_terms(
                source_text_hash
         FROM corpus_review
         WHERE decision='REFERENCE' AND target_status='external_or_unresolved'
-          AND candidate_text IN (
-            'CRR','the CRR','Solvency II Directive','PRA Handbook','FCA Handbook',
-            'Capital Requirements Regulation','Capital Requirements Regulations'
-          ) COLLATE NOCASE
         ORDER BY candidate_id
         """
     )
@@ -353,6 +373,136 @@ def stage_generic_terms(
                 )
                 counts["eligible" if status == "eligible" else status] += 1
     counts["alias_titles"] = len(by_title)
+    return dict(counts)
+
+
+def stage_generic_document_labels(
+    *,
+    review_conn: sqlite3.Connection,
+    stage: sqlite3.Connection,
+    run_id: str,
+    nodes: dict[str, sqlite3.Row],
+    edges: set[tuple[str, str]],
+    spans: dict[str, list[tuple[int, int]]],
+) -> dict[str, int]:
+    """Classify generic document labels without inventing provision targets.
+
+    A label is linked only to a unique exact document/defined-term node.  The
+    current corpus has no document-level PRA Rulebook, EBA Guidelines, or
+    FSMA node, so those occurrences are deliberately staged as
+    ``held_unresolved`` with an explicit reason.  This keeps them visible in
+    the audit while preventing a misleading link to a similarly titled rule.
+    """
+
+    target_types = {"defined_term", "external_reference", "legal_instrument", "guidance_document"}
+    by_title: dict[str, list[sqlite3.Row]] = defaultdict(list)
+    for node in nodes.values():
+        if node["node_type"] in target_types:
+            by_title[normalised(node["title"] or "")].append(node)
+    patterns = [
+        (canonical, re.compile(pattern, re.IGNORECASE))
+        for canonical, pattern in GENERIC_DOCUMENT_PATTERNS
+    ]
+    counts: Counter[str] = Counter()
+    rows = review_conn.execute(
+        """
+        SELECT candidate_id,source_node_id,span_start,span_end,candidate_text,
+               candidate_kind,source_text_hash
+        FROM corpus_review
+        WHERE decision='REFERENCE' AND target_status='external_or_unresolved'
+        ORDER BY candidate_id
+        """
+    )
+    seen: set[tuple[str, str, int, int]] = set()
+    for candidate in rows:
+        source = nodes.get(candidate["source_node_id"])
+        if source is None:
+            counts["source_missing"] += 1
+            continue
+        segment = exact_candidate_segment(
+            source, candidate["span_start"], candidate["span_end"], candidate["candidate_text"]
+        )
+        if segment is None:
+            counts["span_invalid"] += 1
+            continue
+        live, base_start, _ = segment
+        found: list[tuple[int, int, str, str]] = []
+        for canonical, pattern in patterns:
+            for match in pattern.finditer(live):
+                found.append((match.start(), match.end(), canonical, match.group(0)))
+        # Prefer the longest label at an overlapping span (``PRA Rulebook
+        # Rules`` contains the shorter ``PRA Rulebook`` label).
+        found.sort(key=lambda item: (item[0], -(item[1] - item[0]), item[2]))
+        accepted: list[tuple[int, int]] = []
+        for rel_start, rel_end, canonical, matched in found:
+            if any(overlaps(rel_start, rel_end, old_start, old_end) for old_start, old_end in accepted):
+                continue
+            accepted.append((rel_start, rel_end))
+            start, end = base_start + rel_start, base_start + rel_end
+            key = (source["id"], canonical, start, end)
+            if key in seen:
+                continue
+            seen.add(key)
+            target_rows = by_title.get(normalised(canonical), [])
+            target_ids = {row["id"] for row in target_rows}
+            target = target_rows[0] if len(target_ids) == 1 else None
+            if target is None:
+                reason = (
+                    "no_local_document_target_for_generic_label"
+                    if not target_rows
+                    else "multiple_local_document_targets_for_generic_label"
+                )
+                insert_stage(
+                    stage,
+                    run_id=run_id,
+                    source=source,
+                    target=None,
+                    candidate_id=candidate["candidate_id"],
+                    start=start,
+                    end=end,
+                    quote=matched,
+                    candidate_text=candidate["candidate_text"] or matched,
+                    citation_kind="named_document",
+                    method=METHOD_DOCUMENT,
+                    confidence=0.0,
+                    status="held_unresolved",
+                    reasons=[reason],
+                    evidence={
+                        "canonical_label": canonical,
+                        "matching_target_ids": sorted(target_ids),
+                        "candidate_id": candidate["candidate_id"],
+                        "resolver": "exact_document_or_defined_term_title_only",
+                    },
+                )
+                counts["held_unresolved"] += 1
+                continue
+            status, reasons = status_for(source, target, start, end, edges, spans)
+            relationship = "DEF" if target["node_type"] == "defined_term" else "REF"
+            insert_stage(
+                stage,
+                run_id=run_id,
+                source=source,
+                target=target,
+                candidate_id=candidate["candidate_id"],
+                start=start,
+                end=end,
+                quote=matched,
+                candidate_text=candidate["candidate_text"] or matched,
+                citation_kind="named_document",
+                method=METHOD_DOCUMENT,
+                confidence=0.94,
+                status=status,
+                reasons=reasons,
+                evidence={
+                    "canonical_label": canonical,
+                    "matching_target_ids": sorted(target_ids),
+                    "candidate_id": candidate["candidate_id"],
+                    "resolver": "exact_document_or_defined_term_title_only",
+                },
+                relationship_type=relationship,
+            )
+            counts["eligible" if status == "eligible" else status] += 1
+    counts["target_titles"] = len(by_title)
     return dict(counts)
 
 
@@ -435,9 +585,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     stage = connect_stage(args.stage)
     # Reruns replace only this work-order's proposals, leaving any separately
     # reviewed stage methods intact.
-    methods = (METHOD_CODE, METHOD_TERM, METHOD_CRR)
+    methods = (METHOD_CODE, METHOD_TERM, METHOD_CRR, METHOD_DOCUMENT)
+    method_placeholders = ",".join("?" for _ in methods)
     stage.execute(
-        "DELETE FROM staged_repair WHERE proposal_method IN (?,?,?)", methods
+        f"DELETE FROM staged_repair WHERE proposal_method IN ({method_placeholders})", methods
     )
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-recommended"
     stage.execute(
@@ -471,6 +622,14 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             edges=edges,
             spans=spans,
         ),
+        "generic_document_labels": stage_generic_document_labels(
+            review_conn=review_conn,
+            stage=stage,
+            run_id=run_id,
+            nodes=nodes,
+            edges=edges,
+            spans=spans,
+        ),
         "crr_occurrences": stage_crr_occurrences(
             crr_audit=args.crr_audit,
             stage=stage,
@@ -483,22 +642,22 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     stage.commit()
     summary.update(
         staged_rows=stage.execute(
-            "SELECT COUNT(*) FROM staged_repair WHERE proposal_method IN (?,?,?)", methods
+            f"SELECT COUNT(*) FROM staged_repair WHERE proposal_method IN ({method_placeholders})", methods
         ).fetchone()[0],
         eligible_rows=stage.execute(
-            "SELECT COUNT(*) FROM staged_repair WHERE proposal_method IN (?,?,?) AND status='eligible'", methods
+            f"SELECT COUNT(*) FROM staged_repair WHERE proposal_method IN ({method_placeholders}) AND status='eligible'", methods
         ).fetchone()[0],
         status_counts={
             row["status"]: row["n"]
             for row in stage.execute(
-                "SELECT status,COUNT(*) n FROM staged_repair WHERE proposal_method IN (?,?,?) GROUP BY status",
+                f"SELECT status,COUNT(*) n FROM staged_repair WHERE proposal_method IN ({method_placeholders}) GROUP BY status",
                 methods,
             )
         },
         method_counts={
             row["proposal_method"]: row["n"]
             for row in stage.execute(
-                "SELECT proposal_method,COUNT(*) n FROM staged_repair WHERE proposal_method IN (?,?,?) GROUP BY proposal_method",
+                f"SELECT proposal_method,COUNT(*) n FROM staged_repair WHERE proposal_method IN ({method_placeholders}) GROUP BY proposal_method",
                 methods,
             )
         },

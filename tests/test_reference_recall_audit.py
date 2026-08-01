@@ -114,6 +114,23 @@ def test_deterministic_candidates_keep_adjacent_named_citations_separate():
     assert "Annexes I and II" in values
 
 
+def test_deterministic_candidates_repair_concatenated_structural_tail():
+    text = "See Rules 3.2 and 3.4 of the Operational Continuity Part of the PRA Rulebook Rules 2.2."
+    candidates = reference_recall_audit.build_deterministic_candidates(text)
+    structural = next(candidate for candidate in candidates if candidate["kind"] == "structure_reference")
+    assert structural["text"] == "Rules 3.2 and 3.4 of the Operational Continuity Part of the PRA Rulebook"
+    assert structural["details"]["span_repaired"] is True
+    assert structural["text"] in text
+
+
+def test_deterministic_candidates_trim_dangling_structural_connector():
+    text = "See paragraph 9 of Part II of."
+    candidates = reference_recall_audit.build_deterministic_candidates(text)
+    structural = next(candidate for candidate in candidates if candidate["kind"] == "structure_reference")
+    assert structural["text"] == "paragraph 9 of Part II"
+    assert structural["text"] in text
+
+
 def test_generic_instrument_fragments_are_not_sent_to_review():
     assert reference_recall_audit.generic_named_instrument_label("Rules")
     assert reference_recall_audit.generic_named_instrument_label("Regulations Regulations")

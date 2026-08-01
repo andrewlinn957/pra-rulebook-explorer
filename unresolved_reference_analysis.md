@@ -2,7 +2,64 @@
 
 Date: 2026-07-31 (updated after the recommended-order implementation)
 
-## Recommended-order implementation status
+## Final follow-through snapshot (2026-08-01)
+
+The full follow-through was rerun against
+`backend/data/rulebook.sqlite3` and the authoritative ledger
+`logs/reference-recall-ledger-recommended-final5-20260801.sqlite3` (106,690
+candidates across 29,693 source nodes). The final corpus review is
+`logs/reference-recall-corpus-review-final5-20260801.sqlite3`.
+
+### Applied recovery
+
+- 36 registry-backed non-CRR official target nodes were fetched and inserted;
+  39 exact legal occurrences were staged and materialised. The 100 fetch
+  failures are recorded separately as stale/nonexistent official paths (for
+  example CRD IV Articles 325–377 cited by SS13/13, amended FSMA/Solvency II
+  paths, and historical Companies/Building Societies Act paths); no target was
+  invented for a failed fetch.
+- The authoritative scanner now repairs malformed structural spans before
+  candidate IDs are assigned, preserving the original span in detector
+  evidence. The focused span tests pass.
+- Parent Part/document fallback resolved 791 previously context-free
+  structural occurrences (486 new relationships); 9 self-references and 7,280
+  non-unique structural cases remain held.
+- Exact defined-term aliases added 726 occurrences (72 new relationships).
+  Generic labels without an exact document/defined-term node are explicit
+  external holds: 935 labels (including PRA Rulebook, EBA Guidelines and the
+  Financial Services and Markets Act 2000) were not linked to arbitrary
+  provisions.
+
+### Final review outcomes
+
+| Review outcome | Count |
+| --- | ---: |
+| Covered | 78,575 |
+| External/unresolved genuine references | 5,317 |
+| Competing local targets | 1,933 |
+| Structural context still required | 8,408 |
+| Unsupported candidate kind | 77 |
+| Not a reference / excluded context | 12,378 |
+
+The 1,933 competing cases are isolated in
+`logs/reference-recall-adjudication-queue-final5-20260801.jsonl`, with exact
+source hashes/spans, context windows and all candidate target metadata. 77
+have a unique context-only recommendation; 1,856 require human/LLM
+confirmation. The queue is advisory and does not write graph edges.
+
+### Integrity snapshot
+
+The database has zero self-edges, zero edges with missing sources or targets,
+and zero materialised occurrences with missing sources or targets. The only
+duplicate source/target/span remains the pre-existing pair recorded below;
+none was introduced by the new passes. The final SQLite `quick_check` and
+foreign-key check are run as part of the release verification.
+
+The remaining unresolved counts are therefore classified rather than an
+unbounded extraction tail: official-source failures, absent external
+documents, structural context holds, and an explicit competing-target queue.
+
+## Historical recommended-order implementation status (2026-07-31)
 
 The earlier sections below are the initial pattern analysis. The following
 results are the authoritative post-implementation snapshot from

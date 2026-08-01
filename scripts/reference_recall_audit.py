@@ -89,6 +89,24 @@ RELATIVE_STRUCTURE_REFERENCE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Candidate extraction intentionally has a permissive ``of ...`` tail so that
+# a legal citation keeps its instrument/document context.  Published HTML and
+# PDF text occasionally concatenate the next labelled citation directly onto
+# that tail (for example ``... PRA Rulebook Rules 2.2``).  Keep the repair
+# grammar here, in the authoritative scanner, rather than only in a later
+# staging pass: otherwise the ledger would continue to report a malformed span
+# as the canonical unresolved reference.
+STRUCTURAL_LABEL_START_RE = re.compile(
+    r"\s+(?=(?:paragraphs?|paras?|points?|subparagraphs?|articles?|"
+    r"sections?|regulations?|rules?|chapters?|parts?|titles?|annex(?:es)?|"
+    r"schedules?|templates?|tables?|forms?)\s+"
+    r"[0-9A-Za-zIVXLCDM])",
+    re.IGNORECASE,
+)
+DANGLING_CONNECTOR_RE = re.compile(
+    r"\s+(?:of|under|in|and|or|to)\s*[\]})},;:.]*$", re.IGNORECASE
+)
+
 BOILERPLATE_RE = re.compile(
     r"\b(?:export|download|print|content\s+loading|table\s+of\s+contents|"
     r"previous|next|back\s+to|open\s+in\s+new\s+window|share|email)\b",
@@ -324,6 +342,68 @@ def _raw_candidate(kind: str, start: int, end: int, text: str, detector: str, **
     }
 
 
+def repair_candidate_span(
+    value: str, start: int, end: int, kind: str
+) -> tuple[int, int, dict[str, Any]]:
+    """Return safe absolute bounds for a detector candidate.
+
+    Structural candidates are the only detector whose grammar deliberately
+    captures an open-ended document tail.  Trim a concatenated second label or
+    a dangling connector, while retaining the source document name after
+    ``of``/``under``/``in``.  Other candidate kinds get only the conservative
+    dangling-connector trim; their detector spans are otherwise authoritative.
+    The third return value records the repair for audit/reviewer provenance.
+    """
+
+    start = max(0, int(start))
+    end = min(len(value), max(start, int(end)))
+    live = value[start:end]
+    original = live
+    if kind == "structure_reference":
+        match = STRUCTURE_REFERENCE_RE.search(live)
+        if match:
+            repaired_end = match.end()
+            boundary = None
+            # The permissive ``of ...`` tail may already have consumed the
+            # second label, so search from just after the first label rather
+            # than from ``match.end()``.
+            label_end = match.start() + len(match.group("label"))
+            for possible in STRUCTURAL_LABEL_START_RE.finditer(live, label_end):
+                prefix = live[label_end : possible.start()]
+                # A label following a document title is a second citation
+                # caused by concatenated source text; retain the first one.
+                if re.search(r"\b(?:rulebook|guidelines?|handbook)\b", prefix, re.IGNORECASE):
+                    boundary = possible
+                    break
+            if boundary:
+                repaired_end = boundary.start()
+            else:
+                tail = live[repaired_end:]
+                if re.match(r"\s+(?:of|under|in)\b", tail, re.IGNORECASE):
+                    stop = re.search(r"[.;\n]|\)\s+(?=[a-z])", tail)
+                    repaired_end += stop.start() if stop else min(len(tail), 220)
+                else:
+                    punctuation = re.search(r"[.;\n]", tail)
+                    if punctuation:
+                        repaired_end = min(repaired_end + punctuation.start(), repaired_end + 220)
+            live = live[: min(len(live), max(match.start(), repaired_end))].rstrip()
+    while True:
+        trimmed = DANGLING_CONNECTOR_RE.sub("", live).rstrip()
+        if trimmed == live:
+            break
+        live = trimmed
+    repaired_start = start
+    repaired_end = start + len(live)
+    details: dict[str, Any] = {}
+    if live != original:
+        details = {
+            "span_repaired": True,
+            "original_text": compact(original),
+            "original_span": [start, end],
+        }
+    return repaired_start, repaired_end, details
+
+
 def build_deterministic_candidates(value: str) -> list[dict[str, Any]]:
     """Return merged lexical/legal candidate spans without judging targets."""
 
@@ -393,6 +473,19 @@ def build_deterministic_candidates(value: str) -> list[dict[str, Any]]:
         raw.append(_raw_candidate("named_instrument", match.start(), match.end(), value, "named_instrument_detector"))
     for match in RELATIVE_STRUCTURE_REFERENCE_RE.finditer(value):
         raw.append(_raw_candidate("relative_structure", match.start(), match.end(), value, "relative_structure_detector"))
+
+    # Repair source bounds before candidates are merged and assigned IDs.  The
+    # ledger therefore stores the exact clickable span that downstream staging
+    # and the reader will use, while retaining the original detector span in
+    # ``details`` whenever a change was necessary.
+    for item in raw:
+        repaired_start, repaired_end, repair_details = repair_candidate_span(
+            value, item["start"], item["end"], item["kind"]
+        )
+        item["start"], item["end"] = repaired_start, repaired_end
+        item["text"] = compact(value[repaired_start:repaired_end])
+        if repair_details:
+            item.setdefault("details", {}).update(repair_details)
 
     # Exact duplicate spans are merged.  When one detector is a strict inner
     # span of another citation, retain the wider phrase: this is important for

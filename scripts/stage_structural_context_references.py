@@ -51,6 +51,14 @@ STRUCTURE_RE = re.compile(
 )
 BASE_RE = re.compile(r"^[0-9A-Za-zIVXLCDM]+(?:\.[0-9A-Za-z]+)*", re.IGNORECASE)
 SEPARATOR_RE = re.compile(r"\s*(?:,|and|or|to|[-–—])\s*", re.IGNORECASE)
+STRUCTURAL_LABEL_START_RE = re.compile(
+    r"\s+(?=(?:paragraphs?|paras?|points?|subparagraphs?|articles?|"
+    r"sections?|regulations?|rules?|chapters?|parts?|titles?|annex(?:es)?|"
+    r"schedules?|templates?|tables?|forms?)\s+"
+    r"[0-9A-Za-zIVXLCDM])",
+    re.IGNORECASE,
+)
+DANGLING_CONNECTOR_RE = re.compile(r"\s+(?:of|under|in|and|or|to)\s*[\]})},;:.]*$", re.IGNORECASE)
 
 BOILERPLATE_RE = re.compile(
     r"(?:legal\s+instruments\s+that\s+change\s+this\s+(?:rule|article)|"
@@ -78,9 +86,20 @@ def metadata(row: sqlite3.Row) -> dict[str, Any]:
 
 def source_context(source: sqlite3.Row) -> tuple[str, str]:
     meta = metadata(source)
+    # Aggregate guidance documents contain their child paragraphs in one node
+    # and historically did not carry ``document_title`` at the aggregate
+    # level.  The node title is the authoritative document label in that case;
+    # without this fallback every ``paragraph N`` inside the document was
+    # treated as context-free even though matching child nodes are indexed.
+    document_title = str(meta.get("document_title") or "").strip()
+    if not document_title and source["node_type"] in {"guidance_document", "guidance_section", "guidance_paragraph"}:
+        reader_meta = meta.get("reader_reference_text")
+        if isinstance(reader_meta, dict):
+            document_title = str(reader_meta.get("source_title") or "").strip()
+        document_title = document_title or str(meta.get("source_title") or source["title"] or "").strip()
     return (
         str(meta.get("part_title") or "").strip(),
-        str(meta.get("document_title") or "").strip(),
+        document_title,
     )
 
 
@@ -120,6 +139,50 @@ def source_span(source: sqlite3.Row, start: Any, end: Any) -> tuple[str, int, in
     if start < 0 or end <= start or end > len(value):
         return None
     return value[start:end], start, end
+
+
+def repair_structural_span(live: str) -> tuple[str, int, int]:
+    """Trim detector tails while preserving the complete first reference.
+
+    The lexical detector intentionally keeps context, but PDF text often
+    concatenates the next ``Rule``/``Table``/``Paragraph`` label into the same
+    candidate.  Use the bounded structural grammar for the clickable span and
+    retain a short ``of Part``/``of Schedule`` tail when present.
+    """
+
+    match = STRUCTURE_RE.search(live or "")
+    if not match:
+        return live, 0, len(live)
+    start = match.start()
+    end = match.end()
+    boundary = None
+    for possible in STRUCTURAL_LABEL_START_RE.finditer(live, end):
+        prefix = live[end : possible.start()]
+        # A label following ``of the ... Part`` is part of the source
+        # document title. A new label after a Rulebook/Guidelines title is a
+        # concatenated second citation and should start a new span.
+        if re.search(r"\b(?:rulebook|guidelines?|handbook)\b", prefix, re.IGNORECASE):
+            boundary = possible
+            break
+    if boundary:
+        end = boundary.start()
+    else:
+        tail = live[end:]
+        if re.match(r"\s+(?:of|under|in)\b", tail, re.IGNORECASE):
+            stop = re.search(r"[.;\n]|\)\s+(?=[a-z])", tail)
+            end += stop.start() if stop else min(len(tail), 180)
+        else:
+            punctuation = re.search(r"[.;\n]", tail)
+            if punctuation:
+                end = min(end + punctuation.start(), end + 220)
+    end = min(len(live), max(end, match.end()))
+    repaired = live[start:end].rstrip()
+    while True:
+        trimmed = DANGLING_CONNECTOR_RE.sub("", repaired).rstrip()
+        if trimmed == repaired:
+            break
+        repaired = trimmed
+    return repaired, start, start + len(repaired)
 
 
 def boilerplate(source_value: str, start: int, end: int) -> bool:
@@ -245,8 +308,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         if segment is None:
             counts["span_invalid"] += 1
             continue
-        live, start, end = segment
-        label, identifiers = parse_structural(candidate["candidate_text"] or live)
+        live, original_start, original_end = segment
+        live, start_delta, repaired_length = repair_structural_span(live)
+        start = original_start + start_delta
+        end = original_start + repaired_length
+        label, identifiers = parse_structural(live)
         if not label or not identifiers:
             counts["unsupported_shape"] += 1
             continue

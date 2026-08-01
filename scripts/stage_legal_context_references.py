@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sqlite3
 import sys
 from collections import Counter, defaultdict
@@ -90,6 +91,11 @@ def local_article_targets(conn: sqlite3.Connection) -> dict[str, str]:
     """
 
     candidates: dict[str, list[tuple[int, str]]] = defaultdict(list)
+    article_prefix = re.compile(
+        r"^article\s+(?P<base>\d{1,3}[a-z]{0,3})"
+        r"(?P<qualifiers>(?:\s*\([^)]*\))*)",
+        re.IGNORECASE,
+    )
     for row in conn.execute(
         """
         SELECT id,node_type,title
@@ -102,8 +108,10 @@ def local_article_targets(conn: sqlite3.Connection) -> dict[str, str]:
         title = " ".join(str(row["title"] or "").split()).casefold()
         if title.startswith("uk crr "):
             title = title[7:]
-        if not title.startswith("article "):
+        match = article_prefix.match(title)
+        if not match:
             continue
+        title = f"article {match.group('base')}{match.group('qualifiers')}"
         # Prefer a rule node for a qualified paragraph and a chapter/external
         # node for an unqualified article when the corpus has both.
         score = 0 if row["node_type"] == "external_reference" else 1 if row["node_type"] == "chapter" else 2
@@ -304,7 +312,15 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 target_id = external_provision_node_id(occurrence.instrument, occurrence.provision_path)
                 if occurrence.kind == "article" and occurrence.instrument.instrument_id == "uk-crr":
                     local_title = f"article {occurrence.target.display}".casefold()
-                    target_id = article_targets.get(local_title, target_id)
+                    target_id = article_targets.get(local_title, "")
+                    if not target_id:
+                        base_title = f"article {occurrence.target.display.split('(', 1)[0]}".casefold()
+                        target_id = article_targets.get(base_title, "")
+                    if not target_id:
+                        target_id = external_provision_node_id(
+                            occurrence.instrument,
+                            occurrence.provision_path,
+                        )
                 if target_id not in target_cache:
                     target_cache[target_id] = source_conn.execute(
                         "SELECT id,node_type,title,text,url,metadata_json FROM node WHERE id=?",
