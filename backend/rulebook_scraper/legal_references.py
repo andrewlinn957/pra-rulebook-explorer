@@ -1230,20 +1230,47 @@ def _find_provision_element(
     provision_path: str,
 ) -> ElementTree.Element | None:
     exact = target_uri.rstrip("/")
-    suffix = f"/{provision_path}".rstrip("/").casefold()
+    # UK statutory-instrument XML uses ``URI``/``Ref`` rather than the
+    # ``DocumentURI`` attribute used by Acts and EU instruments.  It also
+    # represents rules as ``article`` elements in the consolidated XML. Keep
+    # the requested path as the primary key, then try the equivalent aliases
+    # so a citation to ``rule 37`` can still materialise its official text.
+    path_variants = [provision_path]
+    if provision_path.startswith("rule/"):
+        path_variants.append("article/" + provision_path[len("rule/"):])
+        # Consolidated SI XML commonly exposes numbered rules as
+        # ``regulation`` elements even when the ledger calls the citation a
+        # rule. Try that canonical form as well before falling back to a
+        # document-level link.
+        path_variants.append("regulation/" + provision_path[len("rule/"):])
+    if provision_path.startswith("section/"):
+        path_variants.append("regulation/" + provision_path[len("section/"):])
+    suffixes = [f"/{path}".rstrip("/").casefold() for path in path_variants]
     candidates: list[tuple[int, ElementTree.Element]] = []
     for element in root.iter():
-        uri = (element.attrib.get("DocumentURI") or "").rstrip("/")
+        uri = (
+            element.attrib.get("DocumentURI")
+            or element.attrib.get("URI")
+            or ""
+        ).rstrip("/")
         if exact and uri == exact:
             return element
+        # ``URI`` values in older XML use the /id/ form; compare their public
+        # document form as well as the literal value.
+        normalized_uri = uri.replace("/id/", "/")
         normalized_uri = re.sub(
             r"/(?:made|enacted|prospective|\d{4}-\d{2}-\d{2})$",
             "",
-            uri,
+            normalized_uri,
             flags=re.I,
         )
-        if normalized_uri.casefold().endswith(suffix):
+        if any(normalized_uri.casefold().endswith(suffix) for suffix in suffixes):
             candidates.append((len(normalized_uri), element))
+        # Some legacy SI XML has only a Ref such as ``rule-37``. This is a
+        # weaker match, used only when no URI suffix matched.
+        ref = (element.attrib.get("Ref") or "").replace("-", "/").casefold()
+        if any(ref == path.casefold() for path in path_variants):
+            candidates.append((len(ref) + 10000, element))
     return min(candidates, key=lambda item: item[0])[1] if candidates else None
 
 
