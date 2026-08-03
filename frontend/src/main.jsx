@@ -67,6 +67,13 @@ const MATERIAL_FILTERS = ['rule','supervisory_statement','statement_of_policy','
 const RELATIONSHIP_ORDER = TYPES;
 const REPORTING_NODE_TYPES = ['ReportingEstate','ReportingRegime','ReportingCollection','ReportingRequirement','RequirementEdition','ReportingResource','Worksheet','LogicalTemplate','InstructionSection','TaxonomyRelease','TaxonomyEntryPoint','DataItem','ReportingReturn','DisclosureSet','ReportingObligation','Template','InstructionSet','SourceDocument','Provision','ExternalReference','LegalInstrument','PolicyStatement','TemplateSet','DataPointGroup','DataPoint','TemplateRow','TemplateColumn','Concept','ScopeRule','FirmType','Permission','ValidationRule'];
 const REPORTING_DEFAULT_EDGE_TYPES = new Set(['USES_TEMPLATE','USES_INSTRUCTIONS','EVIDENCED_BY','LEGAL_BASIS','APPLIES_TO','HAS_SCOPE_RULE','MAY_BE_AFFECTED_BY_PERMISSION','SUMMARISES_DATAPOINTS']);
+const PART_AUDIENCE_FILTERS=[
+  {key:'crr',label:'CRR firms',category:'CRR Firms'},
+  {key:'non-crr',label:'Non-CRR firms',category:'Non-CRR Firms'},
+  {key:'no-authorised',label:'No authorised persons',category:'Non-authorised persons'},
+  {key:'sii',label:'SII firms',category:'SII Firms'},
+  {key:'non-sii',label:'Non-SII firms',category:'Non-SII Firms'},
+];
 
 async function fetchJson(url,options){
   const res=await fetch(url,options);
@@ -86,6 +93,7 @@ async function responseErrorText(res){
 function App(){
   const [q,setQ]=useState('');
   const [results,setResults]=useState([]);
+  const [partAudienceFilter,setPartAudienceFilter]=useState('all');
   const [railContext,setRailContext]=useState(null);
   const [railStack,setRailStack]=useState([]);
   const [selected,setSelected]=useState(null);
@@ -212,6 +220,8 @@ function App(){
   const activeRep=REPRESENTATIONS[representation]||{label:'Custom',hint:'Manual edge-type selection.'};
   const relationshipFilters=useMemo(()=>availableRelationshipTypes(stats,graph),[stats,graph]);
   const visibleGraph=useMemo(()=>filterGraph(graph,nodeTypes,types,originFilter,selected?.id,showInsurance),[graph,nodeTypes,typesKey,originFilter,selected?.id,showInsurance]);
+  const showPartAudienceFilters=!railContext&&results.some(r=>r.node_type==='part'&&partAudienceCategories(r).length);
+  const railResults=useMemo(()=>showPartAudienceFilters?results.filter(r=>partAudienceFilter==='all'||partAudienceCategories(r).includes(partAudienceFilter)):results,[results,showPartAudienceFilters,partAudienceFilter]);
   const selectedEdges=useMemo(()=>visibleGraph.edges.filter(e=>detail&&(e.from_node_id===detail.id||e.to_node_id===detail.id)),[visibleGraph,detail]);
   async function submitNodeFeedback(e){
     e?.preventDefault();
@@ -285,7 +295,8 @@ function App(){
     <aside className="rail">
       <div className="product"><strong>PRA Rulebook</strong><span>{railContext?`${railContext.kind} · ${railContext.title}`:(q.trim()?'Search results':'All Rulebook Parts')} · {stats?`${stats.nodes.toLocaleString()} nodes`:''}</span><div className="rail-actions">{railStack.length>0&&<button className="back-link" onClick={goUp}>‹ Up one level</button>}{railContext&&<button className="back-link secondary" onClick={loadAllParts}>All Parts</button>}</div></div>
       {error&&<div className="error">{error}</div>}
-      <div className="result-stack">{results.map(r=><button key={r.id} className={selected?.id===r.id?'hit active':'hit'} onClick={()=>choose(r)}><span>{label(r.node_type)}</span><strong><NodeTitle node={r}/></strong><small>{truncate(r.snippet||r.text,128)}</small></button>)}</div>
+      {showPartAudienceFilters&&<div className="part-filter" aria-label="Rulebook part filters"><button type="button" className={partAudienceFilter==='all'?'on':''} onClick={()=>setPartAudienceFilter('all')}>All</button>{PART_AUDIENCE_FILTERS.map(f=><button type="button" key={f.key} className={partAudienceFilter===f.category?'on':''} onClick={()=>setPartAudienceFilter(f.category)}>{f.label}</button>)}</div>}
+      <div className="result-stack">{railResults.map(r=><button key={r.id} className={selected?.id===r.id?'hit active':'hit'} onClick={()=>choose(r)}><strong><NodeTitle node={r}/></strong></button>)}</div>
     </aside>
 
     <main className="canvas">
@@ -2093,7 +2104,7 @@ function Evidence({node,edges,graph,onChoose,onRead}){
     <div className="layer-head"><span>Connections</span><h3>Selected node</h3></div>
     <Collapsible title="Selected material" count={label(node.node_type)} open>
       <span className="kind">{label(node.node_type)}</span><h2><NodeTitle node={node}/></h2>{node.url&&<a className="source" href={node.url} target="_blank" rel="noopener noreferrer">Open source ↗</a>}
-      <p className="text">{node.text?truncate(node.text,1300):emptyNodeMessage(node)}</p>
+      <p className="text">{node.text?truncate(node.text,1300):emptyNodeMessage(node,edges)}</p>
       <button type="button" className="reading-mode-entry" onClick={()=>onRead(node)}><span>Reading mode</span><strong>Read this provision with its references →</strong></button>
     </Collapsible>
     {groups.length
@@ -2180,8 +2191,12 @@ function nodeFill(n,graph){
   if(graph?.level==='part' || graph?.level==='article') return CLUSTER_COLOURS[(n.metadata?.semantic_cluster??0)%CLUSTER_COLOURS.length];
   return MATERIAL_COLOURS[materialType(n)]||'#64748b';
 }
-function emptyNodeMessage(node){
-  if(['part','chapter','guidance_document','guidance_section','rulebook'].includes(node?.node_type)) return 'This is a heading or container node. The substantive legal text is held in the child provision nodes shown in the left-hand contents panel.';
+function emptyNodeMessage(node,edges=[]){
+  if(['part','chapter','guidance_document','guidance_section','rulebook'].includes(node?.node_type)){
+    const hasOutgoingChild=edges.some(edge=>edge.edge_type==='contains'&&edge.from_node_id===node?.id);
+    if(hasOutgoingChild) return 'This is a heading or container node. The substantive legal text is held in the child provision nodes shown in the left-hand contents panel.';
+    return 'This is a heading or container node. No child provision text is currently linked for this heading.';
+  }
   if(node?.metadata?.placeholder) return 'This is a placeholder reference node. Open the source link for the external definition or referenced material.';
   return 'No body text for this node.';
 }
@@ -2322,6 +2337,11 @@ function materialLabel(v){return ({rule:'Rulebook part / rule',supervisory_state
 function displayColour(v){return MATERIAL_COLOURS[materialType(v)]||'#64748b'}
 function label(v){return materialLabel(materialType(v))}
 function truncate(s='',n=120){return s&&s.length>n?s.slice(0,n-1)+'…':s}
+function partAudienceCategories(node){
+  const categories=node?.metadata?.firm_categories;
+  if(!Array.isArray(categories)) return [];
+  return categories.map(category=>String(category).replace(/^Non-authorised Persons$/,'Non-authorised persons')).filter(Boolean);
+}
 
 const appContainer=document.getElementById('root');
 (appContainer.__praRulebookRoot??=createRoot(appContainer)).render(<App/>);

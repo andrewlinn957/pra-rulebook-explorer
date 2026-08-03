@@ -15,6 +15,13 @@ DATE_RE = re.compile(r"\b\d{2}/\d{2}/\d{4}\b")
 PRA_RULE_LINK_RE = re.compile(r"^/pra-rules/[^?#]+")
 GLOSSARY_HASH_RE = re.compile(r"#glossary-term-([A-Za-z0-9]+)")
 FIRM_CATEGORIES = ["CRR Firms", "Non-CRR Firms", "SII Firms", "Non-SII Firms", "Non-authorised persons"]
+FIRM_CATEGORY_HREFS = {
+    "/pra-rules/crr-firms": "CRR Firms",
+    "/pra-rules/non-crr-firms": "Non-CRR Firms",
+    "/pra-rules/sii-firms": "SII Firms",
+    "/pra-rules/non-sii-firms": "Non-SII Firms",
+    "/pra-rules/non-authorised-persons": "Non-authorised persons",
+}
 
 
 def clean_text(value: str) -> str:
@@ -73,10 +80,11 @@ def extract_part(html: str, url: str) -> tuple[list[Node], list[Edge]]:
     title_el = soup.find("h1")
     title = clean_text(title_el.get_text(" ")) if title_el else urlparse(url).path.rstrip("/").split("/")[-2]
     part_stable = f"part:{urlparse(url).path.strip('/')}"
-    part = Node(node_id(part_stable), "part", part_stable, title, url=url, metadata={"rulebook_date": _rulebook_date(soup)})
+    part = Node(node_id(part_stable), "part", part_stable, title, url=url, metadata={"rulebook_date": _rulebook_date(soup), "firm_categories": _part_firm_categories(soup)})
     nodes: list[Node] = [part]
     edges: list[Edge] = []
     current_chapter: Node | None = None
+    current_container: Node | None = None
 
     content = soup.select_one(".rulebook-content") or soup
     for el in content.find_all(["div"], recursive=True):
@@ -91,6 +99,7 @@ def extract_part(html: str, url: str) -> tuple[list[Node], list[Edge]]:
             stable = f"chapter:{part_stable}:{chapter_key}"
             article_number = _article_or_annex_number(chapter_title)
             current_chapter = Node(node_id(stable), "chapter", stable, chapter_title, url=f"{url}#{html_id}", metadata={"chapter_number": chapter_num, "article_number": article_number, "part_title": title, "html_id": html_id})
+            current_container = current_chapter
             nodes.append(current_chapter)
             edges.append(Edge(edge_id(part.id, current_chapter.id, "contains"), part.id, current_chapter.id, "contains", "site_structure", source_url=url))
             continue
@@ -106,6 +115,8 @@ def extract_part(html: str, url: str) -> tuple[list[Node], list[Edge]]:
                     heading = Node(node_id(stable), "chapter", stable, heading_title, url=f"{url}#{html_id}", metadata={"part_title": title, "html_id": html_id, "heading_level": heading_el.name if heading_el else ""})
                     nodes.append(heading)
                     edges.append(Edge(edge_id(part.id, heading.id, "contains"), part.id, heading.id, "contains", "site_structure", source_url=url))
+                    _append_heading_body_rule(nodes, edges, heading, el, heading_el, url, part_stable, title)
+                    current_container = heading
                 continue
             rule_number = clean_text(number_el.get_text(" ")).rstrip(".")
             if not RULE_NUMBER_RE.match(rule_number):
@@ -117,21 +128,30 @@ def extract_part(html: str, url: str) -> tuple[list[Node], list[Edge]]:
                     heading = Node(node_id(stable), "chapter", stable, heading_title, url=f"{url}#{html_id}", metadata={"part_title": title, "html_id": html_id, "heading_level": heading_el.name if heading_el else ""})
                     nodes.append(heading)
                     edges.append(Edge(edge_id(part.id, heading.id, "contains"), part.id, heading.id, "contains", "site_structure", source_url=url))
+                    _append_heading_body_rule(nodes, edges, heading, el, heading_el, url, part_stable, title)
+                    current_container = heading
                 else:
                     body_el = el.select_one(".div-row__col-2")
                     body_text = clean_text(body_el.get_text(" ")) if body_el else clean_text(el.get_text(" "))
-                    if current_chapter and html_id and len(body_text) > 20:
+                    parent = current_container or current_chapter
+                    if parent and html_id and len(body_text) > 20:
                         stable = f"rule:{part_stable}:unnumbered:{html_id}"
-                        display_number = current_chapter.title
+                        display_number = parent.title
                         rule = Node(
                             node_id(stable), "rule", stable, display_number, text=body_text,
                             url=f"{url}#{html_id}",
                             metadata={"rule_number": "", "display_number": display_number, "part_title": title, "effective_dates": DATE_RE.findall(clean_text(el.get_text(" "))), "html_id": html_id, "unnumbered_row": True},
                         )
                         nodes.append(rule)
-                        edges.append(Edge(edge_id(current_chapter.id, rule.id, "contains"), current_chapter.id, rule.id, "contains", "site_structure", source_url=url))
+                        edges.append(Edge(edge_id(parent.id, rule.id, "contains"), parent.id, rule.id, "contains", "site_structure", source_url=url))
                         _append_link_edges(edges, rule, body_el or el, url)
                         _append_inline_definition_nodes(nodes, edges, rule, body_el or el, url, part_stable, title)
+                    elif body_text and html_id:
+                        stable = f"chapter:{part_stable}:heading:{html_id}"
+                        heading = Node(node_id(stable), "chapter", stable, body_text, url=f"{url}#{html_id}", metadata={"part_title": title, "html_id": html_id, "heading_level": ""})
+                        nodes.append(heading)
+                        edges.append(Edge(edge_id(part.id, heading.id, "contains"), part.id, heading.id, "contains", "site_structure", source_url=url))
+                        current_container = heading
                 continue
             body_el = el.select_one(".div-row__col-2")
             body_text = clean_text(body_el.get_text(" ")) if body_el else clean_text(el.get_text(" "))
@@ -146,13 +166,69 @@ def extract_part(html: str, url: str) -> tuple[list[Node], list[Edge]]:
                 metadata={"rule_number": rule_number, "display_number": display_number, "part_title": title, "effective_dates": DATE_RE.findall(clean_text(el.get_text(" "))), "html_id": el.get("id", "")},
             )
             nodes.append(rule)
-            if current_chapter:
-                edges.append(Edge(edge_id(current_chapter.id, rule.id, "contains"), current_chapter.id, rule.id, "contains", "site_structure", source_url=url))
+            parent = current_container or current_chapter
+            if parent:
+                edges.append(Edge(edge_id(parent.id, rule.id, "contains"), parent.id, rule.id, "contains", "site_structure", source_url=url))
             else:
                 edges.append(Edge(edge_id(part.id, rule.id, "contains"), part.id, rule.id, "contains", "site_structure", source_url=url))
             _append_link_edges(edges, rule, body_el or el, url)
             _append_inline_definition_nodes(nodes, edges, rule, body_el or el, url, part_stable, title)
     return _dedupe_nodes(nodes), _dedupe_edges(edges)
+
+
+def _append_heading_body_rule(nodes: list[Node], edges: list[Edge], heading: Node, el: Tag, heading_el: Tag | None, source_url: str, part_stable: str, part_title: str) -> None:
+    body_el = el.select_one(".div-row__col-2") or el
+    body_text = clean_text(body_el.get_text(" "))
+    heading_text = clean_text(heading_el.get_text(" ")) if heading_el else heading.title
+    if body_text.lower().startswith(heading_text.lower()):
+        body_text = clean_text(body_text[len(heading_text):])
+    if len(body_text) <= 20:
+        return
+    html_id = el.get("id", "")
+    if not html_id:
+        return
+    stable = f"rule:{part_stable}:heading-body:{html_id}"
+    rule = Node(
+        node_id(stable), "rule", stable, heading.title, text=body_text,
+        url=f"{source_url}#{html_id}",
+        metadata={"rule_number": "", "display_number": heading.title, "part_title": part_title, "effective_dates": DATE_RE.findall(clean_text(el.get_text(" "))), "html_id": html_id, "unnumbered_row": True, "heading_body": True},
+    )
+    nodes.append(rule)
+    edges.append(Edge(edge_id(heading.id, rule.id, "contains"), heading.id, rule.id, "contains", "site_structure", source_url=source_url))
+    _append_link_edges(edges, rule, body_el, source_url)
+    _append_inline_definition_nodes(nodes, edges, rule, body_el, source_url, part_stable, part_title)
+
+
+def _part_firm_categories(soup: BeautifulSoup) -> list[str]:
+    for item in soup.select(".side-bar__item"):
+        heading = item.find(["h2", "h3"])
+        if not heading or clean_text(heading.get_text(" ")).lower() != "used in":
+            continue
+        categories = _firm_categories_from_links(item)
+        if categories:
+            return categories
+    main = soup.select_one(".main-content, main, .container.chapters")
+    return _firm_categories_from_links(main or soup)
+
+
+def _firm_categories_from_links(container: Tag | BeautifulSoup) -> list[str]:
+    categories: list[str] = []
+    for link in container.find_all("a", href=True):
+        category = FIRM_CATEGORY_HREFS.get(link["href"].rstrip("/"))
+        if category and category not in categories:
+            categories.append(category)
+    return categories or _firm_categories_from_text(container)
+
+
+def _firm_categories_from_text(container: Tag | BeautifulSoup) -> list[str]:
+    text = clean_text(container.get_text(" "))
+    categories: list[str] = []
+    for category in FIRM_CATEGORIES:
+        if re.search(rf"\b{re.escape(category)}\b", text, re.IGNORECASE) and category not in categories:
+            categories.append(category)
+    if re.search(r"\bNon-authorised Persons\b", text, re.IGNORECASE) and "Non-authorised persons" not in categories:
+        categories.append("Non-authorised persons")
+    return categories
 
 
 def extract_glossary(html: str, url: str) -> tuple[list[Node], list[Edge]]:

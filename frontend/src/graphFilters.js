@@ -10,7 +10,9 @@ export function isInsuranceNode(node) {
 }
 
 export function filterGraph(graph,nodeTypes,relationshipTypes,originFilter='all',selectedId=null,showInsurance=true){
-  const keepNodes=(graph.nodes||[]).filter(n=>(nodeTypes.has(n.node_type)||n.id===selectedId) && (showInsurance || n.id===selectedId || !isInsuranceNode(n)));
+  const selectedNode=(graph.nodes||[]).find(n=>n.id===selectedId);
+  const selectedIsInsurance=Boolean(selectedNode && isInsuranceNode(selectedNode));
+  const keepNodes=(graph.nodes||[]).filter(n=>(nodeTypes.has(n.node_type)||n.id===selectedId) && (showInsurance || selectedIsInsurance || n.id===selectedId || !isInsuranceNode(n)));
   const keepIds=new Set(keepNodes.map(n=>n.id));
   const edges=(graph.edges||[]).filter(e=>keepIds.has(e.from_node_id)&&keepIds.has(e.to_node_id)&&(!relationshipTypes?.size||relationshipTypes.has(e.edge_type))&&originMatches(e,originFilter));
   const linkedIds=new Set();

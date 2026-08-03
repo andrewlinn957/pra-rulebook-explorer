@@ -71,3 +71,27 @@ test('graph filtering keeps selected orphan so the inspector focus is not lost',
 
   assert.deepEqual(filtered.nodes.map(n => n.id), ['return:PRA110', 'datapoints:PRA110']);
 });
+
+test('insurance filter shows insurance children when the selected node is an insurance part', () => {
+  const graph = {
+    nodes: [
+      { id: 'part:insurance', node_type: 'part', title: 'Insurance Company - Capital Resources' },
+      { id: 'chapter:assets', node_type: 'chapter', title: 'Admissible Assets', metadata: { part_title: 'Insurance Company - Capital Resources' } },
+    ],
+    edges: [
+      { id: 'e1', from_node_id: 'part:insurance', to_node_id: 'chapter:assets', edge_type: 'contains' },
+    ],
+  };
+
+  const filtered = filterGraph(
+    graph,
+    new Set(['part', 'chapter']),
+    new Set(['contains']),
+    'all',
+    'part:insurance',
+    false,
+  );
+
+  assert.deepEqual(filtered.nodes.map(n => n.id), ['part:insurance', 'chapter:assets']);
+  assert.deepEqual(filtered.edges.map(e => e.id), ['e1']);
+});
