@@ -113,6 +113,200 @@ class SourceHrefResolutionTests(unittest.TestCase):
         self.assertEqual(resolved[0].to_node_id, "target")
         self.assertEqual(resolved[0].metadata["resolution_basis"], "source_html_href")
 
+    def test_scopes_fragment_resolution_to_canonical_document_path(self):
+        conn = self.make_conn()
+        source_url = "https://www.prarulebook.co.uk/pra-rules/source-part/01-06-2026"
+        placeholder_key = "url:pra-rules/target-part"
+        upsert_nodes(conn, [
+            Node("source", "rule", "rule:source", "Source", url=source_url),
+            Node("wrong", "rule", "rule:wrong", "Wrong", url="https://www.prarulebook.co.uk/pra-rules/other-part/01-06-2026#abc123", metadata={"html_id": "abc123"}),
+            Node("right", "rule", "rule:right", "Right", url="https://www.prarulebook.co.uk/pra-rules/target-part/01-06-2026#abc123", metadata={"html_id": "abc123"}),
+            Node(node_id(placeholder_key), "rule_reference", placeholder_key, "Target Part", metadata={"placeholder": True}),
+        ])
+        original = Edge(
+            edge_id("source", node_id(placeholder_key), "references", "target"),
+            "source",
+            node_id(placeholder_key),
+            "references",
+            "html_link",
+            1.0,
+            "Target Part",
+            source_url,
+            {"href": "https://www.prarulebook.co.uk/pra-rules/target-part#abc123", "target_key": placeholder_key},
+        )
+        upsert_edges(conn, [original])
+
+        resolved = _resolve_html_anchor_reference_edges(conn)
+
+        self.assertEqual(len(resolved), 1)
+        self.assertEqual(resolved[0].to_node_id, "right")
+        self.assertEqual(resolved[0].metadata["canonical_document_path"], "pra-rules/target-part")
+        self.assertEqual(resolved[0].metadata["document_resolution_basis"], "document_path_html_id")
+
+    def test_selects_source_date_when_canonical_document_has_multiple_versions(self):
+        conn = self.make_conn()
+        source_url = "https://www.prarulebook.co.uk/pra-rules/source-part/01-06-2026"
+        placeholder_key = "url:pra-rules/target-part"
+        upsert_nodes(conn, [
+            Node("source", "rule", "rule:source", "Source", url=source_url),
+            Node("july", "rule", "rule:july", "July", url="https://www.prarulebook.co.uk/pra-rules/target-part/01-07-2026#abc123", metadata={"html_id": "abc123"}),
+            Node("june", "rule", "rule:june", "June", url="https://www.prarulebook.co.uk/pra-rules/target-part/01-06-2026#abc123", metadata={"html_id": "abc123"}),
+            Node(node_id(placeholder_key), "rule_reference", placeholder_key, "Target Part", metadata={"placeholder": True}),
+        ])
+        original = Edge(
+            edge_id("source", node_id(placeholder_key), "references", "target-version"),
+            "source",
+            node_id(placeholder_key),
+            "references",
+            "html_link",
+            1.0,
+            "Target Part",
+            source_url,
+            {"href": "https://www.prarulebook.co.uk/pra-rules/target-part#abc123", "target_key": placeholder_key},
+        )
+        upsert_edges(conn, [original])
+
+        resolved = _resolve_html_anchor_reference_edges(conn)
+
+        self.assertEqual(len(resolved), 1)
+        self.assertEqual(resolved[0].to_node_id, "june")
+        self.assertEqual(resolved[0].metadata["document_resolution_basis"], "document_path_html_id_source_version")
+
+    def test_uses_fragment_only_when_html_id_is_globally_unique(self):
+        conn = self.make_conn()
+        source_url = "https://www.prarulebook.co.uk/pra-rules/source-part/01-06-2026"
+        placeholder_key = "url:pra-rules/missing-part"
+        upsert_nodes(conn, [
+            Node("source", "rule", "rule:source", "Source", url=source_url),
+            Node("target", "rule", "rule:target", "Target", url="https://www.prarulebook.co.uk/pra-rules/target-part/01-06-2026#abc123", metadata={"html_id": "abc123"}),
+            Node(node_id(placeholder_key), "rule_reference", placeholder_key, "Missing Part", metadata={"placeholder": True}),
+        ])
+        original = Edge(
+            edge_id("source", node_id(placeholder_key), "references", "unique-fallback"),
+            "source",
+            node_id(placeholder_key),
+            "references",
+            "html_link",
+            1.0,
+            "Missing Part",
+            source_url,
+            {"href": "https://www.prarulebook.co.uk/pra-rules/missing-part#abc123", "target_key": placeholder_key},
+        )
+        upsert_edges(conn, [original])
+
+        resolved = _resolve_html_anchor_reference_edges(conn)
+
+        self.assertEqual(len(resolved), 1)
+        self.assertEqual(resolved[0].to_node_id, "target")
+        self.assertEqual(resolved[0].metadata["document_resolution_basis"], "global_html_id_unique")
+
+    def test_leaves_fragment_ambiguous_across_documents_unresolved(self):
+        conn = self.make_conn()
+        source_url = "https://www.prarulebook.co.uk/pra-rules/source-part/01-06-2026"
+        placeholder_key = "url:pra-rules/missing-part"
+        upsert_nodes(conn, [
+            Node("source", "rule", "rule:source", "Source", url=source_url),
+            Node("target-a", "rule", "rule:target-a", "Target A", url="https://www.prarulebook.co.uk/pra-rules/target-a/01-06-2026#abc123", metadata={"html_id": "abc123"}),
+            Node("target-b", "rule", "rule:target-b", "Target B", url="https://www.prarulebook.co.uk/pra-rules/target-b/01-06-2026#abc123", metadata={"html_id": "abc123"}),
+            Node(node_id(placeholder_key), "rule_reference", placeholder_key, "Missing Part", metadata={"placeholder": True}),
+        ])
+        original = Edge(
+            edge_id("source", node_id(placeholder_key), "references", "ambiguous-fallback"),
+            "source",
+            node_id(placeholder_key),
+            "references",
+            "html_link",
+            1.0,
+            "Missing Part",
+            source_url,
+            {"href": "https://www.prarulebook.co.uk/pra-rules/missing-part#abc123", "target_key": placeholder_key},
+        )
+        upsert_edges(conn, [original])
+
+        self.assertEqual(_resolve_html_anchor_reference_edges(conn), [])
+        self.assertEqual(conn.execute("SELECT COUNT(*) FROM edge WHERE id=?", (original.id,)).fetchone()[0], 1)
+
+    def test_does_not_choose_between_duplicate_nodes_in_one_document(self):
+        conn = self.make_conn()
+        source_url = "https://www.prarulebook.co.uk/pra-rules/source-part/01-06-2026"
+        placeholder_key = "url:pra-rules/target-part"
+        target_url = "https://www.prarulebook.co.uk/pra-rules/target-part/01-06-2026#abc123"
+        upsert_nodes(conn, [
+            Node("source", "rule", "rule:source", "Source", url=source_url),
+            Node("chapter", "chapter", "chapter:target", "Target heading", url=target_url, metadata={"html_id": "abc123"}),
+            Node("rule", "rule", "rule:target", "Target rule", url=target_url, metadata={"html_id": "abc123"}),
+            Node(node_id(placeholder_key), "rule_reference", placeholder_key, "Target Part", metadata={"placeholder": True}),
+        ])
+        original = Edge(
+            edge_id("source", node_id(placeholder_key), "references", "duplicate-node"),
+            "source",
+            node_id(placeholder_key),
+            "references",
+            "html_link",
+            1.0,
+            "Target Part",
+            source_url,
+            {"href": "https://www.prarulebook.co.uk/pra-rules/target-part#abc123", "target_key": placeholder_key},
+        )
+        upsert_edges(conn, [original])
+
+        self.assertEqual(_resolve_html_anchor_reference_edges(conn), [])
+        self.assertEqual(conn.execute("SELECT COUNT(*) FROM edge WHERE id=?", (original.id,)).fetchone()[0], 1)
+
+    def test_rechecks_existing_resolved_edge_against_document_scope(self):
+        conn = self.make_conn()
+        source_url = "https://www.prarulebook.co.uk/pra-rules/source-part/01-06-2026"
+        target_href = "https://www.prarulebook.co.uk/pra-rules/target-part#abc123"
+        upsert_nodes(conn, [
+            Node("source", "rule", "rule:source", "Source", url=source_url),
+            Node("wrong", "rule", "rule:wrong", "Wrong", url="https://www.prarulebook.co.uk/pra-rules/other-part/01-06-2026#abc123", metadata={"html_id": "abc123"}),
+            Node("right", "rule", "rule:right", "Right", url="https://www.prarulebook.co.uk/pra-rules/target-part/01-06-2026#abc123", metadata={"html_id": "abc123"}),
+        ])
+        old = Edge(
+            edge_id("source", "wrong", "references", "html_anchor:abc123"),
+            "source",
+            "wrong",
+            "references",
+            "html_anchor_resolved",
+            0.98,
+            "Target",
+            source_url,
+            {"href": target_href, "html_id": "abc123"},
+        )
+        upsert_edges(conn, [old])
+
+        resolved = _resolve_html_anchor_reference_edges(conn)
+
+        self.assertEqual(len(resolved), 1)
+        self.assertEqual(resolved[0].to_node_id, "right")
+        self.assertEqual(conn.execute("SELECT COUNT(*) FROM edge WHERE id=?", (old.id,)).fetchone()[0], 0)
+
+    def test_removes_existing_resolved_edge_when_document_match_is_ambiguous(self):
+        conn = self.make_conn()
+        source_url = "https://www.prarulebook.co.uk/pra-rules/source-part/01-06-2026"
+        target_href = "https://www.prarulebook.co.uk/pra-rules/target-part#abc123"
+        target_url = "https://www.prarulebook.co.uk/pra-rules/target-part/01-06-2026#abc123"
+        upsert_nodes(conn, [
+            Node("source", "rule", "rule:source", "Source", url=source_url),
+            Node("chapter", "chapter", "chapter:target", "Target heading", url=target_url, metadata={"html_id": "abc123"}),
+            Node("rule", "rule", "rule:target", "Target rule", url=target_url, metadata={"html_id": "abc123"}),
+        ])
+        old = Edge(
+            edge_id("source", "chapter", "references", "html_anchor:abc123"),
+            "source",
+            "chapter",
+            "references",
+            "html_anchor_resolved",
+            0.98,
+            "Target",
+            source_url,
+            {"href": target_href, "html_id": "abc123"},
+        )
+        upsert_edges(conn, [old])
+
+        self.assertEqual(_resolve_html_anchor_reference_edges(conn), [])
+        self.assertEqual(conn.execute("SELECT COUNT(*) FROM edge WHERE id=?", (old.id,)).fetchone()[0], 0)
+
     def test_does_not_use_unrelated_placeholder_title_to_resolve(self):
         conn = self.make_conn()
         source_url = "https://www.prarulebook.co.uk/pra-rules/source-part/01-06-2026"

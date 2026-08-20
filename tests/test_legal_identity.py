@@ -1,6 +1,7 @@
 import unittest
 
 from backend.rulebook_scraper.legal_identity import (
+    canonical_document_path,
     canonical_part_key,
     canonical_provision_key,
     normalise_rulebook_date,
@@ -15,6 +16,12 @@ PART_JULY = "https://www.prarulebook.co.uk/pra-rules/liquidity-coverage-ratio-cr
 
 
 class LegalIdentityTests(unittest.TestCase):
+    def test_canonical_document_path_removes_date_query_and_fragment(self):
+        self.assertEqual(
+            canonical_document_path("https://www.prarulebook.co.uk/pra-rules/liquidity-coverage-ratio-crr/01-06-2026?x=1#rule-10"),
+            "pra-rules/liquidity-coverage-ratio-crr",
+        )
+
     def test_date_free_part_identity_is_shared_by_dated_pages(self):
         self.assertEqual(canonical_part_key(PART_JUNE), canonical_part_key(PART_JULY))
         self.assertEqual(

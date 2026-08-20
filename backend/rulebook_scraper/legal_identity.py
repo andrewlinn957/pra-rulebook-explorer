@@ -68,6 +68,12 @@ def _date_free_path(url: str) -> str:
     return path
 
 
+def canonical_document_path(url: str) -> str:
+    """Return a Rulebook document path without query, fragment or date."""
+
+    return _date_free_path(url)
+
+
 def canonical_part_key(url: str) -> str:
     """Return the date-free legal identity of a PRA Rulebook Part."""
 

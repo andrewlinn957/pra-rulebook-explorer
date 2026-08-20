@@ -5,6 +5,7 @@ import sqlite3
 from collections import defaultdict
 from itertools import combinations
 
+from .legal_identity import canonical_document_path, rulebook_date_from_url
 from .models import Edge, Node
 from .parse import clean_text, edge_id, extract_part, node_id
 from .store import reconcile_derived_output, upsert_edges, upsert_nodes
@@ -188,12 +189,33 @@ def _resolve_html_anchor_reference_edges(conn: sqlite3.Connection) -> list[Edge]
     def is_internal_anchor_path(path: str) -> bool:
         return path.startswith("/pra-rules/") or path.startswith("/guidance/")
 
-    by_html_id: dict[str, tuple[str, str, str]] = {}
+    by_document_html_id: dict[tuple[str, str], list[tuple[str, str, str, str | None, str]]] = defaultdict(list)
+    by_html_id: dict[str, list[tuple[str, str, str, str | None, str]]] = defaultdict(list)
     for node_id, title, url, metadata_json in conn.execute("SELECT id,title,url,metadata_json FROM node WHERE node_type IN ('chapter','rule','guidance_section','guidance_paragraph')"):
         meta = json.loads(metadata_json or "{}")
         html_id = meta.get("html_id")
-        if html_id and html_id not in by_html_id:
-            by_html_id[html_id] = (node_id, title, url)
+        if html_id:
+            document_path = canonical_document_path(url or "")
+            candidate = (node_id, title, url or "", rulebook_date_from_url(url or ""), document_path)
+            by_document_html_id[(document_path, html_id)].append(candidate)
+            by_html_id[html_id].append(candidate)
+
+    def select_target(document_path: str, html_id: str, source_url: str) -> tuple[tuple[str, str, str, str | None, str], str] | None:
+        scoped = by_document_html_id.get((document_path, html_id), [])
+        if len(scoped) == 1:
+            return scoped[0], "document_path_html_id"
+        if len(scoped) > 1:
+            source_version = rulebook_date_from_url(source_url)
+            if source_version:
+                matching_version = [candidate for candidate in scoped if candidate[3] == source_version]
+                if len(matching_version) == 1:
+                    return matching_version[0], "document_path_html_id_source_version"
+            return None
+
+        globally_unique = by_html_id.get(html_id, [])
+        if len(globally_unique) == 1:
+            return globally_unique[0], "global_html_id_unique"
+        return None
 
     source_anchor_cache: dict[str, list[tuple[str, str, str]]] = {}
 
@@ -231,11 +253,11 @@ def _resolve_html_anchor_reference_edges(conn: sqlite3.Connection) -> list[Edge]
     rows = conn.execute(
         """
         SELECT e.id,e.from_node_id,e.to_node_id,e.evidence_text,e.source_url,e.metadata_json,
-               target.node_type AS target_type,target.title AS target_title
+               target.node_type AS target_type,target.title AS target_title,e.source_method
         FROM edge e
         LEFT JOIN node target ON target.id=e.to_node_id
         WHERE e.edge_type='references'
-          AND e.source_method='html_link'
+          AND e.source_method IN ('html_link','html_anchor_resolved')
           AND (e.metadata_json LIKE '%/pra-rules/%' OR e.metadata_json LIKE '%/guidance/%')
         """
     ).fetchall()
@@ -243,28 +265,49 @@ def _resolve_html_anchor_reference_edges(conn: sqlite3.Connection) -> list[Edge]
         meta = json.loads(row[5] or "{}")
         href = meta.get("href", "")
         resolution_basis = "edge_metadata_href"
+
+        def discard_stale_resolved_edge() -> None:
+            if row[8] == "html_anchor_resolved":
+                stale_edge_ids.append(row[0])
+
         match = re.search(r"#([A-Za-z0-9]+)", href)
         if not match:
             source_href = resolve_href_from_source_html(row[4] or "", href, row[3] or "", row[7] or "")
             if not source_href:
+                discard_stale_resolved_edge()
                 continue
             href = source_href
             resolution_basis = "source_html_href"
             match = re.search(r"#([A-Za-z0-9]+)", href)
         if not match:
+            discard_stale_resolved_edge()
             continue
         html_id = match.group(1)
-        target = by_html_id.get(html_id)
-        if not target:
+        target_document_path = canonical_document_path(href)
+        selected = select_target(target_document_path, html_id, row[4] or "")
+        if not selected:
+            discard_stale_resolved_edge()
             continue
-        target_id, target_title, target_url = target
+        (target_id, target_title, target_url, target_version, _), document_resolution_basis = selected
         if target_id == row[1]:
+            discard_stale_resolved_edge()
             continue
         out.append(Edge(
             edge_id(row[1], target_id, "references", f"html_anchor:{html_id}"),
             row[1], target_id, "references", "html_anchor_resolved", 0.98,
             row[3] or target_title, row[4] or target_url,
-            {"href": href, "html_id": html_id, "target_title": target_title, "replaces_edge_id": row[0], "resolution_basis": resolution_basis, "evidence_status": "direct_text", "extraction_run_id": "internal_anchor_resolution"},
+            {
+                "href": href,
+                "html_id": html_id,
+                "target_title": target_title,
+                "replaces_edge_id": row[0],
+                "resolution_basis": resolution_basis,
+                "document_resolution_basis": document_resolution_basis,
+                "canonical_document_path": target_document_path,
+                "target_version": target_version,
+                "evidence_status": "direct_text",
+                "extraction_run_id": "internal_anchor_resolution",
+            },
         ))
         stale_edge_ids.append(row[0])
 
