@@ -6,6 +6,15 @@ from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup, Tag
 
 from .fetch import BASE_URL
+from .legal_identity import (
+    canonical_part_key,
+    canonical_provision_key,
+    normalise_rulebook_date,
+    provision_version_key,
+    rulebook_date_from_url,
+    snapshot_id,
+    source_page_key,
+)
 from .models import Edge, Node
 from .store import sha1
 
@@ -69,7 +78,20 @@ def extract_rulebook_index(html: str, url: str) -> tuple[list[Node], list[Edge]]
             title = parts[-1]
             cats = [c for c in FIRM_CATEGORIES if any(c.lower() == p.lower() or c.lower() in p.lower() for p in parts[:-1])]
         stable = f"part:{urlparse(full).path.strip('/')}"
-        part = Node(node_id(stable), "part", stable, title, url=full, metadata={"firm_categories": cats})
+        part = Node(
+            node_id(stable),
+            "part",
+            stable,
+            title,
+            url=full,
+            metadata={
+                "firm_categories": cats,
+                "identity_type": "source_page",
+                "source_page_key": source_page_key(full),
+                "canonical_part_key": canonical_part_key(full),
+                "rulebook_date": rulebook_date_from_url(full),
+            },
+        )
         nodes.append(part)
         edges.append(Edge(edge_id(root.id, part.id, "contains"), root.id, part.id, "contains", "site_structure", source_url=url))
     return nodes, edges
@@ -80,7 +102,23 @@ def extract_part(html: str, url: str) -> tuple[list[Node], list[Edge]]:
     title_el = soup.find("h1")
     title = clean_text(title_el.get_text(" ")) if title_el else urlparse(url).path.rstrip("/").split("/")[-2]
     part_stable = f"part:{urlparse(url).path.strip('/')}"
-    part = Node(node_id(part_stable), "part", part_stable, title, url=url, metadata={"rulebook_date": _rulebook_date(soup), "firm_categories": _part_firm_categories(soup)})
+    parsed_date = rulebook_date_from_url(url) or normalise_rulebook_date(_rulebook_date(soup))
+    source_snapshot_id = snapshot_id(url, html)
+    part = Node(
+        node_id(part_stable),
+        "part",
+        part_stable,
+        title,
+        url=url,
+        metadata={
+            "rulebook_date": parsed_date,
+            "firm_categories": _part_firm_categories(soup),
+            "identity_type": "source_page",
+            "source_page_key": source_page_key(url),
+            "canonical_part_key": canonical_part_key(url),
+            "snapshot_id": source_snapshot_id,
+        },
+    )
     nodes: list[Node] = [part]
     edges: list[Edge] = []
     current_chapter: Node | None = None
@@ -173,7 +211,149 @@ def extract_part(html: str, url: str) -> tuple[list[Node], list[Edge]]:
                 edges.append(Edge(edge_id(part.id, rule.id, "contains"), part.id, rule.id, "contains", "site_structure", source_url=url))
             _append_link_edges(edges, rule, body_el or el, url)
             _append_inline_definition_nodes(nodes, edges, rule, body_el or el, url, part_stable, title)
+    _add_provision_identity_layer(nodes, edges, part, url, parsed_date, source_snapshot_id)
     return _dedupe_nodes(nodes), _dedupe_edges(edges)
+
+
+def _add_provision_identity_layer(
+    nodes: list[Node],
+    edges: list[Edge],
+    part: Node,
+    source_url: str,
+    rulebook_date: str | None,
+    source_snapshot_id: str,
+) -> None:
+    """Turn parsed Rule rows into dated versions with canonical identities.
+
+    The existing ``rule`` node remains the text-bearing node so the reader's
+    structural ``contains`` spine is unchanged.  Its stable key and metadata
+    now describe a provision version, while a new empty ``provision`` node
+    represents the date-free legal identity.
+    """
+
+    node_by_id = {node.id: node for node in nodes}
+    rules = [node for node in nodes if node.node_type == "rule"]
+    id_map: dict[str, str] = {}
+    canonical_nodes: dict[str, Node] = {}
+    version_edges: list[Edge] = []
+
+    for rule in rules:
+        parent = next(
+            (
+                node_by_id[edge.from_node_id]
+                for edge in edges
+                if edge.to_node_id == rule.id
+                and edge.edge_type == "contains"
+                and edge.from_node_id in node_by_id
+            ),
+            part,
+        )
+        html_id = str((rule.metadata or {}).get("html_id") or "")
+        rule_number = str((rule.metadata or {}).get("rule_number") or "")
+        structural_locator = _provision_structural_locator(parent, html_id)
+        canonical_key = canonical_provision_key(source_url, structural_locator, rule_number or "unnumbered")
+        version_key = provision_version_key(canonical_key, rulebook_date, snapshot=source_snapshot_id)
+        canonical_id = node_id(canonical_key)
+        version_id = node_id(version_key)
+        id_map[rule.id] = version_id
+
+        canonical_nodes.setdefault(
+            canonical_key,
+            Node(
+                canonical_id,
+                "provision",
+                canonical_key,
+                rule.title,
+                url="",
+                metadata={
+                    "identity_type": "canonical_provision",
+                    "canonical_part_key": canonical_part_key(source_url),
+                    "structural_locator": structural_locator,
+                    "rule_number": rule_number,
+                    "display_number": rule.title,
+                },
+            ),
+        )
+
+        metadata = dict(rule.metadata or {})
+        metadata.update(
+            {
+                "identity_type": "provision_version",
+                "canonical_provision_id": canonical_id,
+                "canonical_provision_key": canonical_key,
+                "version_key": version_key,
+                "source_page_id": part.id,
+                "source_page_key": source_page_key(source_url),
+                "canonical_part_key": canonical_part_key(source_url),
+                "snapshot_id": source_snapshot_id,
+                "rulebook_date": rulebook_date,
+                "structural_locator": structural_locator,
+            }
+        )
+        rule.id = version_id
+        rule.stable_key = version_key
+        rule.metadata = metadata
+        version_edges.append(
+            Edge(
+                edge_id(canonical_id, version_id, "has_version"),
+                canonical_id,
+                version_id,
+                "has_version",
+                "legal_identity",
+                source_url=source_url,
+                metadata={"canonical_key": canonical_key, "version_key": version_key},
+            )
+        )
+        version_edges.append(
+            Edge(
+                edge_id(version_id, part.id, "sourced_from"),
+                version_id,
+                part.id,
+                "sourced_from",
+                "legal_identity",
+                source_url=source_url,
+                metadata={"source_page_key": source_page_key(source_url), "snapshot_id": source_snapshot_id},
+            )
+        )
+
+    for node in nodes:
+        if node.id in id_map:
+            continue
+        node.metadata = _replace_ids(node.metadata, id_map)
+    for edge in edges:
+        old_from, old_to = edge.from_node_id, edge.to_node_id
+        edge.from_node_id = id_map.get(old_from, old_from)
+        edge.to_node_id = id_map.get(old_to, old_to)
+        if old_from != edge.from_node_id or old_to != edge.to_node_id:
+            suffix = (edge.metadata or {}).get("href") or edge.evidence_text or edge.source_url
+            edge.id = edge_id(edge.from_node_id, edge.to_node_id, edge.edge_type, suffix)
+        edge.metadata = _replace_ids(edge.metadata, id_map)
+
+    nodes.extend(canonical_nodes.values())
+    edges.extend(version_edges)
+
+
+def _provision_structural_locator(parent: Node, html_id: str) -> str:
+    metadata = parent.metadata or {}
+    chapter_number = str(metadata.get("chapter_number") or "").strip()
+    parent_html_id = str(metadata.get("html_id") or "").strip()
+    if parent.node_type == "part":
+        prefix = "part"
+    elif chapter_number:
+        prefix = f"chapter:{chapter_number}"
+    else:
+        prefix = f"container:{parent_html_id or parent.stable_key.rsplit(':', 1)[-1]}"
+    return f"{prefix}:{html_id}" if html_id else prefix
+
+
+def _replace_ids(value: object, id_map: dict[str, str]) -> object:
+    if isinstance(value, dict):
+        return {key: _replace_ids(item, id_map) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_replace_ids(item, id_map) for item in value]
+    if isinstance(value, str):
+        return id_map.get(value, value)
+    return value
 
 
 def _append_heading_body_rule(nodes: list[Node], edges: list[Edge], heading: Node, el: Tag, heading_el: Tag | None, source_url: str, part_stable: str, part_title: str) -> None:

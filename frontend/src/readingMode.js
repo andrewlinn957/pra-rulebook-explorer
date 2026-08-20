@@ -181,15 +181,35 @@ function citationNeedles(reference) {
   const edge = reference.edge || {};
   const metadata = edge.metadata || {};
   const evidence = compactWhitespace(edge.evidence_text || '');
-  const values = [
+  // An occurrence-backed reference carries the exact lexical group that was
+  // extracted from the source text.  Edge metadata is shared by every
+  // occurrence pointing to the same target and may describe only the first
+  // citation, so it must remain a fallback rather than the primary needle.
+  const occurrenceValues = (reference.members || []).flatMap(member => [
+    member.occurrence?.group_text,
+    member.occurrence?.citation_text,
+  ]);
+  const fallbackValues = [
     metadata.reference,
     metadata.term_title,
     metadata.target_title,
-    reference.citation,
     evidence.length <= 90 ? evidence : '',
     reference.node?.title,
   ];
-  const needles = values.map(compactWhitespace).filter(value => value.length > 1);
+  const orderNeedles = values => [...new Set(
+    values.map(compactWhitespace).filter(value => value.length > 1),
+  )].sort((a, b) => b.length - a.length);
+  const occurrenceNeedles = orderNeedles(occurrenceValues);
+  const primaryNeedles = occurrenceNeedles.length
+    ? occurrenceNeedles
+    : orderNeedles([reference.citation]);
+  const primarySet = new Set(primaryNeedles);
+  const needles = [
+    ...primaryNeedles,
+    ...(occurrenceNeedles.length
+      ? []
+      : orderNeedles(fallbackValues).filter(value => !primarySet.has(value))),
+  ];
   if (reference.relationship?.code === 'DEF') {
     for (const value of [...needles]) {
       if (/^[a-z][a-z -]+$/i.test(value) && !value.endsWith('s')) {
@@ -197,8 +217,7 @@ function citationNeedles(reference) {
       }
     }
   }
-  return [...new Set(needles)]
-    .sort((a, b) => b.length - a.length);
+  return [...new Set(needles)];
 }
 
 function boundaryMatch(text, needle, start) {
@@ -208,6 +227,8 @@ function boundaryMatch(text, needle, start) {
   const last = needle[needle.length - 1] || '';
   if (/[a-z0-9]/i.test(first) && /[a-z0-9]/i.test(before)) return false;
   if (/[a-z0-9]/i.test(last) && /[a-z0-9]/i.test(after)) return false;
+  // Do not match Article 129(1) as the prefix of Article 129(1)(c).
+  if (/[)\]]/.test(last) && /[([{]/.test(after)) return false;
   return true;
 }
 

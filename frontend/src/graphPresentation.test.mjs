@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { displayNodeTitle, documentBadge, relativeNodeRole, edgeDirectionLabel } from './graphPresentation.js';
+import { displayNodeTitle, documentBadge, legalIdentityLabel, legalIdentityMetadata, relativeNodeRole, edgeDirectionLabel } from './graphPresentation.js';
 
 describe('graph presentation helpers', () => {
   it('labels generic Bank of England spreadsheet references as reporting templates', () => {
@@ -134,5 +134,28 @@ describe('graph presentation helpers', () => {
     assert.equal(edgeDirectionLabel({ from_node_id: 'selected', to_node_id: 'target' }, 'selected'), 'outgoing');
     assert.equal(edgeDirectionLabel({ from_node_id: 'source', to_node_id: 'selected' }, 'selected'), 'incoming');
     assert.equal(edgeDirectionLabel({ from_node_id: 'source', to_node_id: 'target' }, 'selected'), 'related');
+  });
+
+  it('distinguishes canonical provisions, dated versions and source pages', () => {
+    const version = {
+      node_type: 'rule',
+      metadata: {
+        identity_type: 'provision_version',
+        canonical_provision_id: 'canonical-1',
+        rulebook_date: '01-06-2026',
+        source_page_id: 'part-1',
+        snapshot_id: 'snapshot:1',
+      },
+    };
+    assert.equal(legalIdentityLabel(version), 'Provision version · 01-06-2026');
+    assert.deepEqual(legalIdentityMetadata(version), {
+      identity_type: 'provision_version',
+      canonical_provision_id: 'canonical-1',
+      version_date: '01-06-2026',
+      source_page_id: 'part-1',
+      snapshot_id: 'snapshot:1',
+    });
+    assert.equal(legalIdentityLabel({ node_type: 'provision', metadata: { identity_type: 'canonical_provision' } }), 'Canonical provision');
+    assert.equal(legalIdentityLabel({ node_type: 'part', metadata: { identity_type: 'source_page' } }), 'Source page');
   });
 });

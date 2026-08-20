@@ -310,6 +310,125 @@ test('occurrence groups retain repeated citations to the same target', () => {
   assert.deepEqual(placed.map(reference => reference.match.start), [6, 18]);
 });
 
+test('occurrence citation text anchors mixed citations sharing one target edge', () => {
+  const root = {
+    id: 'lcr-article-10-1',
+    text: 'Apply Article 115(2) of CRR.\nThen Article 115(4).',
+  };
+  const target = { id: 'article-115', title: 'UK CRR Article 115', text: 'Source text.' };
+  const occurrences = [
+    {
+      occurrence_id: 'article-115-2',
+      group_id: 'group-115-2',
+      source_node_id: root.id,
+      target_node_id: target.id,
+      status: 'materialized',
+      citation_text: 'Article 115(2)',
+      group_text: 'Article 115(2)',
+      span_start: 6,
+      span_end: 20,
+    },
+    {
+      occurrence_id: 'article-115-4',
+      group_id: 'group-115-4',
+      source_node_id: root.id,
+      target_node_id: target.id,
+      status: 'materialized',
+      citation_text: 'Article 115(4)',
+      group_text: 'Article 115(4)',
+      span_start: 34,
+      span_end: 48,
+    },
+  ];
+  const references = readerReferences(root, {
+    nodes: [root, target],
+    edges: [{
+      id: 'article-115-edge',
+      from_node_id: root.id,
+      to_node_id: target.id,
+      edge_type: 'references',
+      metadata: {
+        reference: 'Article 115(2) of CRR',
+        reference_occurrences: occurrences,
+      },
+    }],
+  });
+
+  const paragraphs = ['Apply Article 115(2) of CRR.', 'Then Article 115(4).'];
+  const assigned = assignReferencesToParagraphs(paragraphs, references);
+  assert.deepEqual(
+    assigned.map(reference => [reference.citation, reference.paragraphIndex, reference.match?.start]),
+    [['Article 115(2)', 0, 6], ['Article 115(4)', 1, 5]],
+  );
+  const merged = mergeOverlappingReferences(assigned);
+  assert.deepEqual(
+    merged.flatMap(reference => paragraphCitationSegments(
+      paragraphs[reference.paragraphIndex],
+      [reference],
+    ))
+      .filter(segment => segment.type === 'citation')
+      .map(segment => segment.text),
+    ['Article 115(2)', 'Article 115(4)'],
+  );
+});
+
+test('citation matching does not treat a shorter article qualifier as a prefix', () => {
+  const root = {
+    id: 'covered-bond-rule',
+    text: 'Apply Article 129(1)(c), then Article 129(1).',
+  };
+  const target = { id: 'article-129', title: 'UK CRR Article 129', text: 'Source text.' };
+  const occurrences = [
+    {
+      occurrence_id: 'article-129-1-c',
+      group_id: 'group-129-1-c',
+      source_node_id: root.id,
+      target_node_id: target.id,
+      status: 'materialized',
+      citation_text: 'Article 129(1)(c)',
+      group_text: 'Article 129(1)(c)',
+      span_start: 6,
+      span_end: 23,
+    },
+    {
+      occurrence_id: 'article-129-1',
+      group_id: 'group-129-1',
+      source_node_id: root.id,
+      target_node_id: target.id,
+      status: 'materialized',
+      citation_text: 'Article 129(1)',
+      group_text: 'Article 129(1)',
+      span_start: 30,
+      span_end: 44,
+    },
+  ];
+  const references = readerReferences(root, {
+    nodes: [root, target],
+    edges: [{
+      id: 'article-129-edge',
+      from_node_id: root.id,
+      to_node_id: target.id,
+      edge_type: 'references',
+      metadata: {
+        reference: 'Article 129(4)',
+        reference_occurrences: occurrences,
+      },
+    }],
+  });
+
+  const assigned = assignReferencesToParagraphs([root.text], references);
+  assert.deepEqual(
+    assigned.map(reference => [reference.citation, reference.match?.start]),
+    [['Article 129(1)(c)', 6], ['Article 129(1)', 30]],
+  );
+  assert.deepEqual(
+    paragraphCitationSegments(root.text, mergeOverlappingReferences(assigned))
+      .filter(segment => segment.type === 'citation')
+      .map(segment => segment.text),
+    ['Article 129(1)(c)', 'Article 129(1)'],
+  );
+});
+
 test('a coordinated range is one clickable citation with every target accessible', () => {
   const root = {
     id: 'audit-24',

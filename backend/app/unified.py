@@ -6,6 +6,8 @@ import sqlite3
 from collections import deque
 from typing import Any
 
+from .db import identity_projection
+
 
 def unified_stats(conn: sqlite3.Connection) -> dict[str, Any]:
     legacy_nodes = conn.execute("SELECT COUNT(*) FROM node").fetchone()[0]
@@ -374,7 +376,9 @@ def _quote_ident(value: str) -> str:
 
 
 def _rulebook_node(row: sqlite3.Row) -> dict[str, Any]:
-    return {
+    properties = _json(row["metadata_json"])
+    identity = identity_projection(row["id"], properties)
+    result = {
         "source": "rulebook",
         "node_id": row["id"],
         "node_type": row["node_type"],
@@ -383,8 +387,11 @@ def _rulebook_node(row: sqlite3.Row) -> dict[str, Any]:
         "title": row["title"],
         "text": row["text"],
         "url": row["url"],
-        "properties": _json(row["metadata_json"]),
+        "properties": properties,
     }
+    if identity:
+        result["identity"] = identity
+    return result
 
 
 def _reporting_node(row: sqlite3.Row) -> dict[str, Any]:

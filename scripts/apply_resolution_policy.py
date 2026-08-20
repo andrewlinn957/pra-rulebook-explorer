@@ -45,8 +45,12 @@ from backend.rulebook_scraper.legal_references import (  # noqa: E402
     DEFAULT_INSTRUMENT_REGISTRY,
     Instrument,
     InstrumentRegistry,
+    citation_occurrences,
     external_provision_node_id,
     fetch_official_provision,
+)
+from backend.rulebook_scraper.reference_occurrences import (  # noqa: E402
+    policy_citation_occurrences,
 )
 from scripts.backfill_legal_references import (  # noqa: E402
     cache_fetcher,
@@ -276,6 +280,48 @@ def node_has_text(row: sqlite3.Row | dict[str, Any]) -> bool:
     # title.  Document-scope links are validated by URL separately.
     text = row["text"] if isinstance(row, sqlite3.Row) else row.get("text")
     return bool(str(text or "").strip())
+
+
+def canonical_semantic_target(
+    resolver: Any,
+    target_id: str,
+) -> tuple[str, dict[str, Any] | None]:
+    """Return the canonical ID for a legal provision target.
+
+    Rulebook versions remain useful as the text-bearing target while a
+    citation is being resolved.  They must not, however, be written as the
+    endpoint of a semantic edge or lexical occurrence.  Keep this normaliser
+    at the materialisation boundary because resolver candidates are indexed
+    from the dated ``rule`` rows.
+    """
+
+    if not target_id:
+        return target_id, None
+    target = resolver.nodes.get(target_id)
+    if target is None:
+        return target_id, None
+    target_meta = target.get("meta") or metadata(target)
+    canonical_id = str(target_meta.get("canonical_provision_id") or "")
+    if not canonical_id or canonical_id == target_id:
+        return target_id, target
+
+    canonical = resolver.nodes.get(canonical_id)
+    if canonical is None:
+        conn = getattr(resolver, "conn", None)
+        if conn is not None:
+            row = conn.execute(
+                "SELECT id,node_type,stable_key,title,text,url,metadata_json FROM node WHERE id=?",
+                (canonical_id,),
+            ).fetchone()
+            if row is not None:
+                canonical = dict(row) | {"meta": metadata(row)}
+                resolver.nodes[canonical_id] = canonical
+    # Do not emit an endpoint that is not present in the node table.  A
+    # malformed/partial deployment should retain its usable version target
+    # until the canonical row is repaired.
+    if canonical is None:
+        return target_id, target
+    return canonical_id, canonical
 
 
 def exact_spans(text: str, phrase: str) -> list[tuple[int, int]]:
@@ -2799,9 +2845,13 @@ class PolicyResolver:
             "fsma", "fsma-2023", "banking-act", "building-societies-act", "companies-act-2006", "companies-act-1985",
             "finance-act-2012", "interpretation-act-1978", "pensions-scheme-act-1993",
             "tribunal-procedure-upper-tribunal-rules-2008", "mifid-ii", "crd", "lcr-delegated-regulation",
-            "solvency-ii-delegated-regulation", "modr",
+            "solvency-ii-delegated-regulation", "modr", "uk-crr", "crr2",
         }
         target_fields = " ".join((doc, ref, ident))
+        explicit_uk_crr_article = bool(
+            effective_kind == "article"
+            and re.search(r"\b(?:UK\s+)?CRR\b", target_fields, re.I)
+        )
         # An instrument named only in surrounding Rulebook prose is context,
         # not necessarily the target.  Require the citation fields to name an
         # external instrument, except for unmistakable statutory shorthands
@@ -2861,7 +2911,14 @@ class PolicyResolver:
             ) and re.search(r"trading\s+book|prudential\s+valuation", source_text(source), re.I):
                 canonical_part_context = True
         internal_is_rulebook_source = internal_is_rulebook_source or canonical_part_context
-        if internal is not None and node_has_text(internal) and (not external_instrument_context or internal_is_rulebook_source):
+        if (
+            internal is not None
+            and node_has_text(internal)
+            and (
+                not external_instrument_context
+                or (internal_is_rulebook_source and not explicit_uk_crr_article)
+            )
+        ):
             return Outcome(**base_kwargs, status="resolved", scope="provision", target_id=internal["id"], target_type=internal["node_type"], target_title=internal["title"], target_url=internal["url"], target_text_available=True, resolver_method="policy_internal_provision", confidence=max(0.93, extracted), reason="unique internal provision with source text")
 
         # Specific paragraphs of an external guidance document do not have to
@@ -3148,6 +3205,42 @@ class PolicyResolver:
                             fetch_path=path,
                         )
             for path in dict.fromkeys(paths):
+                # The deterministic occurrence layer is the canonical owner
+                # of legacy UK CRR provision identities. Prefer those nodes
+                # when they already contain the official text, otherwise the
+                # policy pass creates a second target for the same citation
+                # (for example ``external:uk-crr:article:114`` alongside
+                # ``external:legislation:uk-crr:article:114``).
+                if instrument.instrument_id == "uk-crr":
+                    legacy_paths = [path]
+                    path_parts = path.split("/")
+                    if len(path_parts) > 2:
+                        legacy_paths.append("/".join(path_parts[:2]))
+                    legacy_nodes = [
+                        self.nodes[node_id]
+                        for legacy_path in dict.fromkeys(legacy_paths)
+                        for node_id in (
+                            "external:uk-crr:" + legacy_path.replace("/", ":"),
+                        )
+                        if node_id in self.nodes and node_has_text(self.nodes[node_id])
+                    ]
+                    if legacy_nodes:
+                        target = legacy_nodes[0]
+                        return Outcome(
+                            **base_kwargs,
+                            status="resolved",
+                            scope="provision",
+                            target_id=target["id"],
+                            target_type=target["node_type"],
+                            target_title=target["title"],
+                            target_url=target["url"],
+                            target_text_available=True,
+                            resolver_method="policy_external_canonical_uk_crr_provision",
+                            instrument_id=instrument.instrument_id,
+                            provision_path=path,
+                            confidence=max(0.94, extracted),
+                            reason="existing deterministic UK CRR provision identity reused",
+                        )
                 existing = self.external_index.get((instrument.instrument_id, path), [])
                 existing = [node for node in existing if node_has_text(node)]
                 if existing:
@@ -3360,6 +3453,7 @@ def apply_outcomes(
         conn.commit()
 
     counts = Counter()
+    parsed_occurrence_cache: dict[str, list[Any]] = {}
     conn.execute("BEGIN IMMEDIATE")
     try:
         for outcome in outcomes:
@@ -3442,27 +3536,77 @@ def apply_outcomes(
                     outcome.resolver_method = "policy_not_reference_unresolvable"
                     outcome.reason = "specific-looking extraction had no unique text-bearing target"
 
+            if outcome.status == "resolved" and outcome.target_id:
+                original_target_id = outcome.target_id
+                canonical_id, canonical_target = canonical_semantic_target(
+                    resolver,
+                    original_target_id,
+                )
+                if canonical_id != original_target_id and canonical_target is not None:
+                    original_target = resolver.nodes.get(original_target_id) or {}
+                    outcome.target_id = canonical_id
+                    outcome.target_type = canonical_target.get("node_type", "provision")
+                    outcome.target_title = canonical_target.get("title") or outcome.target_title
+                    # Preserve the dated version URL and text-availability
+                    # fact for the ledger and reader projection.
+                    outcome.target_url = outcome.target_url or original_target.get("url", "")
+                    outcome.target_text_available = outcome.target_text_available or node_has_text(original_target)
+                    outcome.metadata = {
+                        **outcome.metadata,
+                        "canonical_target_id": canonical_id,
+                        "resolved_version_id": original_target_id,
+                    }
+
             # Create the graph edge and lexical occurrence for accepted
             # document/provision links whenever the source citation span is
             # exact.  Rows without a trustworthy span remain explicit ledger
             # outcomes but are not given fabricated click targets.
             if outcome.status == "resolved" and outcome.target_id:
+                # A policy row is an extraction-level fact, not the identity
+                # of a lexical occurrence.  Remove this row's previous
+                # materialisations before rebuilding them from source text.
+                # This is essential when a later policy pass changes a
+                # target, and also when an old one-span row is expanded to
+                # several textual occurrences.
+                previous_policy_occurrences = conn.execute(
+                    "SELECT occurrence_id,edge_id,metadata_json FROM reference_occurrence WHERE source_node_id=? AND source_method=?",
+                    (outcome.source_id, METHOD),
+                ).fetchall()
+                for previous_occurrence in previous_policy_occurrences:
+                    if metadata(previous_occurrence).get("resolution_id") == outcome.resolution_id:
+                        conn.execute(
+                            "DELETE FROM reference_occurrence WHERE occurrence_id=?",
+                            (previous_occurrence["occurrence_id"],),
+                        )
                 # If a repair replaces a title-only/wrong target, remove the
                 # stale policy edge when no other ledger row still uses that
                 # exact source/target pair.  Otherwise the old edge would
                 # remain visible beside the corrected source text.
                 if old_target_id and old_target_id != outcome.target_id:
                     stale_edge = conn.execute(
-                        "SELECT id FROM edge WHERE from_node_id=? AND to_node_id=? LIMIT 1",
-                        (outcome.source_id, old_target_id),
+                        "SELECT id,source_method FROM edge WHERE from_node_id=? AND to_node_id=? ORDER BY CASE WHEN source_method=? THEN 0 ELSE 1 END,id LIMIT 1",
+                        (outcome.source_id, old_target_id, METHOD),
                     ).fetchone()
                     still_used = conn.execute(
                         "SELECT 1 FROM llm_reference_resolution WHERE id<>? AND source_node_id=? AND target_node_id=? LIMIT 1",
                         (outcome.resolution_id, outcome.source_id, old_target_id),
                     ).fetchone()
-                    if stale_edge and not still_used:
-                        conn.execute("DELETE FROM reference_occurrence WHERE edge_id=?", (stale_edge[0],))
-                        conn.execute("DELETE FROM edge WHERE id=?", (stale_edge[0],))
+                    has_non_policy_occurrence = (
+                        conn.execute(
+                            "SELECT 1 FROM reference_occurrence WHERE edge_id=? AND source_method<>? LIMIT 1",
+                            (stale_edge["id"], METHOD),
+                        ).fetchone()
+                        if stale_edge
+                        else None
+                    )
+                    if (
+                        stale_edge
+                        and not still_used
+                        and stale_edge["source_method"] == METHOD
+                        and not has_non_policy_occurrence
+                    ):
+                        conn.execute("DELETE FROM reference_occurrence WHERE edge_id=?", (stale_edge["id"],))
+                        conn.execute("DELETE FROM edge WHERE id=?", (stale_edge["id"],))
                 target = resolver.nodes.get(outcome.target_id)
                 if target is None:
                     target_row = conn.execute("SELECT id,node_type,title,text,url,metadata_json FROM node WHERE id=?", (outcome.target_id,)).fetchone()
@@ -3475,19 +3619,53 @@ def apply_outcomes(
                 else:
                     source = resolver.nodes.get(outcome.source_id)
                     if source is not None and outcome.span_start is not None and outcome.span_end is not None:
-                        existing_edge = conn.execute("SELECT id FROM edge WHERE from_node_id=? AND to_node_id=? ORDER BY id LIMIT 1", (outcome.source_id, outcome.target_id)).fetchone()
+                        text = source_text(source)
+                        if outcome.source_id not in parsed_occurrence_cache:
+                            parsed_occurrence_cache[outcome.source_id] = citation_occurrences(
+                                source_node_id=outcome.source_id,
+                                value=text,
+                                registry=resolver.registry,
+                                source_title=source.get("title", ""),
+                            )
+                        parsed_occurrences = policy_citation_occurrences(
+                            source_node_id=outcome.source_id,
+                            source_text=text,
+                            source_title=source.get("title", ""),
+                            row=row,
+                            registry=resolver.registry,
+                            parsed=parsed_occurrence_cache[outcome.source_id],
+                        )
+                        # Keep the old exact span as a safe fallback for
+                        # references that the deterministic parser does not
+                        # recognise.  Recognised provision rows are expanded
+                        # to every matching lexical span instead.
+                        occurrence_candidates = parsed_occurrences or [None]
+                        first_span_start = (
+                            parsed_occurrences[0].span_start
+                            if parsed_occurrences
+                            else outcome.span_start
+                        )
+                        first_span_end = (
+                            parsed_occurrences[0].span_end
+                            if parsed_occurrences
+                            else outcome.span_end
+                        )
+                        existing_edge = conn.execute(
+                            "SELECT id FROM edge WHERE from_node_id=? AND to_node_id=? ORDER BY CASE WHEN source_method=? THEN 0 ELSE 1 END,id LIMIT 1",
+                            (outcome.source_id, outcome.target_id, METHOD),
+                        ).fetchone()
                         if existing_edge:
                             edge_id = existing_edge[0]
                         else:
                             edge_id = digest(outcome.source_id, outcome.target_id, METHOD, length=20)
-                            evidence_start = max(0, outcome.span_start - 220)
-                            evidence_end = min(len(source_text(source)), outcome.span_end + 220)
+                            evidence_start = max(0, first_span_start - 220)
+                            evidence_end = min(len(text), first_span_end + 220)
                             edge_meta = {
                                 "reference": outcome.quoted_text,
                                 "target_title": target["title"],
                                 "target_node_type": target["node_type"],
                                 "relationship_type": "REF",
-                                "source_span": {"start": outcome.span_start, "end": outcome.span_end},
+                                "source_span": {"start": first_span_start, "end": first_span_end},
                                 "proposal_method": METHOD,
                                 "resolution_id": outcome.resolution_id,
                                 "policy_scope": outcome.scope,
@@ -3495,37 +3673,129 @@ def apply_outcomes(
                             }
                             conn.execute(
                                 "INSERT OR IGNORE INTO edge(id,from_node_id,to_node_id,edge_type,source_method,confidence,evidence_text,source_url,metadata_json) VALUES (?,?,?,?,?,?,?,?,?)",
-                                (edge_id, outcome.source_id, outcome.target_id, "references", METHOD, outcome.confidence, compact(source_text(source)[evidence_start:evidence_end]), source.get("url", ""), json.dumps(edge_meta, ensure_ascii=False, sort_keys=True)),
+                                (edge_id, outcome.source_id, outcome.target_id, "references", METHOD, outcome.confidence, compact(text[evidence_start:evidence_end]), source.get("url", ""), json.dumps(edge_meta, ensure_ascii=False, sort_keys=True)),
                             )
-                        occurrence_id = digest(outcome.source_id, outcome.target_id, outcome.span_start, outcome.span_end, outcome.quoted_text, METHOD, length=28)
-                        group_id = digest(outcome.source_id, outcome.span_start, outcome.span_end, outcome.quoted_text, METHOD, length=24)
-                        existing_occ = conn.execute("SELECT occurrence_id FROM reference_occurrence WHERE occurrence_id=?", (occurrence_id,)).fetchone()
-                        text = source_text(source)
-                        context = compact(text[max(0, outcome.span_start - 220):min(len(text), outcome.span_end + 220)])
-                        occ_meta = {
-                            "policy_version": METHOD,
-                            "resolution_id": outcome.resolution_id,
-                            "target_text_available": bool(outcome.target_text_available),
-                            "target_url": outcome.target_url,
-                            "reason": outcome.reason,
-                        }
-                        if not existing_occ:
-                            conn.execute(
-                                "INSERT INTO reference_occurrence(occurrence_id,group_id,source_node_id,target_node_id,edge_id,relationship_type,citation_kind,citation_text,group_text,instrument_id,provision_path,qualifier,span_start,span_end,status,source_method,confidence,context_text,metadata_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                                (occurrence_id, group_id, outcome.source_id, outcome.target_id, edge_id, "REF", singular(row["target_kind"]) or "reference", outcome.quoted_text, outcome.quoted_text, outcome.instrument_id or None, outcome.provision_path or None, "", outcome.span_start, outcome.span_end, "materialized", METHOD, outcome.confidence, context, json.dumps(occ_meta, ensure_ascii=False, sort_keys=True), now(), now()),
+                        for parsed_occurrence in occurrence_candidates:
+                            if parsed_occurrence is None:
+                                occurrence_span_start = outcome.span_start
+                                occurrence_span_end = outcome.span_end
+                                citation_kind = singular(row["target_kind"]) or "reference"
+                                citation_text = outcome.quoted_text
+                                group_text = outcome.quoted_text
+                                instrument_id = outcome.instrument_id
+                                provision_path = outcome.provision_path
+                                qualifier = ""
+                                group_seed = f"{occurrence_span_start}|{occurrence_span_end}|{citation_text}"
+                                parser_metadata: dict[str, Any] = {}
+                            else:
+                                occurrence_span_start = parsed_occurrence.span_start
+                                occurrence_span_end = parsed_occurrence.span_end
+                                citation_kind = parsed_occurrence.kind
+                                citation_text = parsed_occurrence.citation_text
+                                group_text = parsed_occurrence.group_text
+                                instrument_id = (
+                                    parsed_occurrence.instrument.instrument_id
+                                    if parsed_occurrence.instrument
+                                    else outcome.instrument_id
+                                )
+                                provision_path = parsed_occurrence.provision_path or outcome.provision_path
+                                qualifier = "".join(f"({part})" for part in parsed_occurrence.target.qualifiers)
+                                group_seed = parsed_occurrence.group_id
+                                parser_metadata = {
+                                    **parsed_occurrence.metadata,
+                                    "instrument_evidence": parsed_occurrence.instrument_evidence,
+                                }
+                            occurrence_id = digest(
+                                outcome.source_id,
+                                outcome.target_id,
+                                occurrence_span_start,
+                                occurrence_span_end,
+                                citation_text,
+                                METHOD,
+                                length=28,
                             )
-                        else:
-                            # Reprocessing can change the target provenance
-                            # (for example FCA SUP versus an internal PRA
-                            # node) without changing the citation span. Keep
-                            # the materialised occurrence in step with the
-                            # corrected ledger outcome rather than preserving
-                            # stale instrument/path metadata.
-                            conn.execute(
-                                "UPDATE reference_occurrence SET group_id=?,source_node_id=?,target_node_id=?,edge_id=?,instrument_id=?,provision_path=?,citation_kind=?,citation_text=?,group_text=?,span_start=?,span_end=?,status=?,confidence=?,context_text=?,metadata_json=?,updated_at=? WHERE occurrence_id=?",
-                                (group_id, outcome.source_id, outcome.target_id, edge_id, outcome.instrument_id or None, outcome.provision_path or None, singular(row["target_kind"]) or "reference", outcome.quoted_text, outcome.quoted_text, outcome.span_start, outcome.span_end, "materialized", outcome.confidence, context, json.dumps(occ_meta, ensure_ascii=False, sort_keys=True), now(), occurrence_id),
+                            group_id = digest(
+                                outcome.source_id,
+                                group_seed,
+                                outcome.target_id,
+                                METHOD,
+                                length=24,
                             )
-                        counts["materialized_occurrences"] += 1
+                            existing_occ = conn.execute(
+                                "SELECT occurrence_id FROM reference_occurrence WHERE occurrence_id=?",
+                                (occurrence_id,),
+                            ).fetchone()
+                            context = compact(
+                                text[
+                                    max(0, occurrence_span_start - 220) : min(
+                                        len(text), occurrence_span_end + 220
+                                    )
+                                ]
+                            )
+                            occ_meta = {
+                                **parser_metadata,
+                                "policy_version": METHOD,
+                                "resolution_id": outcome.resolution_id,
+                                "target_text_available": bool(outcome.target_text_available),
+                                "target_url": outcome.target_url,
+                                "reason": outcome.reason,
+                            }
+                            if not existing_occ:
+                                conn.execute(
+                                    "INSERT INTO reference_occurrence(occurrence_id,group_id,source_node_id,target_node_id,edge_id,relationship_type,citation_kind,citation_text,group_text,instrument_id,provision_path,qualifier,span_start,span_end,status,source_method,confidence,context_text,metadata_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                                    (
+                                        occurrence_id,
+                                        group_id,
+                                        outcome.source_id,
+                                        outcome.target_id,
+                                        edge_id,
+                                        "REF",
+                                        citation_kind,
+                                        citation_text,
+                                        group_text,
+                                        instrument_id or None,
+                                        provision_path or None,
+                                        qualifier,
+                                        occurrence_span_start,
+                                        occurrence_span_end,
+                                        "materialized",
+                                        METHOD,
+                                        outcome.confidence,
+                                        context,
+                                        json.dumps(occ_meta, ensure_ascii=False, sort_keys=True),
+                                        now(),
+                                        now(),
+                                    ),
+                                )
+                            else:
+                                # Reprocessing can change the target
+                                # provenance without changing the lexical
+                                # occurrence. Keep the materialised row in
+                                # step with the corrected outcome.
+                                conn.execute(
+                                    "UPDATE reference_occurrence SET group_id=?,source_node_id=?,target_node_id=?,edge_id=?,instrument_id=?,provision_path=?,citation_kind=?,citation_text=?,group_text=?,qualifier=?,span_start=?,span_end=?,status=?,confidence=?,context_text=?,metadata_json=?,updated_at=? WHERE occurrence_id=?",
+                                    (
+                                        group_id,
+                                        outcome.source_id,
+                                        outcome.target_id,
+                                        edge_id,
+                                        instrument_id or None,
+                                        provision_path or None,
+                                        citation_kind,
+                                        citation_text,
+                                        group_text,
+                                        qualifier,
+                                        occurrence_span_start,
+                                        occurrence_span_end,
+                                        "materialized",
+                                        outcome.confidence,
+                                        context,
+                                        json.dumps(occ_meta, ensure_ascii=False, sort_keys=True),
+                                        now(),
+                                        occurrence_id,
+                                    ),
+                                )
+                            counts["materialized_occurrences"] += 1
                     else:
                         counts["resolved_without_exact_span"] += 1
 

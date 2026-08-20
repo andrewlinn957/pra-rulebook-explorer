@@ -4,7 +4,7 @@ import sqlite3
 from datetime import datetime, timezone
 
 
-LATEST_SCHEMA_VERSION = 7
+LATEST_SCHEMA_VERSION = 8
 
 
 ENRICHMENT_SCHEMA = """
@@ -74,7 +74,35 @@ def apply_migrations(conn: sqlite3.Connection) -> list[int]:
     if current < 7:
         _migrate_v7(conn)
         applied.append(7)
+        current = 7
+    if current < 8:
+        _migrate_v8(conn)
+        applied.append(8)
     return applied
+
+
+def _migrate_v8(conn: sqlite3.Connection) -> None:
+    """Separate date-free legal provision identity from dated source versions."""
+    from .legal_identity_migration import migrate_legal_identity
+
+    migrate_legal_identity(conn)
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS schema_migration (
+          version INTEGER PRIMARY KEY,
+          name TEXT NOT NULL,
+          applied_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        INSERT OR REPLACE INTO schema_migration(version,name,applied_at)
+        VALUES (8,'canonical_legal_identity_and_provision_versions',CURRENT_TIMESTAMP)
+        """
+    )
+    conn.execute("PRAGMA user_version=8")
+    conn.commit()
 
 
 def _migrate_v7(conn: sqlite3.Connection) -> None:

@@ -8,6 +8,7 @@ from typing import Iterable
 from urllib.parse import urljoin
 
 from .fetch import BASE_URL
+from .legal_identity import snapshot_id
 from .models import Edge, Node
 
 SCHEMA = """
@@ -20,6 +21,22 @@ CREATE TABLE IF NOT EXISTS document_source (
   raw_html TEXT NOT NULL,
   raw_text TEXT DEFAULT ''
 );
+
+CREATE TABLE IF NOT EXISTS document_snapshot (
+  snapshot_id TEXT PRIMARY KEY,
+  source_id TEXT NOT NULL,
+  url TEXT NOT NULL,
+  fetched_at TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  raw_html TEXT NOT NULL,
+  raw_text TEXT DEFAULT '',
+  UNIQUE(url, content_hash)
+);
+
+CREATE INDEX IF NOT EXISTS idx_document_snapshot_source
+  ON document_snapshot(source_id, fetched_at);
+CREATE INDEX IF NOT EXISTS idx_document_snapshot_url
+  ON document_snapshot(url, fetched_at);
 
 CREATE TABLE IF NOT EXISTS node (
   id TEXT PRIMARY KEY,
@@ -80,6 +97,15 @@ CREATE INDEX IF NOT EXISTS idx_reference_occurrence_edge
   ON reference_occurrence(edge_id);
 CREATE INDEX IF NOT EXISTS idx_reference_occurrence_status
   ON reference_occurrence(status);
+
+CREATE TABLE IF NOT EXISTS node_alias (
+  node_id TEXT NOT NULL,
+  alias_type TEXT NOT NULL,
+  alias_value TEXT NOT NULL,
+  PRIMARY KEY(node_id, alias_type, alias_value)
+);
+
+CREATE INDEX IF NOT EXISTS idx_node_alias_node ON node_alias(node_id);
 """
 
 
@@ -102,12 +128,35 @@ def upsert_source(conn: sqlite3.Connection, *, source_type: str, url: str, fetch
     source_id = sha1(url)
     conn.execute(
         """
+        CREATE TABLE IF NOT EXISTS document_snapshot (
+          snapshot_id TEXT PRIMARY KEY,
+          source_id TEXT NOT NULL,
+          url TEXT NOT NULL,
+          fetched_at TEXT NOT NULL,
+          content_hash TEXT NOT NULL,
+          raw_html TEXT NOT NULL,
+          raw_text TEXT DEFAULT '',
+          UNIQUE(url, content_hash)
+        )
+        """
+    )
+    content_hash = sha1(raw_html)
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO document_snapshot
+          (snapshot_id,source_id,url,fetched_at,content_hash,raw_html,raw_text)
+        VALUES (?,?,?,?,?,?,?)
+        """,
+        (snapshot_id(url, raw_html), source_id, url, fetched_at, content_hash, raw_html, raw_text),
+    )
+    conn.execute(
+        """
         INSERT INTO document_source (id, source_type, url, fetched_at, content_hash, raw_html, raw_text)
         VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(url) DO UPDATE SET fetched_at=excluded.fetched_at,
           content_hash=excluded.content_hash, raw_html=excluded.raw_html, raw_text=excluded.raw_text
         """,
-        (source_id, source_type, url, fetched_at, sha1(raw_html), raw_html, raw_text),
+        (source_id, source_type, url, fetched_at, content_hash, raw_html, raw_text),
     )
     return source_id
 
@@ -118,13 +167,15 @@ def upsert_nodes(conn: sqlite3.Connection, nodes: Iterable[Node]) -> None:
         INSERT INTO node (id, node_type, stable_key, title, text, url, metadata_json)
         VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(stable_key) DO UPDATE SET node_type=excluded.node_type,
-          title=excluded.title, text=excluded.text, url=excluded.url, metadata_json=excluded.metadata_json
+          title=excluded.title, text=excluded.text, url=excluded.url,
+          metadata_json=json_patch(COALESCE(node.metadata_json,'{}'), excluded.metadata_json)
         """,
         [(n.id, n.node_type, n.stable_key, n.title, n.text, n.url, json.dumps(n.metadata, ensure_ascii=False)) for n in nodes],
     )
 
 
 def upsert_edges(conn: sqlite3.Connection, edges: Iterable[Edge]) -> None:
+    normalised_edges = [_canonicalise_semantic_edge(conn, edge) for edge in edges]
     conn.executemany(
         """
         INSERT INTO edge (id, from_node_id, to_node_id, edge_type, source_method, confidence, evidence_text, source_url, metadata_json)
@@ -133,7 +184,33 @@ def upsert_edges(conn: sqlite3.Connection, edges: Iterable[Edge]) -> None:
           edge_type=excluded.edge_type, source_method=excluded.source_method, confidence=excluded.confidence,
           evidence_text=excluded.evidence_text, source_url=excluded.source_url, metadata_json=excluded.metadata_json
         """,
-        [(e.id, e.from_node_id, e.to_node_id, e.edge_type, e.source_method, e.confidence, e.evidence_text, e.source_url, json.dumps(e.metadata, ensure_ascii=False)) for e in edges],
+        [(e.id, e.from_node_id, e.to_node_id, e.edge_type, e.source_method, e.confidence, e.evidence_text, e.source_url, json.dumps(e.metadata, ensure_ascii=False)) for e in normalised_edges],
+    )
+
+
+def _canonicalise_semantic_edge(conn: sqlite3.Connection, edge: Edge) -> Edge:
+    """Keep semantic targets on canonical provisions as new versions arrive."""
+
+    if edge.edge_type not in {"references", "amends"}:
+        return edge
+    row = conn.execute("SELECT metadata_json FROM node WHERE id=?", (edge.to_node_id,)).fetchone()
+    if not row:
+        return edge
+    metadata = json.loads(row[0] or "{}")
+    canonical_id = metadata.get("canonical_provision_id")
+    if not canonical_id or canonical_id == edge.to_node_id:
+        return edge
+    edge_metadata = {**(edge.metadata or {}), "canonical_target_id": canonical_id}
+    return Edge(
+        edge.id,
+        edge.from_node_id,
+        canonical_id,
+        edge.edge_type,
+        edge.source_method,
+        edge.confidence,
+        edge.evidence_text,
+        edge.source_url,
+        edge_metadata,
     )
 
 

@@ -442,6 +442,31 @@ class LegalReferenceTests(unittest.TestCase):
             ["section/138BA", "section/312R"],
         )
 
+    def test_repeated_crr_article_citations_keep_their_uk_crr_instrument(self) -> None:
+        text = (
+            "Article 114(2) of CRR ; (i) first. "
+            "Article 114(2) of CRR ; (ii) second. "
+            "Article 114(2) of CRR ; (iii) third."
+        )
+
+        occurrences = citation_occurrences(
+            source_node_id="lcr-article-10-1",
+            value=text,
+            registry=self.registry,
+            source_title="Article 10(1)",
+        )
+
+        article_114 = [
+            occurrence
+            for occurrence in occurrences
+            if occurrence.target.display == "114(2)"
+        ]
+        self.assertEqual(len(article_114), 3)
+        self.assertEqual(
+            [occurrence.instrument.instrument_id for occurrence in article_114],
+            ["uk-crr", "uk-crr", "uk-crr"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

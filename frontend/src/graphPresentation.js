@@ -11,6 +11,37 @@ function clean(value) {
   return String(value ?? '').trim();
 }
 
+export function legalIdentityMetadata(node) {
+  const metadata = node?.metadata || node?.properties || {};
+  const identity = {};
+  if (metadata.identity_type) identity.identity_type = metadata.identity_type;
+  if (metadata.canonical_provision_id) identity.canonical_provision_id = metadata.canonical_provision_id;
+  if (metadata.canonical_provision_key) identity.canonical_provision_key = metadata.canonical_provision_key;
+  if (metadata.rulebook_date) identity.version_date = metadata.rulebook_date;
+  if (metadata.source_page_id) identity.source_page_id = metadata.source_page_id;
+  if (metadata.source_page_key) identity.source_page_key = metadata.source_page_key;
+  if (metadata.snapshot_id) identity.snapshot_id = metadata.snapshot_id;
+  if (metadata.canonical_part_key) identity.canonical_part_key = metadata.canonical_part_key;
+  if (metadata.version_key) identity.version_key = metadata.version_key;
+  if (metadata.identity_type === 'canonical_provision' && node?.id && !identity.canonical_provision_id) {
+    identity.canonical_provision_id = node.id;
+  }
+  if (metadata.identity_type === 'source_page' && node?.id && !identity.source_page_id) {
+    identity.source_page_id = node.id;
+  }
+  return identity;
+}
+
+export function legalIdentityLabel(node) {
+  const metadata = node?.metadata || node?.properties || {};
+  if (node?.node_type === 'provision' || metadata.identity_type === 'canonical_provision') return 'Canonical provision';
+  if (metadata.identity_type === 'provision_version') {
+    return metadata.rulebook_date ? `Provision version · ${metadata.rulebook_date}` : 'Provision version';
+  }
+  if (metadata.identity_type === 'source_page') return 'Source page';
+  return '';
+}
+
 function extensionFromUrl(url = '') {
   try {
     const path = new URL(url, 'https://placeholder.local').pathname;

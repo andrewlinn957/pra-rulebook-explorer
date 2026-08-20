@@ -36,9 +36,9 @@ class MigrationTests(unittest.TestCase):
             """
         )
 
-        self.assertEqual(apply_migrations(conn), [1, 2, 3, 4, 5, 6, 7])
+        self.assertEqual(apply_migrations(conn), [1, 2, 3, 4, 5, 6, 7, 8])
 
-        self.assertEqual(schema_version(conn), 7)
+        self.assertEqual(schema_version(conn), 8)
         self.assertEqual(
             tuple(conn.execute("SELECT template_id,graph_node_id FROM reporting_template_enrichment").fetchone()),
             ("source:one", "template:one"),
@@ -51,6 +51,16 @@ class MigrationTests(unittest.TestCase):
         self.assertIsNotNone(
             conn.execute(
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name='reference_occurrence'"
+            ).fetchone()
+        )
+        self.assertIsNotNone(
+            conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='document_snapshot'"
+            ).fetchone()
+        )
+        self.assertIsNotNone(
+            conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='node_alias'"
             ).fetchone()
         )
 

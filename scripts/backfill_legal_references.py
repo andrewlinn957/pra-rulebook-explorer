@@ -775,6 +775,7 @@ def audit_and_apply(
     cache_root: Path,
     apply: bool,
     fetch_workers: int,
+    allow_unresolved: bool = False,
 ) -> dict[str, Any]:
     registry = InstrumentRegistry.load(registry_path)
     override_rules = json.loads(overrides_path.read_text(encoding="utf-8"))["rules"]
@@ -946,7 +947,12 @@ def audit_and_apply(
     # Never replace a previously valid materialisation with a partial run.  All
     # resolution and official-source fetch gates must pass before the generated
     # edge/occurrence layer is touched.
-    apply_succeeded = apply and not all_unresolved and not fsma_coverage_gaps
+    # A complete source-to-target rebuild is preferable, but a small number
+    # of genuinely unresolved citations must not prevent safe occurrences
+    # from being materialised when the caller has explicitly accepted that
+    # they will remain unresolved.  Those rows are still written with an
+    # unresolved status below and are never silently promoted to links.
+    apply_succeeded = apply and (allow_unresolved or not all_unresolved) and not fsma_coverage_gaps
     materialized = 0
     occurrence_rows = []
     if apply_succeeded:
@@ -1119,6 +1125,7 @@ def audit_and_apply(
     summary = {
         "apply_requested": apply,
         "applied": apply_succeeded,
+        "allow_unresolved": allow_unresolved,
         "source_nodes_scanned": len(rows),
         "citation_occurrences": len(extracted) + len(non_references),
         "genuine_citation_occurrences": len(extracted),
@@ -1171,6 +1178,11 @@ def main() -> int:
     parser.add_argument("--audit-output", type=Path, default=DEFAULT_AUDIT)
     parser.add_argument("--fetch-workers", type=int, default=4)
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument(
+        "--allow-unresolved",
+        action="store_true",
+        help="Apply safe materialisations while retaining genuinely unresolved citations as unresolved rows.",
+    )
     args = parser.parse_args()
     conn = connect(args.db)
     result = audit_and_apply(
@@ -1180,6 +1192,7 @@ def main() -> int:
         cache_root=args.cache,
         apply=args.apply,
         fetch_workers=args.fetch_workers,
+        allow_unresolved=args.allow_unresolved,
     )
     args.audit_output.parent.mkdir(parents=True, exist_ok=True)
     args.audit_output.write_text(

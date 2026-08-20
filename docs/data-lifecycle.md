@@ -22,6 +22,13 @@ search, enrichment, and reporting rows to drift apart.
   representation.
 - `node_fts` is the rulebook full-text search index.
 - `embedding` and similarity edges are optional semantic-search products.
+- `provision` nodes are date-free canonical legal identities. Text-bearing
+  `rule` nodes are dated provision versions and retain the source `part` page
+  through `has_version` and `sourced_from` edges. `document_snapshot` is the
+  immutable URL/content record used by those versions; `document_source`
+  remains the current logical-page cache.
+- `node_alias` preserves pre-versioning Rule IDs and stable keys so old links
+  can be resolved after migration.
 - `InstructionProvision`, `ReportingCoordinate`, and their projector-owned
   edges are rebuilt from `instruction`, `source_span`, template dimensions and
   exact materialized legal keys by
@@ -112,3 +119,24 @@ Taxonomy child artefacts must keep distinct source identities. Do not dedupe
 XML, XSD, or XBRL children by parent ZIP URL, inherited URL, title, or checksum
 alone. Only exact child identity rules may collapse taxonomy children, and the
 decision reason must record that exact child-path basis.
+
+## Legal identity migration
+
+Run the migration on a copied database first. The command rebuilds canonical
+and FTS projections and fails if any endpoint or identity invariant is broken:
+
+```bash
+cp backend/data/rulebook.sqlite3 backups/rulebook-pre-identity.sqlite3
+PYTHONPATH=. .venv/bin/python -m backend.app.cli \
+  --db backups/rulebook-pre-identity.sqlite3 stabilize
+PYTHONPATH=. .venv/bin/python scripts/audit_legal_identity.py \
+  --db backups/rulebook-pre-identity.sqlite3
+```
+
+The audit must report zero dated legacy Rule keys, missing canonical/version
+links, missing snapshots, stale endpoints and orphan aliases. After the copy
+passes, repeat the same `stabilize` and audit commands for
+`backend/data/rulebook.sqlite3`, then run the API smoke checks for a Part, a
+dated Rule version and the graph-analysis endpoints. The normal reader uses
+the dated version text; canonical provisions are used for identity and graph
+analysis.

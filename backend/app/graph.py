@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from collections import Counter, defaultdict, deque
 from typing import Any
@@ -12,9 +13,9 @@ from sklearn.cluster import KMeans
 from .db import row_to_edge, row_to_node
 
 EXPLICIT_METHODS = {"site_structure", "html_link", "html_anchor_resolved", "html_glossary_link", "glossary_source", "crr_terms_source", "legal_instrument_listing", "legal_reference_occurrence_v1", "reference_recall_stage_v1", "regex_reference", "regex_named_reference", "llm_extracted_reference", "resolved_part_reference", "fca_waivers_list"}
-EDGE_LABELS = {"contains":"contains / child", "references":"cross-reference", "uses_defined_term":"uses defined term", "defines":"defines", "has_topic":"topic assignment", "has_topic_cluster":"topic cluster", "has_obligation_pattern":"obligation pattern", "shares_obligation_pattern":"shared obligation pattern", "has_structured_obligation":"structured obligation", "amends":"amends", "has_permission":"firm permission"}
-EDGE_COLOURS = {"contains":"#94a3b8", "references":"#60a5fa", "uses_defined_term":"#f59e0b", "defines":"#fbbf24", "has_topic":"#c084fc", "has_topic_cluster":"#22d3ee", "has_obligation_pattern":"#fb7185", "shares_obligation_pattern":"#f97316", "has_structured_obligation":"#e11d48", "amends":"#ef4444", "has_permission":"#a78bfa"}
-MATERIAL_COLOURS = {"rule":"#4f7cff", "supervisory_statement":"#22c55e", "statement_of_policy":"#14b8a6", "definition":"#d28b24", "permission":"#a78bfa", "external_reference":"#7b8190", "legal_instrument":"#cc5c5c", "topic":"#c084fc", "topic_cluster":"#22d3ee", "obligation_pattern":"#fb7185", "obligation_statement":"#e11d48", "analysis":"#d35cff", "rulebook":"#9b6bff"}
+EDGE_LABELS = {"contains":"contains / child", "references":"cross-reference", "uses_defined_term":"uses defined term", "defines":"defines", "has_topic":"topic assignment", "has_topic_cluster":"topic cluster", "has_obligation_pattern":"obligation pattern", "shares_obligation_pattern":"shared obligation pattern", "has_structured_obligation":"structured obligation", "amends":"amends", "has_permission":"firm permission", "has_version":"provision version", "sourced_from":"source page"}
+EDGE_COLOURS = {"contains":"#94a3b8", "references":"#60a5fa", "uses_defined_term":"#f59e0b", "defines":"#fbbf24", "has_topic":"#c084fc", "has_topic_cluster":"#22d3ee", "has_obligation_pattern":"#fb7185", "shares_obligation_pattern":"#f97316", "has_structured_obligation":"#e11d48", "amends":"#ef4444", "has_permission":"#a78bfa", "has_version":"#7c3aed", "sourced_from":"#0f766e"}
+MATERIAL_COLOURS = {"rule":"#4f7cff", "provision":"#2563eb", "supervisory_statement":"#22c55e", "statement_of_policy":"#14b8a6", "definition":"#d28b24", "permission":"#a78bfa", "external_reference":"#7b8190", "legal_instrument":"#cc5c5c", "topic":"#c084fc", "topic_cluster":"#22d3ee", "obligation_pattern":"#fb7185", "obligation_statement":"#e11d48", "analysis":"#d35cff", "rulebook":"#9b6bff"}
 CLUSTER_COLOURS = ["#4f7cff", "#d28b24", "#58a978", "#d35cff", "#cc5c5c", "#35b6b4", "#d7ff64", "#a78bfa", "#fb7185", "#60a5fa", "#f59e0b", "#34d399"]
 
 
@@ -290,10 +291,8 @@ def shortest_path(conn: sqlite3.Connection, source: str, target: str, *, max_edg
 
 
 def centrality(conn: sqlite3.Connection, *, limit: int = 25) -> dict[str, Any]:
-    degree = Counter()
-    for a, b in conn.execute("SELECT from_node_id,to_node_id FROM edge"):
-        degree[a] += 1
-        degree[b] += 1
+    graph = _load_nx_graph(conn, analysis=True)
+    degree = Counter(dict(graph.degree()))
     top = degree.most_common(limit)
     nodes_by_id = {
         r["id"]: row_to_node(r)
@@ -344,18 +343,20 @@ def contents_tree(conn: sqlite3.Connection, node_id: str, *, max_depth: int = 4,
     def children(parent_id: str, depth: int) -> list[dict[str, Any]]:
         if depth >= max_depth:
             return []
+        edge_types = ("contains", "has_version") if parent_id == node_id and root_row["node_type"] == "provision" else ("contains",)
+        edge_placeholders = ",".join("?" for _ in edge_types)
         rows = conn.execute(
-            """
+            f"""
             SELECT n.id,n.node_type,n.stable_key,n.title,n.text,n.url,n.metadata_json
             FROM edge e JOIN node n ON n.id=e.to_node_id
             JOIN canonical_node cn ON cn.id=n.id AND cn.is_canonical=1
-            WHERE e.from_node_id=? AND e.edge_type='contains'
+            WHERE e.from_node_id=? AND e.edge_type IN ({edge_placeholders})
             ORDER BY
               CASE n.node_type WHEN 'chapter' THEN 0 WHEN 'rule' THEN 1 WHEN 'guidance_section' THEN 2 WHEN 'guidance_paragraph' THEN 3 ELSE 9 END,
               n.title
             LIMIT ?
             """,
-            (parent_id, max_children),
+            (parent_id, *edge_types, max_children),
         ).fetchall()
         out = []
         for row in rows:
@@ -482,6 +483,12 @@ def reader_bundle(
             node = row_to_node(row)
             nodes_by_id[node["id"]] = node
 
+    _resolve_reader_provision_versions(
+        conn,
+        nodes_by_id,
+        spine_node_ids=set(seen_spine_ids),
+        preferred_date=_reader_preferred_version_date(contents["root"], reading_source_nodes),
+    )
     nodes, edges = _roll_up_guidance_reference_nodes(
         conn,
         list(nodes_by_id.values()),
@@ -499,6 +506,74 @@ def reader_bundle(
         "reference_level": reference_depth,
         "reference_depth": reference_depth,
     }
+
+
+def _reader_preferred_version_date(
+    root: dict[str, Any],
+    source_nodes: list[dict[str, Any]],
+) -> str | None:
+    """Choose the dated source version a reader should show for canonical links."""
+
+    candidates = [root, *source_nodes]
+    for node in candidates:
+        value = (node.get("metadata") or {}).get("rulebook_date")
+        if value:
+            return str(value)
+    return None
+
+
+def _resolve_reader_provision_versions(
+    conn: sqlite3.Connection,
+    nodes_by_id: dict[str, dict[str, Any]],
+    *,
+    spine_node_ids: set[str],
+    preferred_date: str | None,
+) -> None:
+    """Give canonical reference targets the relevant dated text for reading.
+
+    Canonical provision IDs remain the graph target.  The text-bearing version
+    is only projected into the reader response, so opening a citation is useful
+    without changing graph identity or mutating the database.
+    """
+
+    for node in nodes_by_id.values():
+        if node.get("node_type") != "provision" or node.get("id") in spine_node_ids:
+            continue
+        if str(node.get("text") or "").strip():
+            continue
+        rows = conn.execute(
+            """
+            SELECT id,node_type,stable_key,title,text,url,metadata_json
+            FROM node
+            WHERE node_type='rule'
+              AND json_extract(metadata_json,'$.canonical_provision_id')=?
+            ORDER BY
+              CASE WHEN json_extract(metadata_json,'$.rulebook_date')=? THEN 0 ELSE 1 END,
+              json_extract(metadata_json,'$.rulebook_date') DESC,
+              id DESC
+            LIMIT 1
+            """,
+            (node["id"], preferred_date or ""),
+        ).fetchall()
+        if not rows:
+            continue
+        version = row_to_node(rows[0])
+        version_meta = version.get("metadata") or {}
+        node["text"] = version.get("text") or ""
+        node["url"] = version.get("url") or node.get("url") or ""
+        node["resolved_version"] = {
+            "id": version["id"],
+            "stable_key": version["stable_key"],
+            "version_date": version_meta.get("rulebook_date"),
+            "snapshot_id": version_meta.get("snapshot_id"),
+        }
+        node["metadata"] = {
+            **(node.get("metadata") or {}),
+            "resolved_version_id": version["id"],
+            "resolved_version_key": version["stable_key"],
+            "resolved_version_date": version_meta.get("rulebook_date"),
+            "resolved_snapshot_id": version_meta.get("snapshot_id"),
+        }
 
 
 def _natural_sort_content(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -563,7 +638,7 @@ def _why(edge: dict[str, Any], from_meta: dict[str, Any], to_meta: dict[str, Any
 
 
 def components(conn: sqlite3.Connection, *, limit: int = 20, max_edges: int = 250000) -> dict[str, Any]:
-    graph = _load_nx_graph(conn, max_edges=max_edges)
+    graph = _load_nx_graph(conn, max_edges=max_edges, analysis=True)
     comps = sorted(nx.connected_components(graph), key=len, reverse=True)
     return {"component_count": len(comps), "largest_size": len(comps[0]) if comps else 0, "components": [{"size": len(c), "sample": _nodes_for_ids(conn, list(c)[:8])} for c in comps[:limit]]}
 
@@ -621,23 +696,38 @@ def semantic_map(conn: sqlite3.Connection, *, level: str = "part", clusters: int
     part_rows = conn.execute(
         "SELECT id,node_type,stable_key,title,text,url,metadata_json FROM node WHERE node_type='part' ORDER BY title"
     ).fetchall()
-    parts_by_key = {r["stable_key"]: row_to_node(r) for r in part_rows}
+    parts_by_key: dict[str, dict[str, Any]] = {}
+    for row in part_rows:
+        part = row_to_node(row)
+        key = (part.get("metadata") or {}).get("canonical_part_key") or part["stable_key"]
+        previous = parts_by_key.get(key)
+        if previous is None or str(part.get("url") or "") > str(previous.get("url") or ""):
+            parts_by_key[key] = part
+    part_ids_by_key = {key: part["id"] for key, part in parts_by_key.items()}
     node_to_part: dict[str, str] = {}
     vectors_by_part: dict[str, list[np.ndarray]] = {p["id"]: [] for p in parts_by_key.values()}
 
     for row in conn.execute(
         """
-        SELECT n.id,n.stable_key,emb.vector_json
+        SELECT n.id,n.stable_key,n.metadata_json,emb.vector_json
         FROM node n JOIN embedding emb ON emb.node_id=n.id
         WHERE n.node_type='rule'
         """
     ):
-        part_key = _part_key_from_stable(row["stable_key"])
-        part = parts_by_key.get(part_key or "")
-        if not part:
+        metadata = _json(row["metadata_json"])
+        part_key = metadata.get("canonical_part_key") or _part_key_from_stable(row["stable_key"])
+        part_id = part_ids_by_key.get(part_key or "")
+        if not part_id:
             continue
-        node_to_part[row["id"]] = part["id"]
-        vectors_by_part[part["id"]].append(np.array(json.loads(row["vector_json"]), dtype="float32"))
+        node_to_part[row["id"]] = part_id
+        vectors_by_part[part_id].append(np.array(json.loads(row["vector_json"]), dtype="float32"))
+
+    for row in conn.execute("SELECT id,node_type,stable_key,metadata_json FROM node WHERE node_type IN ('rule','provision')"):
+        metadata = _json(row["metadata_json"])
+        part_key = metadata.get("canonical_part_key") or _part_key_from_stable(row["stable_key"])
+        part_id = part_ids_by_key.get(part_key or "")
+        if part_id:
+            node_to_part[row["id"]] = part_id
 
     embedding_dim = next((len(vs[0]) for vs in vectors_by_part.values() if vs), 2)
     nodes: list[dict[str, Any]] = []
@@ -807,6 +897,8 @@ def _material_type(node: dict[str, Any]) -> str:
     meta = node.get("metadata") or {}
     url = (node.get("url") or "").lower()
     doc_type = (meta.get("document_type") or "").lower()
+    if node_type == "provision":
+        return "provision"
     if node_type in {"rule", "chapter", "part", "rulebook"}:
         return "rule"
     if node_type in {"defined_term", "glossary", "crr_terms_list"}:
@@ -825,6 +917,10 @@ def _material_type(node: dict[str, Any]) -> str:
 
 
 def _part_key_from_stable(stable_key: str) -> str | None:
+    if stable_key.startswith(("provision:", "provision_version:")):
+        path = stable_key.split(":", 1)[1].split(":", 1)[0]
+        path = re.sub(r"/\d{2}-\d{2}-\d{4}$", "", path)
+        return f"part:{path}"
     parts = (stable_key or "").split(":")
     if len(parts) >= 3 and parts[1] == "part":
         return f"part:{parts[2]}"
@@ -858,12 +954,13 @@ def _cluster_labels(matrix: np.ndarray, clusters: int) -> list[int]:
 
 def _load_nx_graph(conn: sqlite3.Connection, *, max_edges: int = 250000, analysis: bool = False) -> nx.Graph:
     graph = nx.Graph()
+    identity_map = _analysis_identity_map(conn) if analysis else {}
     if analysis:
         rows = conn.execute(
             """
             SELECT id,from_node_id,to_node_id,edge_type,source_method,confidence
             FROM edge
-            WHERE edge_type NOT IN ('shares_defined_term','has_obligation_pattern')
+            WHERE edge_type NOT IN ('shares_defined_term','has_obligation_pattern','has_version','sourced_from')
             LIMIT ?
             """,
             (max_edges,),
@@ -871,8 +968,26 @@ def _load_nx_graph(conn: sqlite3.Connection, *, max_edges: int = 250000, analysi
     else:
         rows = conn.execute("SELECT id,from_node_id,to_node_id,edge_type,source_method,confidence FROM edge LIMIT ?", (max_edges,))
     for row in rows:
-        graph.add_edge(row["from_node_id"], row["to_node_id"], id=row["id"], edge_type=row["edge_type"], source_method=row["source_method"], confidence=row["confidence"])
+        from_id = identity_map.get(row["from_node_id"], row["from_node_id"])
+        to_id = identity_map.get(row["to_node_id"], row["to_node_id"])
+        if from_id == to_id:
+            continue
+        graph.add_edge(from_id, to_id, id=row["id"], edge_type=row["edge_type"], source_method=row["source_method"], confidence=row["confidence"])
     return graph
+
+
+def _analysis_identity_map(conn: sqlite3.Connection) -> dict[str, str]:
+    """Map version node IDs to canonical provision IDs for analysis only."""
+
+    mapping: dict[str, str] = {}
+    if not conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='node'").fetchone():
+        return mapping
+    for row in conn.execute("SELECT id,metadata_json FROM node"):
+        metadata = _json(row["metadata_json"])
+        target = metadata.get("canonical_provision_id")
+        if metadata.get("identity_type") == "provision_version" and target:
+            mapping[row["id"]] = str(target)
+    return mapping
 
 
 def _nodes_for_ids(conn: sqlite3.Connection, ids: list[str]) -> list[dict[str, Any]]:

@@ -162,6 +162,18 @@ def normalize_alias(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", value.casefold()).strip()
 
 
+def _strict_alias_pattern(alias: str) -> str:
+    """Match an alias while allowing whitespace, but not new punctuation.
+
+    The broad normaliser is useful for OCR and legacy prose.  It must not be
+    used for a phrase immediately following a citation, however: ``CRR ;
+    (ii)`` must not become the distinct instrument alias ``CRR II``.
+    """
+
+    pieces = re.split(r"(\s+)", alias.casefold())
+    return "".join(r"\s+" if piece.isspace() else re.escape(piece) for piece in pieces if piece)
+
+
 def qualifier_parts(value: str) -> tuple[str, ...]:
     dotted = re.match(r"\s*\.\s*([0-9][0-9A-Za-z-]*)", value or "", re.I)
     parts = [
@@ -309,11 +321,22 @@ class InstrumentRegistry:
             for item in payload["instruments"]
         )
 
-    def match_aliases(self, value: str) -> list[tuple[int, Instrument, str]]:
-        normalized = normalize_alias(value)
+    def match_aliases(
+        self,
+        value: str,
+        *,
+        strict: bool = False,
+    ) -> list[tuple[int, Instrument, str]]:
         matches: list[tuple[int, Instrument, str]] = []
         for alias, instrument, original in self._aliases:
-            match = re.search(rf"(?:^|\s){re.escape(alias)}(?:$|\s)", normalized)
+            if strict:
+                match = re.search(
+                    rf"(?<![a-z0-9]){_strict_alias_pattern(original)}(?![a-z0-9])",
+                    value.casefold(),
+                )
+            else:
+                normalized = normalize_alias(value)
+                match = re.search(rf"(?:^|\s){re.escape(alias)}(?:$|\s)", normalized)
             if match:
                 matches.append((match.start(), instrument, original))
         return sorted(matches, key=lambda item: (item[0], -len(item[2])))
@@ -521,7 +544,7 @@ def resolve_group_instrument(
     # (Northern Ireland) Order 1985”. A title beginning immediately after the
     # citation is nevertheless direct evidence and must beat an earlier Act.
     leading_after = after[:220]
-    leading_matches = registry.match_aliases(leading_after)
+    leading_matches = registry.match_aliases(leading_after, strict=True)
     leading_normalized = normalize_alias(leading_after)
     for _, instrument, evidence in leading_matches:
         evidence_normalized = normalize_alias(evidence)
@@ -554,6 +577,7 @@ def resolve_group_instrument(
             zone,
             registry,
             prefer_last=label.startswith("preceding"),
+            strict=True,
         )
         if resolved.instrument:
             return InstrumentResolution(
@@ -564,7 +588,11 @@ def resolve_group_instrument(
 
     # Bare citations in a compact definition or guidance paragraph often rely
     # on one instrument declaration elsewhere in the same atomic source text.
-    source_matches = _all_instruments(f"{source_title}\n{text}", registry)
+    source_matches = _all_instruments(
+        f"{source_title}\n{text}",
+        registry,
+        strict=True,
+    )
     unique = {instrument.instrument_id: (instrument, evidence) for _, instrument, evidence in source_matches}
     if len(unique) == 1:
         instrument, evidence = next(iter(unique.values()))
@@ -1289,8 +1317,10 @@ def _fetch_bytes(url: str) -> bytes:
 def _resolve_instrument_text(
     value: str,
     registry: InstrumentRegistry,
+    *,
+    strict: bool = False,
 ) -> InstrumentResolution:
-    candidates = _all_instruments(value, registry)
+    candidates = _all_instruments(value, registry, strict=strict)
     if candidates:
         si_identity = SI_NUMBER_RE.search(value)
         if si_identity:
@@ -1331,8 +1361,9 @@ def _nearest_instrument(
     registry: InstrumentRegistry,
     *,
     prefer_last: bool = False,
+    strict: bool = False,
 ) -> InstrumentResolution:
-    candidates = _all_instruments(value, registry)
+    candidates = _all_instruments(value, registry, strict=strict)
     if not candidates:
         return InstrumentResolution(None, "", "unresolved")
     position, instrument, evidence = candidates[-1] if prefer_last else candidates[0]
@@ -1343,6 +1374,8 @@ def _nearest_instrument(
 def _all_instruments(
     value: str,
     registry: InstrumentRegistry,
+    *,
+    strict: bool = False,
 ) -> list[tuple[int, Instrument, str]]:
     candidates: list[tuple[int, Instrument, str]] = []
     for match in EU_REGULATION_RE.finditer(value):
@@ -1418,7 +1451,7 @@ def _all_instruments(
                 evidence,
             )
         )
-    for position, instrument, evidence in registry.match_aliases(value):
+    for position, instrument, evidence in registry.match_aliases(value, strict=strict):
         candidates.append((position, instrument, evidence))
     deduped: dict[tuple[int, str], tuple[int, Instrument, str]] = {}
     for candidate in candidates:

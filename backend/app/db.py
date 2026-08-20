@@ -62,6 +62,31 @@ CREATE INDEX IF NOT EXISTS idx_reference_occurrence_edge
   ON reference_occurrence(edge_id);
 CREATE INDEX IF NOT EXISTS idx_reference_occurrence_status
   ON reference_occurrence(status);
+
+CREATE TABLE IF NOT EXISTS document_snapshot (
+  snapshot_id TEXT PRIMARY KEY,
+  source_id TEXT NOT NULL,
+  url TEXT NOT NULL,
+  fetched_at TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  raw_html TEXT NOT NULL,
+  raw_text TEXT DEFAULT '',
+  UNIQUE(url, content_hash)
+);
+
+CREATE INDEX IF NOT EXISTS idx_document_snapshot_source
+  ON document_snapshot(source_id, fetched_at);
+CREATE INDEX IF NOT EXISTS idx_document_snapshot_url
+  ON document_snapshot(url, fetched_at);
+
+CREATE TABLE IF NOT EXISTS node_alias (
+  node_id TEXT NOT NULL,
+  alias_type TEXT NOT NULL,
+  alias_value TEXT NOT NULL,
+  PRIMARY KEY(node_id, alias_type, alias_value)
+);
+
+CREATE INDEX IF NOT EXISTS idx_node_alias_node ON node_alias(node_id);
 """
 
 
@@ -123,7 +148,39 @@ def row_to_node(row: sqlite3.Row | None) -> dict[str, Any] | None:
     d = dict(row)
     meta = d.pop("metadata_json", "{}") or "{}"
     d["metadata"] = json.loads(meta)
+    identity = identity_projection(d.get("id", ""), d["metadata"])
+    if identity:
+        d["identity"] = identity
     return d
+
+
+def identity_projection(node_id: str, metadata: dict[str, Any]) -> dict[str, Any]:
+    """Expose stable legal identity fields without duplicating source text."""
+
+    identity_type = metadata.get("identity_type")
+    if not identity_type and not any(
+        metadata.get(key)
+        for key in ("canonical_provision_id", "source_page_id", "snapshot_id")
+    ):
+        return {}
+    identity: dict[str, Any] = {"identity_type": identity_type or ""}
+    if identity_type == "canonical_provision":
+        identity["canonical_provision_id"] = node_id
+    for source_key, output_key in (
+        ("canonical_provision_id", "canonical_provision_id"),
+        ("canonical_provision_key", "canonical_provision_key"),
+        ("rulebook_date", "version_date"),
+        ("source_page_id", "source_page_id"),
+        ("source_page_key", "source_page_key"),
+        ("snapshot_id", "snapshot_id"),
+        ("canonical_part_key", "canonical_part_key"),
+        ("version_key", "version_key"),
+    ):
+        if metadata.get(source_key) not in (None, ""):
+            identity[output_key] = metadata[source_key]
+    if identity_type == "source_page":
+        identity.setdefault("source_page_id", node_id)
+    return identity
 
 
 def row_to_edge(row: sqlite3.Row | None) -> dict[str, Any] | None:
