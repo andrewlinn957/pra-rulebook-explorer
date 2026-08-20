@@ -1,0 +1,10 @@
+{
+  "plan": "docs/superpowers/plans/2026-08-20-ingestion-reconciliation.md",
+  "tasks": [
+    {"id": "reconcile-tests", "title": "Add failing store-level reconciliation tests", "status": "pending"},
+    {"id": "reconcile-store", "title": "Implement run ledger, manifests and safe cleanup", "status": "pending"},
+    {"id": "reconcile-cli", "title": "Wire scraper source scopes and failure isolation", "status": "pending"},
+    {"id": "reconcile-derived", "title": "Reconcile richer derived edges", "status": "pending"},
+    {"id": "reconcile-audit", "title": "Audit, deploy and verify", "status": "pending"}
+  ]
+}

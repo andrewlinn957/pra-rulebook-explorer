@@ -20,7 +20,17 @@ from .parse import (
     extract_part,
     extract_rulebook_index,
 )
-from .store import backfill_placeholder_targets, connect, export_json, upsert_edges, upsert_nodes, upsert_source
+from .store import (
+    backfill_placeholder_targets,
+    connect,
+    export_json,
+    finish_ingestion_run,
+    record_ingestion_scope_failure,
+    record_ingestion_scope_started,
+    reconcile_source_output,
+    source_scope_key,
+    start_ingestion_run,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DB = PROJECT_ROOT / "backend" / "data" / "rulebook.sqlite3"
@@ -33,42 +43,98 @@ def command_scrape(args: argparse.Namespace) -> None:
     total_nodes = 0
     total_edges = 0
     targets = _targets(args)
+    run_id = start_ingestion_run(
+        conn,
+        command="rulebook_scrape",
+        scope={"target_count": len(targets), "refresh": bool(args.refresh)},
+    )
+    failures: list[tuple[str, str, str]] = []
     for i, (url, kind) in enumerate(targets, start=1):
-        full_url, html, fetched_at = fetch_url(url, args.raw_dir, refresh=args.refresh)
-        upsert_source(conn, source_type=kind, url=full_url, fetched_at=_normalise_time(fetched_at), raw_html=html, raw_text=BeautifulSoup(html, "lxml").get_text(" "))
-        if kind == "index":
-            nodes, edges = extract_rulebook_index(html, full_url)
-        elif kind == "glossary":
-            nodes, edges = extract_glossary(html, full_url)
-        elif kind == "crr_terms":
-            nodes, edges = extract_crr_terms(html, full_url)
-        elif kind == "guidance_index":
-            nodes, edges = extract_guidance_index(html, full_url)
-        elif kind == "guidance_detail":
-            nodes, edges = extract_guidance_detail(html, full_url)
-        elif kind == "legal_instruments":
-            nodes, edges = extract_legal_instruments_index(html, full_url)
-        else:
-            nodes, edges = extract_part(html, full_url)
-        upsert_nodes(conn, nodes)
-        upsert_edges(conn, edges)
-        backfill_placeholder_targets(conn)
-        conn.commit()
-        total_nodes += len(nodes)
-        total_edges += len(edges)
-        print(f"[{i:03d}/{len(targets):03d}] {kind:8} {full_url} -> {len(nodes)} nodes, {len(edges)} edges")
+        full_url = normalise_url(url)
+        scope_key = source_scope_key(kind, full_url)
+        record_ingestion_scope_started(
+            conn,
+            run_id=run_id,
+            scope_key=scope_key,
+            source_url=full_url,
+            source_type=kind,
+        )
+        try:
+            full_url, html, fetched_at = fetch_url(url, args.raw_dir, refresh=args.refresh)
+            raw_text = BeautifulSoup(html, "lxml").get_text(" ")
+            if kind == "index":
+                nodes, edges = extract_rulebook_index(html, full_url)
+            elif kind == "glossary":
+                nodes, edges = extract_glossary(html, full_url)
+            elif kind == "crr_terms":
+                nodes, edges = extract_crr_terms(html, full_url)
+            elif kind == "guidance_index":
+                nodes, edges = extract_guidance_index(html, full_url)
+            elif kind == "guidance_detail":
+                nodes, edges = extract_guidance_detail(html, full_url)
+            elif kind == "legal_instruments":
+                nodes, edges = extract_legal_instruments_index(html, full_url)
+            else:
+                nodes, edges = extract_part(html, full_url)
+            _assert_complete_source_output(kind, html, nodes)
+            result = reconcile_source_output(
+                conn,
+                run_id=run_id,
+                source_url=full_url,
+                source_type=kind,
+                fetched_at=_normalise_time(fetched_at),
+                raw_html=html,
+                raw_text=raw_text,
+                nodes=nodes,
+                edges=edges,
+            )
+            total_nodes += len(nodes)
+            total_edges += len(edges)
+            print(f"[{i:03d}/{len(targets):03d}] {kind:8} {full_url} -> {len(nodes)} nodes, {len(edges)} edges; reconciled {result['removed_nodes']} nodes/{result['removed_edges']} edges")
+        except Exception as exc:
+            conn.rollback()
+            error = f"{type(exc).__name__}: {exc}"
+            record_ingestion_scope_failure(conn, run_id=run_id, scope_key=scope_key, error=error)
+            failures.append((kind, full_url, error))
+            print(f"[{i:03d}/{len(targets):03d}] {kind:8} {full_url} FAILED: {error}")
         if args.sleep and i < len(targets):
             time.sleep(args.sleep)
     if args.derive:
-        counts = derive_richer_edges(conn)
-        print(f"derived richer edges: {counts}")
-    backfill_placeholder_targets(conn)
-    conn.commit()
+        if failures:
+            error = "skipped because one or more source scopes failed"
+            record_ingestion_scope_failure(conn, run_id=run_id, scope_key="derived:richer-edges", error=error)
+            failures.append(("derived", "derived:richer-edges", error))
+            print(f"derived richer edges SKIPPED: {error}")
+        else:
+            try:
+                counts = derive_richer_edges(conn, run_id=run_id)
+                print(f"derived richer edges: {counts}")
+            except Exception as exc:
+                conn.rollback()
+                error = f"{type(exc).__name__}: {exc}"
+                record_ingestion_scope_failure(conn, run_id=run_id, scope_key="derived:richer-edges", error=error)
+                failures.append(("derived", "derived:richer-edges", error))
+                print(f"derived richer edges FAILED: {error}")
+    run_status = finish_ingestion_run(conn, run_id=run_id)
     export_json(conn, args.out)
     print(f"wrote {args.db}")
     print(f"wrote {args.out}")
     print(f"scraped totals this run: {total_nodes} nodes, {total_edges} edges")
+    print(f"ingestion run: {run_id} ({run_status}); failed scopes: {len(failures)}")
     print_stats(conn)
+
+
+def _assert_complete_source_output(kind: str, html: str, nodes: list) -> None:
+    if not html or not html.strip():
+        raise ValueError("source returned empty HTML")
+    if kind == "part":
+        if not any(node.node_type == "part" for node in nodes):
+            raise ValueError("part parse did not emit its source-page node")
+        soup = BeautifulSoup(html, "lxml")
+        if soup.select(".row-block, .chapter-section") and not any(node.node_type in {"rule", "chapter"} for node in nodes):
+            raise ValueError("part parse emitted no structural provisions")
+    elif not nodes:
+        raise ValueError(f"{kind} parse emitted no nodes")
 
 
 def command_index(args: argparse.Namespace) -> None:

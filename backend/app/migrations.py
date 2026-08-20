@@ -4,7 +4,7 @@ import sqlite3
 from datetime import datetime, timezone
 
 
-LATEST_SCHEMA_VERSION = 8
+LATEST_SCHEMA_VERSION = 9
 
 
 ENRICHMENT_SCHEMA = """
@@ -32,6 +32,50 @@ CREATE INDEX IF NOT EXISTS idx_reporting_template_enrichment_prompt
   ON reporting_template_enrichment(prompt_version,input_hash);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_reporting_template_enrichment_graph_node
   ON reporting_template_enrichment(graph_node_id);
+"""
+
+
+INGESTION_RECONCILIATION_SCHEMA = """
+CREATE TABLE IF NOT EXISTS ingestion_run (
+  run_id TEXT PRIMARY KEY,
+  started_at TEXT NOT NULL,
+  completed_at TEXT,
+  status TEXT NOT NULL CHECK(status IN ('running','completed','partial','failed')),
+  command TEXT NOT NULL,
+  scope_json TEXT NOT NULL DEFAULT '{}',
+  error TEXT DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS ingestion_run_scope (
+  run_id TEXT NOT NULL,
+  scope_key TEXT NOT NULL,
+  source_url TEXT NOT NULL DEFAULT '',
+  source_type TEXT NOT NULL,
+  status TEXT NOT NULL CHECK(status IN ('running','succeeded','failed')),
+  snapshot_id TEXT,
+  node_count INTEGER NOT NULL DEFAULT 0,
+  edge_count INTEGER NOT NULL DEFAULT 0,
+  error TEXT DEFAULT '',
+  started_at TEXT NOT NULL,
+  completed_at TEXT,
+  PRIMARY KEY(run_id, scope_key)
+);
+CREATE INDEX IF NOT EXISTS idx_ingestion_run_scope_key
+  ON ingestion_run_scope(scope_key,status,completed_at);
+
+CREATE TABLE IF NOT EXISTS ingestion_output (
+  scope_key TEXT NOT NULL,
+  object_type TEXT NOT NULL CHECK(object_type IN ('node','edge')),
+  object_id TEXT NOT NULL,
+  payload_hash TEXT NOT NULL DEFAULT '',
+  run_id TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY(scope_key,object_type,object_id)
+);
+CREATE INDEX IF NOT EXISTS idx_ingestion_output_object
+  ON ingestion_output(object_type,object_id,scope_key);
+CREATE INDEX IF NOT EXISTS idx_ingestion_output_run
+  ON ingestion_output(run_id);
 """
 
 
@@ -78,6 +122,10 @@ def apply_migrations(conn: sqlite3.Connection) -> list[int]:
     if current < 8:
         _migrate_v8(conn)
         applied.append(8)
+        current = 8
+    if current < 9:
+        _migrate_v9(conn)
+        applied.append(9)
     return applied
 
 
@@ -102,6 +150,28 @@ def _migrate_v8(conn: sqlite3.Connection) -> None:
         """
     )
     conn.execute("PRAGMA user_version=8")
+    conn.commit()
+
+
+def _migrate_v9(conn: sqlite3.Connection) -> None:
+    """Track successful ingestion output so refreshes can remove stale data."""
+    conn.executescript(INGESTION_RECONCILIATION_SCHEMA)
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS schema_migration (
+          version INTEGER PRIMARY KEY,
+          name TEXT NOT NULL,
+          applied_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        INSERT OR REPLACE INTO schema_migration(version,name,applied_at)
+        VALUES (9,'ingestion_output_reconciliation',CURRENT_TIMESTAMP)
+        """
+    )
+    conn.execute("PRAGMA user_version=9")
     conn.commit()
 
 

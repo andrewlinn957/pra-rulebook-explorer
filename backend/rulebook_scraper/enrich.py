@@ -7,10 +7,16 @@ from itertools import combinations
 
 from .models import Edge, Node
 from .parse import clean_text, edge_id, extract_part, node_id
-from .store import upsert_edges, upsert_nodes
+from .store import reconcile_derived_output, upsert_edges, upsert_nodes
 
 
-def derive_richer_edges(conn: sqlite3.Connection, *, max_term_degree: int = 25, max_edges_per_term: int = 300) -> dict[str, int]:
+def derive_richer_edges(
+    conn: sqlite3.Connection,
+    *,
+    max_term_degree: int = 25,
+    max_edges_per_term: int = 300,
+    run_id: str | None = None,
+) -> dict[str, int]:
     """Derive deterministic discovery edges from the current corpus.
 
     These are intentionally conservative and explainable. They do not replace
@@ -20,8 +26,17 @@ def derive_richer_edges(conn: sqlite3.Connection, *, max_term_degree: int = 25, 
     edges.extend(_resolve_html_anchor_reference_edges(conn))
     edges.extend(_shared_defined_term_edges(conn, max_term_degree=max_term_degree, max_edges_per_term=max_edges_per_term))
     edges.extend(_same_rulebook_part_name_edges(conn))
-    upsert_edges(conn, edges)
-    conn.commit()
+    if run_id:
+        reconcile_derived_output(
+            conn,
+            run_id=run_id,
+            name="richer-edges",
+            edges=edges,
+            legacy_source_methods=("html_anchor_resolved", "html_anchor_unresolved", "derived_term_overlap", "title_match"),
+        )
+    else:
+        upsert_edges(conn, edges)
+        conn.commit()
     counts: dict[str, int] = defaultdict(int)
     for e in edges:
         counts[e.edge_type] += 1

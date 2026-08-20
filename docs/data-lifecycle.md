@@ -29,6 +29,10 @@ search, enrichment, and reporting rows to drift apart.
   remains the current logical-page cache.
 - `node_alias` preserves pre-versioning Rule IDs and stable keys so old links
   can be resolved after migration.
+- `ingestion_run`, `ingestion_run_scope`, and `ingestion_output` record the
+  latest successful output of each scraper scope. A successful refresh
+  reconciles that output and removes stale page/version nodes and
+  source-owned edges; failed scopes retain their previous live output.
 - `InstructionProvision`, `ReportingCoordinate`, and their projector-owned
   edges are rebuilt from `instruction`, `source_span`, template dimensions and
   exact materialized legal keys by
@@ -53,6 +57,28 @@ same and then checks all supported invariants.
    ```
 
 6. Do not publish or restart the service unless `check-integrity` succeeds.
+
+### Rulebook refresh reconciliation
+
+The scraper treats each fetched URL and source type as an independent scope.
+It parses the complete response before replacing that scope's manifest. Fetch
+or parse failures are recorded in the run ledger and do not prune the previous
+scope output. A successful refresh removes omitted page/version nodes and
+source-owned edges when no other scope still owns them. The corresponding
+HTML remains in `document_snapshot` and can be replayed for recovery.
+
+After a refresh, inspect the reconciliation audit before publishing the graph:
+
+```bash
+PYTHONPATH=. .venv/bin/python scripts/audit_ingestion_reconciliation.py \
+  --db backend/data/rulebook.sqlite3 \
+  --output outputs/ingestion-reconciliation-audit.json
+```
+
+Targeted `--part` or `--guidance` runs reconcile only the requested scopes.
+Use `--all-parts` when the successful Rulebook index should be authoritative
+for the complete Part catalogue. The immutable snapshot history is retained
+even when the live graph removes a stale version.
 
 The integrity gate covers foreign keys, graph endpoints, enrichment ownership,
 canonical-node coverage, and FTS coverage. Audit/LLM workflow tables remain
