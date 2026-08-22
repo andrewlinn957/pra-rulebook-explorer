@@ -97,6 +97,79 @@ def extract_rulebook_index(html: str, url: str) -> tuple[list[Node], list[Edge]]
     return nodes, edges
 
 
+
+def _li_own_text(li) -> str:
+    """Text owned by an <li>, excluding any nested <ol>/<ul> children."""
+    parts = []
+    for child in li.children:
+        name = getattr(child, "name", None)
+        if name in ("ol", "ul"):
+            continue
+        if hasattr(child, "get_text"):
+            parts.append(child.get_text(" ", strip=True))
+        else:
+            parts.append(str(child).strip())
+    return clean_text(" ".join(part for part in parts if part))
+
+
+def _extract_list_blocks(list_el, depth: int, out: list[dict]) -> None:
+    """Recursively convert an <ol>/<ul> into marker blocks."""
+    for li in list_el.find_all("li", recursive=False):
+        text = _li_own_text(li)
+        match = re.match(r"^(\([^)]{1,6}\))\s*", text)
+        marker = match.group(1).strip() if match else ""
+        body = text[match.end():] if match else text
+        out.append({"kind": "list-item", "marker": marker, "depth": depth, "text": body})
+        for nested in li.find_all(["ol", "ul"], recursive=False):
+            _extract_list_blocks(nested, depth + 1, out)
+
+
+def extract_text_blocks(container) -> list[dict] | None:
+    """Recover the source block structure of a rule body.
+
+    Returns [{kind,marker,depth,text}] honouring <p> paragraph breaks and
+    nested <ol>/<ul> numbering exactly as rendered on the PRA site, or None
+    when the body is a single plain paragraph (legacy single-text form).
+    """
+    if container is None:
+        return None
+    blocks: list[dict] = []
+    for child in container.find_all(recursive=False):
+        name = getattr(child, "name", None)
+        if name == "p":
+            txt = clean_text(child.get_text(" ", strip=True))
+            if txt:
+                blocks.append({"kind": "prose", "marker": "", "depth": 0, "text": txt})
+        elif name in ("ol", "ul"):
+            _extract_list_blocks(child, 0, blocks)
+        elif name == "br":
+            continue
+        elif name in ("div", "span"):
+            inner = extract_text_blocks(child)
+            if inner:
+                blocks.extend(inner)
+            else:
+                txt = clean_text(child.get_text(" ", strip=True))
+                if txt:
+                    blocks.append({"kind": "prose", "marker": "", "depth": 0, "text": txt})
+        elif name == "table":
+            txt = clean_text(child.get_text(" ", strip=True))
+            if txt:
+                blocks.append({"kind": "prose", "marker": "", "depth": 0, "text": "[Table] " + txt})
+    # Single prose block equals the old flat representation; signal no change.
+    if len(blocks) == 1 and blocks[0]["kind"] == "prose" and not blocks[0]["marker"]:
+        return None
+    return blocks or None
+
+
+def apply_text_blocks(rule, body_el, metadata: dict) -> dict:
+    """Attach structured blocks to rule metadata when the body has them."""
+    blocks = extract_text_blocks(body_el)
+    if blocks is not None:
+        metadata["text_blocks"] = blocks
+    return metadata
+
+
 def extract_part(html: str, url: str) -> tuple[list[Node], list[Edge]]:
     soup = BeautifulSoup(html, "lxml")
     title_el = soup.find("h1")
@@ -198,10 +271,12 @@ def extract_part(html: str, url: str) -> tuple[list[Node], list[Edge]]:
                 section_key = f":{current_chapter.stable_key.rsplit(':', 1)[-1]}"
             stable = f"rule:{part_stable}{section_key}:{rule_number}"
             display_number = _display_rule_number(rule_number, current_chapter)
+            meta = {"rule_number": rule_number, "display_number": display_number, "part_title": title, "effective_dates": DATE_RE.findall(clean_text(el.get_text(" "))), "html_id": el.get("id", "")}
+            meta = apply_text_blocks(None, body_el, meta)
             rule = Node(
                 node_id(stable), "rule", stable, display_number, text=body_text,
                 url=f"{url}#{el.get('id','')}",
-                metadata={"rule_number": rule_number, "display_number": display_number, "part_title": title, "effective_dates": DATE_RE.findall(clean_text(el.get_text(" "))), "html_id": el.get("id", "")},
+                metadata=meta,
             )
             nodes.append(rule)
             parent = current_container or current_chapter

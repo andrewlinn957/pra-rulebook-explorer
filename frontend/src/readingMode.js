@@ -169,6 +169,7 @@ export function readingSpine(contents = {}) {
         depth,
         isRoot,
         bodyText: isStructuralContainer ? '' : node.text || '',
+        sourceBlocks: isStructuralContainer ? null : (node.metadata?.text_blocks || null),
       });
     }
     for (const child of children) visit(child, depth + 1);
