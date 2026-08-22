@@ -11,6 +11,10 @@ from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 import requests
+try:
+    from safe_connect import connect
+except ImportError:
+    from scripts.safe_connect import connect
 
 ROOT = Path(__file__).resolve().parents[1]
 DB = ROOT / "backend" / "data" / "rulebook.sqlite3"
@@ -184,8 +188,7 @@ def main() -> int:
     ap.add_argument("--db", type=Path, default=DB)
     ap.add_argument("--apply", action="store_true")
     args = ap.parse_args()
-    conn = sqlite3.connect(args.db)
-    conn.row_factory = sqlite3.Row
+    conn = connect(args.db)
     summary = repair(conn, dry_run=not args.apply)
     print(json.dumps({k: v for k, v in summary.items() if not k.startswith("sample_")}, indent=2, ensure_ascii=False))
     print(f"wrote {LOG}")

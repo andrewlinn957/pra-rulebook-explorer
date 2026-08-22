@@ -8,6 +8,10 @@ import json
 import sqlite3
 from pathlib import Path
 from typing import Any
+try:
+    from safe_connect import connect
+except ImportError:
+    from scripts.safe_connect import connect
 
 
 def audit_ingestion_reconciliation(conn: sqlite3.Connection) -> dict[str, Any]:
@@ -92,7 +96,7 @@ def main() -> None:
     parser.add_argument("--db", type=Path, required=True)
     parser.add_argument("--output", type=Path, default=None)
     args = parser.parse_args()
-    conn = sqlite3.connect(args.db)
+    conn = connect(args.db)
     try:
         report = audit_ingestion_reconciliation(conn)
     finally:

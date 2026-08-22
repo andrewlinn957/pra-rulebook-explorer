@@ -121,8 +121,7 @@ def stable_id(*parts: object, length: int = 28) -> str:
 
 def connect_review(path: Path) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path, timeout=60)
-    conn.row_factory = sqlite3.Row
+    conn = connect(path, timeout=60)
     conn.execute("PRAGMA busy_timeout=30000")
     conn.executescript(SCHEMA)
     return conn
@@ -478,3 +477,8 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+try:
+    from safe_connect import connect
+except ImportError:
+    from scripts.safe_connect import connect

@@ -5,6 +5,10 @@ import json
 import sqlite3
 import sys
 from pathlib import Path
+try:
+    from safe_connect import connect
+except ImportError:
+    from scripts.safe_connect import connect
 
 ROOT = Path(__file__).resolve().parents[1]
 DB = ROOT / "backend/data/rulebook.sqlite3"
@@ -13,8 +17,7 @@ HARD_EVIDENCE_STATUSES = {"direct_text", "html_structure", "document_metadata"}
 
 
 def main() -> int:
-    conn = sqlite3.connect(DB)
-    conn.row_factory = sqlite3.Row
+    conn = connect(DB)
     checks = {
         "missing_source_method": "coalesce(source_method,'')=''",
         "missing_confidence": "confidence is null",

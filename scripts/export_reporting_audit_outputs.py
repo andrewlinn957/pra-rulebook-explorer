@@ -14,6 +14,10 @@ import sqlite3
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Iterable
+try:
+    from safe_connect import connect
+except ImportError:
+    from scripts.safe_connect import connect
 
 ROOT = Path(__file__).resolve().parents[1]
 DB = ROOT / "backend/data/rulebook.sqlite3"
@@ -303,8 +307,7 @@ ORDER BY ro.label;
 
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(DB)
-    con.row_factory = sqlite3.Row
+    con = connect(DB)
     packages = load_packages()
     codes = package_codes(packages)
 

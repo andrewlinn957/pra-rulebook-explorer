@@ -6,6 +6,10 @@ import shutil
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
+try:
+    from safe_connect import connect
+except ImportError:
+    from scripts.safe_connect import connect
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DB = ROOT / "backend" / "data" / "rulebook.sqlite3"
@@ -123,7 +127,7 @@ def backup_db(db_path: Path) -> Path:
 
 
 def run(db_path: Path, apply: bool) -> dict[str, int | str]:
-    conn = sqlite3.connect(db_path)
+    conn = connect(db_path)
     before = count_reporting_part_standard_formula_leaks(conn)
     report: dict[str, int | str] = {
         "reporting_part_standard_formula_leaks_before": before,

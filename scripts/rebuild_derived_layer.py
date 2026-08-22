@@ -27,6 +27,10 @@ sys.path.insert(0, str(ROOT))
 from backend.app.taxonomy import DERIVED_LAYERS
 from backend.app.db import configure_connection
 from backend.app.integrity import integrity_report
+try:
+    from safe_connect import connect
+except ImportError:
+    from scripts.safe_connect import connect
 
 DB = ROOT / "backend/data/rulebook.sqlite3"
 BACKUP_DIR = ROOT / "backups"
@@ -47,7 +51,7 @@ def main() -> int:
     methods = sorted(DERIVED_LAYERS[args.layer])
     now = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
-    conn = configure_connection(sqlite3.connect(DB, timeout=30))
+    conn = configure_connection(connect(DB, timeout=30))
     counts_before = {
         method: conn.execute(
             "SELECT COUNT(*) FROM edge WHERE source_method=?", (method,)

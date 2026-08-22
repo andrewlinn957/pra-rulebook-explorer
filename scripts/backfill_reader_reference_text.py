@@ -38,6 +38,10 @@ from pathlib import Path
 from typing import Any, Iterable
 from urllib.parse import urlsplit, urlunsplit
 from xml.etree import ElementTree
+try:
+    from safe_connect import connect
+except ImportError:
+    from scripts.safe_connect import connect
 
 import requests
 from bs4 import BeautifulSoup
@@ -171,8 +175,7 @@ class Resolution:
 
 
 def connect(path: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(path, timeout=60)
-    conn.row_factory = sqlite3.Row
+    conn = connect(path, timeout=60)
     conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("PRAGMA busy_timeout=60000")
     return conn

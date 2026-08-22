@@ -580,8 +580,7 @@ def stage_crr_occurrences(
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
     source_conn = connect_source(args.db)
-    review_conn = sqlite3.connect(f"file:{Path(args.review_db).resolve()}?mode=ro", uri=True)
-    review_conn.row_factory = sqlite3.Row
+    review_conn = connect(f"file:{Path(args.review_db).resolve()}?mode=ro", uri=True)
     stage = connect_stage(args.stage)
     # Reruns replace only this work-order's proposals, leaving any separately
     # reviewed stage methods intact.
@@ -690,3 +689,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 if __name__ == "__main__":
     print(json.dumps(run(build_parser().parse_args()), indent=2, ensure_ascii=False, sort_keys=True))
+
+try:
+    from safe_connect import connect
+except ImportError:
+    from scripts.safe_connect import connect

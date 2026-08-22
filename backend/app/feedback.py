@@ -43,8 +43,14 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
 
 def _append_jsonl(path: Path, item: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    import fcntl
     with path.open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(item, sort_keys=True) + "\n")
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+        try:
+            fh.write(json.dumps(item, sort_keys=True) + "\n")
+            fh.flush()
+        finally:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
 
 
 def _clean_node(node: dict[str, Any]) -> dict[str, Any]:

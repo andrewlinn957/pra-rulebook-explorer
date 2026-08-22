@@ -11,6 +11,10 @@ from __future__ import annotations
 import json
 import sqlite3
 from pathlib import Path
+try:
+    from safe_connect import connect
+except ImportError:
+    from scripts.safe_connect import connect
 
 DB = Path(__file__).resolve().parents[1] / "backend" / "data" / "rulebook.sqlite3"
 CP_URL_PATTERN = "%consultation-paper%"
@@ -21,7 +25,7 @@ def count(cur: sqlite3.Cursor, sql: str) -> int:
 
 
 def main() -> None:
-    con = sqlite3.connect(DB)
+    con = connect(DB)
     cur = con.cursor()
     cur.execute("PRAGMA foreign_keys = OFF")
     cur.execute("PRAGMA busy_timeout = 60000")

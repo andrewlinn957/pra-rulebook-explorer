@@ -102,8 +102,7 @@ def now() -> str:
 
 def connect_stage(path: Path) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path, timeout=60)
-    conn.row_factory = sqlite3.Row
+    conn = connect(path, timeout=60)
     conn.execute("PRAGMA busy_timeout=30000")
     conn.executescript(STAGE_SCHEMA)
     return conn
@@ -639,8 +638,7 @@ def stage_deterministic(
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
     source_conn = connect_source(args.db)
-    ledger = sqlite3.connect(args.ledger)
-    ledger.row_factory = sqlite3.Row
+    ledger = connect(args.ledger)
     stage = connect_stage(args.stage)
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + digest(now(), "sha1")[:8]
     stage.execute("INSERT INTO stage_run(run_id,stage_version,source_db,ledger_db,started_at) VALUES (?,?,?,?,?)", (run_id, STAGE_VERSION, str(args.db), str(args.ledger), now()))
@@ -688,3 +686,8 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+try:
+    from safe_connect import connect
+except ImportError:
+    from scripts.safe_connect import connect

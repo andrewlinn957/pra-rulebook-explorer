@@ -16,6 +16,10 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
+try:
+    from safe_connect import connect
+except ImportError:
+    from scripts.safe_connect import connect
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DB = ROOT / "backend/data/rulebook.sqlite3"
@@ -130,7 +134,7 @@ def main() -> int:
     parser.add_argument("--db", type=Path, default=DEFAULT_DB)
     parser.add_argument("--raw-root", type=Path, default=DEFAULT_RAW_ROOT)
     args = parser.parse_args()
-    conn = sqlite3.connect(args.db)
+    conn = connect(args.db)
     result = load_reporting_instruction_edges(conn, args.raw_root)
     print(json.dumps(result.__dict__, indent=2, sort_keys=True))
     return 0

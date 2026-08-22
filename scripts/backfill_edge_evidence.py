@@ -6,6 +6,10 @@ import shutil
 import sqlite3
 from datetime import datetime
 from pathlib import Path
+try:
+    from safe_connect import connect
+except ImportError:
+    from scripts.safe_connect import connect
 
 DB = Path(__file__).resolve().parents[1] / "backend/data/rulebook.sqlite3"
 RUN_ID = "legacy_evidence_backfill_20260618"
@@ -71,8 +75,7 @@ def main() -> None:
     backup = DB.with_name(f"rulebook.sqlite3.bak-edge-evidence-{ts}")
     shutil.copy2(DB, backup)
 
-    conn = sqlite3.connect(DB, timeout=60)
-    conn.row_factory = sqlite3.Row
+    conn = connect(DB, timeout=60)
     conn.execute("PRAGMA busy_timeout=60000")
     conn.execute("BEGIN IMMEDIATE")
 

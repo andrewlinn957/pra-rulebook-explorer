@@ -32,6 +32,10 @@ if str(ROOT) not in sys.path:
 
 from scripts.reference_recall_audit import connect_source, digest, normalised, source_text  # noqa: E402
 from scripts.reference_recall_stage import connect_stage, insert_stage, relationship_for_target  # noqa: E402
+try:
+    from safe_connect import connect
+except ImportError:
+    from scripts.safe_connect import connect
 
 
 DEFAULT_DB = ROOT / "backend" / "data" / "rulebook.sqlite3"
@@ -278,8 +282,7 @@ def overlaps(start: int, end: int, old_start: int, old_end: int) -> bool:
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
     source_conn = connect_source(args.db)
-    review_conn = sqlite3.connect(f"file:{args.review_db.resolve()}?mode=ro", uri=True)
-    review_conn.row_factory = sqlite3.Row
+    review_conn = connect(f"file:{args.review_db.resolve()}?mode=ro", uri=True)
     stage = connect_stage(args.stage)
     stage.execute("DELETE FROM staged_repair WHERE proposal_method=?", (METHOD,))
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-structural"

@@ -38,6 +38,10 @@ if str(ROOT) not in sys.path:
 
 from backend.app.db import DEFAULT_DB, configure_connection
 from backend.app.xlsx_layout import _select_sheet, _sheet_targets
+try:
+    from safe_connect import connect
+except ImportError:
+    from scripts.safe_connect import connect
 
 
 MAIN = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
@@ -631,7 +635,7 @@ def main() -> None:
     parser.add_argument("--include-hidden", action="store_true")
     parser.add_argument("--database", type=Path, default=DEFAULT_DB)
     args = parser.parse_args()
-    conn = configure_connection(sqlite3.connect(args.database))
+    conn = configure_connection(connect(args.database))
     try:
         result = project(conn, include_hidden=args.include_hidden)
         if args.apply:

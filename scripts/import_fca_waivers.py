@@ -13,6 +13,10 @@ import xml.etree.ElementTree as ET
 from collections import Counter, defaultdict, deque
 from pathlib import Path
 from typing import Any
+try:
+    from safe_connect import connect
+except ImportError:
+    from scripts.safe_connect import connect
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DB_PATH = PROJECT_ROOT / "backend" / "data" / "rulebook.sqlite3"
@@ -123,7 +127,6 @@ def read_xlsx_rows(path: Path) -> list[dict[str, str]]:
 
 
 def load_graph_indexes(conn: sqlite3.Connection) -> dict[str, Any]:
-    conn.row_factory = sqlite3.Row
     parts = {r["title"]: dict(r) for r in conn.execute("SELECT id,title,url FROM node WHERE node_type='part'")}
     nodes = {r["id"]: dict(r) for r in conn.execute("SELECT id,node_type,title,url FROM node")}
     children: dict[str, list[str]] = defaultdict(list)
@@ -348,8 +351,7 @@ def main() -> int:
     if args.download or not args.xlsx.exists():
         download_xlsx(args.xlsx)
     records = read_xlsx_rows(args.xlsx)
-    conn = sqlite3.connect(args.db)
-    conn.row_factory = sqlite3.Row
+    conn = connect(args.db)
     summary = import_permissions(conn, records, dry_run=args.dry_run)
     LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     LOG_PATH.write_text(json.dumps(summary, indent=2, ensure_ascii=False))

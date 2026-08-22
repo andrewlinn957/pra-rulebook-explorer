@@ -18,6 +18,10 @@ from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+try:
+    from safe_connect import connect
+except ImportError:
+    from scripts.safe_connect import connect
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DB = ROOT / "backend" / "data" / "rulebook.sqlite3"
@@ -128,10 +132,8 @@ def recommendation(
 
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
-    source_conn = sqlite3.connect(f"file:{args.db.resolve()}?mode=ro", uri=True)
-    source_conn.row_factory = sqlite3.Row
-    review_conn = sqlite3.connect(f"file:{args.review_db.resolve()}?mode=ro", uri=True)
-    review_conn.row_factory = sqlite3.Row
+    source_conn = connect(f"file:{args.db.resolve()}?mode=ro", uri=True)
+    review_conn = connect(f"file:{args.review_db.resolve()}?mode=ro", uri=True)
     nodes = {
         row["id"]: row
         for row in source_conn.execute(

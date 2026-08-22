@@ -21,6 +21,10 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+try:
+    from safe_connect import connect
+except ImportError:
+    from scripts.safe_connect import connect
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -135,8 +139,8 @@ def backup_database(db_path: Path) -> Path:
     backup_path = db_path.with_name(
         f"{db_path.name}.pre-target-reconciliation-{stamp}"
     )
-    source = sqlite3.connect(db_path)
-    destination = sqlite3.connect(backup_path)
+    source = connect(db_path)
+    destination = connect(backup_path)
     try:
         source.backup(destination)
     finally:
@@ -259,8 +263,7 @@ def apply_reconciliation(
 
 
 def run(db_path: Path, apply: bool) -> dict[str, Any]:
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
+    conn = connect(db_path)
     plan = collect_reconciliation(conn)
     report: dict[str, Any] = {
         "db": str(db_path),

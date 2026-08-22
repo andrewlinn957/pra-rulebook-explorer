@@ -9,12 +9,16 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from backend.app.canonical import rebuild_canonical_guidance  # noqa: E402
+try:
+    from safe_connect import connect
+except ImportError:
+    from scripts.safe_connect import connect
 
 DB = ROOT / "backend/data/rulebook.sqlite3"
 
 
 def main() -> None:
-    conn = sqlite3.connect(DB)
+    conn = connect(DB)
     rebuild_canonical_guidance(conn)
     conn.commit()
     checks = {

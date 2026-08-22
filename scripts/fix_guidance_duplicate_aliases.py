@@ -5,6 +5,10 @@ import shutil
 import sqlite3
 from pathlib import Path
 from datetime import datetime
+try:
+    from safe_connect import connect
+except ImportError:
+    from scripts.safe_connect import connect
 
 DB = Path(__file__).resolve().parents[1] / "backend/data/rulebook.sqlite3"
 
@@ -18,8 +22,7 @@ def main() -> None:
     backup = DB.with_name(f"rulebook.sqlite3.bak-guidance-alias-{ts}")
     shutil.copy2(DB, backup)
 
-    conn = sqlite3.connect(DB)
-    conn.row_factory = sqlite3.Row
+    conn = connect(DB)
     conn.execute("PRAGMA foreign_keys=OFF")
     conn.execute("BEGIN")
     conn.execute(

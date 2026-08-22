@@ -30,6 +30,10 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
+try:
+    from safe_connect import connect
+except ImportError:
+    from scripts.safe_connect import connect
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DB = ROOT / "backend" / "data" / "rulebook.sqlite3"
@@ -230,8 +234,7 @@ def unique_group_candidate(
 
 
 def build_recovery(args: argparse.Namespace) -> dict[str, Any]:
-    conn = sqlite3.connect(args.db)
-    conn.row_factory = sqlite3.Row
+    conn = connect(args.db)
     nodes = {
         row["id"]: node_info(row)
         for row in conn.execute("SELECT id,node_type,title,text,metadata_json FROM node")
@@ -427,7 +430,7 @@ def build_recovery(args: argparse.Namespace) -> dict[str, Any]:
 def apply_recovery(args: argparse.Namespace, audit: dict[str, Any]) -> dict[str, Any]:
     if not args.apply:
         return {"applied": False}
-    conn = sqlite3.connect(args.db, timeout=120)
+    conn = connect(args.db, timeout=120)
     conn.execute("PRAGMA busy_timeout=30000")
     applied = 0
     try:

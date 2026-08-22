@@ -7,6 +7,9 @@ from collections import deque
 from typing import Any
 
 from .db import identity_projection
+from .graph import _fts_safe_query
+
+BLOCKED_BLOB_TABLES = frozenset({"document_snapshot", "source_snapshot_version", "node_fts"})
 
 
 def unified_stats(conn: sqlite3.Connection) -> dict[str, Any]:
@@ -46,6 +49,8 @@ def unified_schema(conn: sqlite3.Connection) -> dict[str, Any]:
 
 def unified_table_rows(conn: sqlite3.Connection, table: str, *, q: str | None = None, limit: int = 100, offset: int = 0) -> dict[str, Any] | None:
     if not _valid_table(conn, table):
+        return None
+    if table.lower() in BLOCKED_BLOB_TABLES:
         return None
     quoted = _quote_ident(table)
     columns = [dict(c) for c in conn.execute(f"PRAGMA table_info({quoted})").fetchall()]
@@ -190,7 +195,7 @@ def _search_rulebook(conn: sqlite3.Connection, q: str, *, node_types: list[str] 
             WHERE node_fts MATCH ? {type_clause}
             ORDER BY score LIMIT ?
             """,
-            [f"%{q}%", q, *params, limit],
+            [f"%{q}%", _fts_safe_query(q), *params, limit],
         ).fetchall()
     except sqlite3.OperationalError:
         rows = conn.execute(

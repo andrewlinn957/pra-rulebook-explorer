@@ -6,6 +6,10 @@ import json
 import re
 import sqlite3
 from pathlib import Path
+try:
+    from safe_connect import connect
+except ImportError:
+    from scripts.safe_connect import connect
 
 ROOT = Path(__file__).resolve().parents[1]
 DB = ROOT / "backend/data/rulebook.sqlite3"
@@ -91,8 +95,7 @@ def external_target_from_evidence(evidence: str, source_title: str) -> tuple[str
 
 
 def main() -> None:
-    conn = sqlite3.connect(DB)
-    conn.row_factory = sqlite3.Row
+    conn = connect(DB)
     candidates = conn.execute(
         """
         SELECT e.*, s.title AS source_title, s.url AS source_node_url, coalesce(json_extract(s.metadata_json,'$.part_title'),'') AS source_part,

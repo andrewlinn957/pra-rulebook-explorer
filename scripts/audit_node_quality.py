@@ -6,6 +6,10 @@ import re
 import sqlite3
 from collections import defaultdict
 from pathlib import Path
+try:
+    from safe_connect import connect
+except ImportError:
+    from scripts.safe_connect import connect
 
 ROOT = Path(__file__).resolve().parents[1]
 DB = ROOT / "backend" / "data" / "rulebook.sqlite3"
@@ -21,8 +25,7 @@ def q(conn: sqlite3.Connection, sql: str, params=()):
 
 
 def main() -> int:
-    conn = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
-    conn.row_factory = sqlite3.Row
+    conn = connect(f"file:{DB}?mode=ro", uri=True, readonly=True)
     out: dict[str, object] = {}
 
     out["counts"] = {

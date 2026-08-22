@@ -30,6 +30,10 @@ from typing import Any, Iterable
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+try:
+    from safe_connect import connect
+except ImportError:
+    from scripts.safe_connect import connect
 DEFAULT_DB = ROOT / "backend" / "data" / "rulebook.sqlite3"
 DEFAULT_LEDGER = ROOT / "outputs" / "reference-recall-ledger.sqlite3"
 DEFAULT_PILOT = ROOT / "outputs" / "reference-recall-pilot.jsonl"
@@ -250,11 +254,10 @@ def table_exists(conn: sqlite3.Connection, name: str) -> bool:
 
 def connect_source(path: Path | str) -> sqlite3.Connection:
     if str(path) == ":memory:":
-        conn = sqlite3.connect(":memory:")
+        conn = connect(":memory:")
     else:
         resolved = Path(path).resolve()
-        conn = sqlite3.connect(f"file:{resolved}?mode=ro", uri=True, timeout=60)
-    conn.row_factory = sqlite3.Row
+        conn = connect(f"file:{resolved}?mode=ro", uri=True, timeout=60, readonly=True)
     conn.execute("PRAGMA query_only=ON")
     conn.execute("PRAGMA busy_timeout=30000")
     return conn
@@ -263,8 +266,7 @@ def connect_source(path: Path | str) -> sqlite3.Connection:
 def connect_ledger(path: Path | str) -> sqlite3.Connection:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path, timeout=60)
-    conn.row_factory = sqlite3.Row
+    conn = connect(path, timeout=60)
     conn.execute("PRAGMA busy_timeout=30000")
     conn.executescript(LEDGER_SCHEMA)
     return conn

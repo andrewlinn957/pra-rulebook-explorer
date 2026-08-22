@@ -199,8 +199,7 @@ def shifted_occurrence(occurrence, offset: int):
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
     source_conn = connect_source(args.db)
-    review_conn = sqlite3.connect(f"file:{args.review_db.resolve()}?mode=ro", uri=True)
-    review_conn.row_factory = sqlite3.Row
+    review_conn = connect(f"file:{args.review_db.resolve()}?mode=ro", uri=True)
     stage = connect_stage(args.stage)
     stage.execute("DELETE FROM staged_repair WHERE proposal_method=?", (METHOD,))
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-legal-context"
@@ -421,3 +420,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 if __name__ == "__main__":
     print(json.dumps(run(build_parser().parse_args()), indent=2, ensure_ascii=False, sort_keys=True))
+
+try:
+    from safe_connect import connect
+except ImportError:
+    from scripts.safe_connect import connect

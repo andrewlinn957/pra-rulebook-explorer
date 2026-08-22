@@ -6,6 +6,10 @@ import shutil
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
+try:
+    from safe_connect import connect
+except ImportError:
+    from scripts.safe_connect import connect
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DB = ROOT / "backend" / "data" / "rulebook.sqlite3"
@@ -95,8 +99,7 @@ def backup_db(db_path: Path) -> Path:
 
 
 def run(db_path: Path, apply: bool) -> dict[str, int | str]:
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
+    conn = connect(db_path)
     before_edges = conn.execute("SELECT COUNT(*) FROM edge").fetchone()[0]
     exact_before = count_exact_duplicates(conn)
     html_regex_before = count_html_regex_reference_duplicates(conn)

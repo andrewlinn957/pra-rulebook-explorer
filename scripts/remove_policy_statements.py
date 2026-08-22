@@ -13,6 +13,10 @@ import json
 import re
 import sqlite3
 from pathlib import Path
+try:
+    from safe_connect import connect
+except ImportError:
+    from scripts.safe_connect import connect
 
 DB = Path(__file__).resolve().parents[1] / "backend" / "data" / "rulebook.sqlite3"
 
@@ -50,7 +54,7 @@ def count(cur: sqlite3.Cursor, sql: str) -> int:
 
 
 def main() -> None:
-    con = sqlite3.connect(DB)
+    con = connect(DB)
     con.create_function("REGEXP", 2, lambda pattern, value: 1 if re.search(pattern, value or "") else 0)
     cur = con.cursor()
     cur.execute("PRAGMA foreign_keys = OFF")

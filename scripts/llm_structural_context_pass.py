@@ -38,6 +38,10 @@ from typing import Any, Iterable
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+try:
+    from safe_connect import connect
+except ImportError:
+    from scripts.safe_connect import connect
 
 from scripts.reference_recall_audit import connect_source, digest, json_load, normalised, source_text  # noqa: E402
 from scripts.reference_recall_stage import (  # noqa: E402
@@ -171,8 +175,7 @@ def approx_tokens(value: str) -> int:
 
 def connect_output(path: Path) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path, timeout=120)
-    conn.row_factory = sqlite3.Row
+    conn = connect(path, timeout=120)
     conn.execute("PRAGMA busy_timeout=30000")
     conn.executescript(CONTEXT_SCHEMA)
     return conn
@@ -366,10 +369,8 @@ def _merge_ranges(ranges: Iterable[tuple[int, int]]) -> list[tuple[int, int]]:
 
 
 def load_queue(review_path: Path, ledger_path: Path) -> list[dict[str, Any]]:
-    review = sqlite3.connect(f"file:{review_path.resolve()}?mode=ro", uri=True)
-    review.row_factory = sqlite3.Row
-    ledger = sqlite3.connect(f"file:{ledger_path.resolve()}?mode=ro", uri=True)
-    ledger.row_factory = sqlite3.Row
+    review = connect(f"file:{review_path.resolve()}?mode=ro", uri=True)
+    ledger = connect(f"file:{ledger_path.resolve()}?mode=ro", uri=True)
     try:
         gaps = {row["candidate_id"]: row for row in ledger.execute("SELECT * FROM reference_gap")}
         out: list[dict[str, Any]] = []

@@ -25,6 +25,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from backend.app.migrations import apply_migrations
+try:
+    from safe_connect import connect
+except ImportError:
+    from scripts.safe_connect import connect
 
 
 DB_PATH = PROJECT_ROOT / "backend/data/rulebook.sqlite3"
@@ -350,8 +354,7 @@ def rebuild(*, download_missing: bool) -> dict[str, int]:
     response = requests.get(SOURCE_PAGE, timeout=90, headers=HTTP_HEADERS)
     response.raise_for_status()
     soup = BeautifulSoup(response.text, "html.parser")
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = connect(DB_PATH)
     conn.execute("PRAGMA foreign_keys=ON")
     apply_migrations(conn)
     conn.execute("DELETE FROM reporting_return_artifact")

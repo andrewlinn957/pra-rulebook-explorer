@@ -30,6 +30,17 @@ def stats(conn: sqlite3.Connection) -> dict[str, Any]:
     }
 
 
+def _fts_safe_query(q: str) -> str:
+    """Escape user input for FTS5 MATCH.
+
+    Wraps the query in double quotes so FTS5 treats it as a phrase rather than
+    interpreting NEAR, column filters, * and other syntax. Internal double
+    quotes are doubled per the SQLite string-literal convention.
+    """
+    escaped = q.replace('"', '""')
+    return f'"{escaped}"'
+
+
 def search(conn: sqlite3.Connection, q: str, *, node_types: list[str] | None = None, limit: int = 25) -> list[dict[str, Any]]:
     params: list[Any] = []
     type_clause = ""
@@ -46,7 +57,7 @@ def search(conn: sqlite3.Connection, q: str, *, node_types: list[str] | None = N
             WHERE node_fts MATCH ? {type_clause}
             ORDER BY score LIMIT ?
             """,
-            [f"%{q}%", q, *params, limit],
+            [f"%{q}%", _fts_safe_query(q), *params, limit],
         ).fetchall()
     except sqlite3.OperationalError:
         rows = conn.execute(

@@ -40,6 +40,10 @@ from urllib.request import Request, urlopen
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+try:
+    from safe_connect import connect
+except ImportError:
+    from scripts.safe_connect import connect
 
 from backend.rulebook_scraper.legal_references import (  # noqa: E402
     DEFAULT_INSTRUMENT_REGISTRY,
@@ -3824,8 +3828,7 @@ def apply_outcomes(
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
     db = Path(args.db)
-    conn = sqlite3.connect(db, timeout=120)
-    conn.row_factory = sqlite3.Row
+    conn = connect(db, timeout=120)
     conn.execute("PRAGMA busy_timeout=30000")
     ensure_resolution_columns(conn)
     registry = InstrumentRegistry.load(args.instrument_registry)

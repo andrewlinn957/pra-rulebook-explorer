@@ -100,8 +100,7 @@ def now() -> str:
 
 
 def connect_ledger(path: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(f"file:{path.resolve()}?mode=ro", uri=True, timeout=60)
-    conn.row_factory = sqlite3.Row
+    conn = connect(f"file:{path.resolve()}?mode=ro", uri=True, timeout=60)
     conn.execute("PRAGMA query_only=ON")
     conn.execute("PRAGMA busy_timeout=30000")
     return conn
@@ -109,8 +108,7 @@ def connect_ledger(path: Path) -> sqlite3.Connection:
 
 def connect_review(path: Path) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path, timeout=60)
-    conn.row_factory = sqlite3.Row
+    conn = connect(path, timeout=60)
     conn.execute("PRAGMA busy_timeout=30000")
     conn.executescript(REVIEW_SCHEMA)
     return conn
@@ -354,3 +352,8 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+try:
+    from safe_connect import connect
+except ImportError:
+    from scripts.safe_connect import connect

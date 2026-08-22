@@ -46,8 +46,7 @@ def stable_id(*parts: object, length: int = 24) -> str:
 
 
 def connect_writable(path: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(path, timeout=60)
-    conn.row_factory = sqlite3.Row
+    conn = connect(path, timeout=60)
     conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("PRAGMA busy_timeout=30000")
     return conn
@@ -367,3 +366,8 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+try:
+    from safe_connect import connect
+except ImportError:
+    from scripts.safe_connect import connect

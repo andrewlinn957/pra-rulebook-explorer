@@ -12,6 +12,10 @@ from pathlib import Path
 from typing import Any, Iterable
 
 import requests
+try:
+    from safe_connect import connect
+except ImportError:
+    from scripts.safe_connect import connect
 
 ROOT = Path(__file__).resolve().parents[1]
 DB = ROOT / "backend/data/rulebook.sqlite3"
@@ -147,8 +151,7 @@ def iter_snippets(text: str) -> Iterable[str]:
 
 
 def collect_candidates(db: Path = DB) -> list[dict[str, Any]]:
-    conn = sqlite3.connect(db)
-    conn.row_factory = sqlite3.Row
+    conn = connect(db)
     rows: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
     for r in conn.execute(NODE_QUERY):

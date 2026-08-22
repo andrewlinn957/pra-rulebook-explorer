@@ -30,6 +30,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree as ET
+try:
+    from safe_connect import connect
+except ImportError:
+    from scripts.safe_connect import connect
 
 ROOT = Path(__file__).resolve().parents[1]
 DB = ROOT / "backend/data/rulebook.sqlite3"
@@ -170,7 +174,7 @@ def title_for_code(code: str, docs: list[sqlite3.Row]) -> str:
 
 class Builder:
     def __init__(self) -> None:
-        self.conn = sqlite3.connect(DB)
+        self.conn = connect(DB)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA foreign_keys=ON")
         self.counts = Counter()

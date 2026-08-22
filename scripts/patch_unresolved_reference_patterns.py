@@ -4,6 +4,10 @@ import json, re, shutil, sqlite3
 from collections import defaultdict, Counter
 from datetime import datetime, timezone
 from pathlib import Path
+try:
+    from safe_connect import connect
+except ImportError:
+    from scripts.safe_connect import connect
 
 DB=Path('backend/data/rulebook.sqlite3')
 PREF=['rule','part','chapter','guidance_paragraph','guidance_section','guidance_document','reporting_obligation','template','data_item','defined_term']
@@ -42,7 +46,7 @@ def choose(cands,title='',prefer_doc=False):
 def main():
     backup=DB.with_suffix(DB.suffix+f'.bak-patterns-{datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")}')
     shutil.copy2(DB,backup)
-    conn=sqlite3.connect(DB); conn.row_factory=sqlite3.Row
+    conn=connect(DB); conn.row_factory=sqlite3.Row
     placeholders=conn.execute("""SELECT * FROM node WHERE node_type IN ('external_reference','rule_reference') AND json_extract(metadata_json,'$.placeholder')=1 AND id IN (SELECT to_node_id FROM edge WHERE edge_type='references')""").fetchall()
     real=conn.execute("SELECT * FROM node WHERE COALESCE(json_extract(metadata_json,'$.placeholder'),0)!=1").fetchall()
     by_url=defaultdict(list); by_base=defaultdict(list); by_slug=defaultdict(list)

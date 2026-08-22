@@ -38,6 +38,10 @@ from backend.rulebook_scraper.legal_references import (
     provision_path_for,
 )
 from backend.rulebook_scraper.store import SCHEMA as LEGACY_SCHEMA
+try:
+    from safe_connect import connect
+except ImportError:
+    from scripts.safe_connect import connect
 
 
 DEFAULT_DB = PROJECT_ROOT / "backend" / "data" / "rulebook.sqlite3"
@@ -115,7 +119,7 @@ ARTICLE16_REPLACEMENTS = [
 
 
 def connect(path: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(path, timeout=60)
+    conn = connect(path, timeout=60)
     configure_connection(conn)
     conn.executescript(LEGACY_SCHEMA)
     return conn

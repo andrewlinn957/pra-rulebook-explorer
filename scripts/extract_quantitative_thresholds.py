@@ -4,6 +4,10 @@ import csv, json, re, sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
+try:
+    from safe_connect import connect
+except ImportError:
+    from scripts.safe_connect import connect
 
 DB = Path('backend/data/rulebook.sqlite3')
 OUT = Path('outputs/quantitative-thresholds/quantitative-threshold-report-full.csv')
@@ -142,7 +146,7 @@ def match_types(s: str):
 
 
 def main():
-    conn=sqlite3.connect(DB); conn.row_factory=sqlite3.Row
+    conn=connect(DB); conn.row_factory=sqlite3.Row
     seen=set(); rows=[]
     for src in sources(conn):
         for snip in snippets(src.text):

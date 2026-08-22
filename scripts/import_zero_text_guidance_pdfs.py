@@ -11,6 +11,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from pypdf import PdfReader
+try:
+    from safe_connect import connect
+except ImportError:
+    from scripts.safe_connect import connect
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DB = ROOT / "backend/data/rulebook.sqlite3"
@@ -111,7 +115,6 @@ def segment_pages(pages: list[dict], max_chars: int = 1800) -> list[dict]:
 
 
 def zero_text_downloaded_docs(conn: sqlite3.Connection, manifest: dict) -> list[sqlite3.Row]:
-    conn.row_factory=sqlite3.Row
     q = """
     with gp as (
       select d.id doc_id, p.id para_id
@@ -141,7 +144,6 @@ def zero_text_downloaded_docs(conn: sqlite3.Connection, manifest: dict) -> list[
 
 
 def downloaded_docs(conn: sqlite3.Connection, manifest: dict) -> list[sqlite3.Row]:
-    conn.row_factory=sqlite3.Row
     rows=[]
     for r in conn.execute("select * from node where node_type='guidance_document' order by title"):
         item=manifest.get(r["id"])
@@ -402,7 +404,7 @@ def main():
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     manifest_items=json.loads(args.manifest.read_text(encoding="utf-8"))
     manifest={i["node_id"]: i for i in manifest_items}
-    conn=sqlite3.connect(args.db); conn.row_factory=sqlite3.Row
+    conn=connect(args.db); conn.row_factory=sqlite3.Row
     if args.node_id:
         wanted=set(args.node_id)
         docs=[]

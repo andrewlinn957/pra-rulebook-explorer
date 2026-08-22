@@ -108,8 +108,7 @@ def residual_records(
     max_window_chars: int,
 ) -> tuple[dict[tuple[str, str], list[dict[str, Any]]], dict[str, Any]]:
     source_conn = connect_source(db)
-    review_conn = sqlite3.connect(f"file:{review_db.resolve()}?mode=ro", uri=True)
-    review_conn.row_factory = sqlite3.Row
+    review_conn = connect(f"file:{review_db.resolve()}?mode=ro", uri=True)
     registry = InstrumentRegistry.load(registry_path)
     rules = json.loads(overrides_path.read_text(encoding="utf-8"))["rules"]
 
@@ -277,7 +276,6 @@ def apply_targets_and_stage(
 ) -> tuple[int, int]:
     registry = InstrumentRegistry.load(registry_path)
     conn = connect_writable(db)
-    conn.row_factory = sqlite3.Row
     conn.execute("BEGIN IMMEDIATE")
     try:
         for (instrument_id, provision_path), official in fetched.items():
@@ -442,3 +440,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 if __name__ == "__main__":
     print(json.dumps(run(build_parser().parse_args()), indent=2, ensure_ascii=False, sort_keys=True))
+
+try:
+    from safe_connect import connect
+except ImportError:
+    from scripts.safe_connect import connect

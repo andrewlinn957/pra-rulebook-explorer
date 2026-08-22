@@ -9,6 +9,10 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
+try:
+    from safe_connect import connect
+except ImportError:
+    from scripts.safe_connect import connect
 
 ROOT = Path(__file__).resolve().parents[1]
 DB = ROOT / "backend/data/rulebook.sqlite3"
@@ -188,8 +192,7 @@ def audit_edges(conn):
 
 
 def main():
-    conn = sqlite3.connect(DB)
-    conn.row_factory = sqlite3.Row
+    conn = connect(DB)
     by_html, by_url_prefix, all_ids = load_nodes(conn)
     part_counts, part_issues = audit_parts(conn, by_html)
     guidance_counts, guidance_issues = audit_guidance(conn, by_html, by_url_prefix)

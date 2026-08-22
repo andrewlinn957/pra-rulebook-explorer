@@ -15,6 +15,10 @@ from pathlib import Path
 from typing import Any
 
 import requests
+try:
+    from safe_connect import connect
+except ImportError:
+    from scripts.safe_connect import connect
 
 ROOT = Path(__file__).resolve().parents[1]
 DB = ROOT / "backend/data/rulebook.sqlite3"
@@ -63,7 +67,7 @@ def h(*parts: Any) -> str:
 
 class Extractor:
     def __init__(self) -> None:
-        self.conn = sqlite3.connect(DB)
+        self.conn = connect(DB)
         self.conn.row_factory = sqlite3.Row
         self.nodes: dict[str, Node] = {}
         self.edges: dict[str, Edge] = {}
@@ -390,7 +394,7 @@ def check_cor011_parity(db: Path | None = None) -> dict[str, Any]:
     except ModuleNotFoundError:
         from build_reporting_graph_packages import mandatory_cor011_edge_specs
 
-    conn = sqlite3.connect(db or DB)
+    conn = connect(db or DB)
     try:
         actual_edges = {
             (source, edge_type, target)

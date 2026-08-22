@@ -19,6 +19,10 @@ from backend.app.migrations import apply_migrations
 
 from bs4 import BeautifulSoup
 from pypdf import PdfReader
+try:
+    from safe_connect import connect
+except ImportError:
+    from scripts.safe_connect import connect
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DB_PATH = PROJECT_ROOT / "backend/data/rulebook.sqlite3"
@@ -79,7 +83,7 @@ class Counters:
 
 class Loader:
     def __init__(self) -> None:
-        self.conn = sqlite3.connect(DB_PATH)
+        self.conn = connect(DB_PATH)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA foreign_keys=ON")
         self.c = Counters()
