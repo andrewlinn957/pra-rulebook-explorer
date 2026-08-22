@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse
 
 from .db import DEFAULT_DB, connect, ensure_indexes, get_node
 from .feedback import create_feedback, list_feedback
+from .reported_issues import create_issue, list_issues, update_issue_status
 from .analysis_cache import get_or_compute
 from .graph import common_neighbours, contents_tree, interesting, list_nodes, neighbourhood, reader_bundle, search, semantic_map, shortest_path, stats
 from .reporting import (
@@ -121,6 +122,51 @@ async def api_node_feedback(request: Request) -> dict:
     page_url = str(payload.get("page_url", ""))
     try:
         item = create_feedback(PROJECT_ROOT, node=node, feedback=feedback, page_url=page_url)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "item": item}
+
+
+@app.get("/issues")
+def api_list_issues(status: str | None = None) -> dict:
+    return list_issues(PROJECT_ROOT, status=status)
+
+
+@app.post("/issues/node")
+async def api_create_issue(request: Request) -> dict:
+    try:
+        payload = await request.json()
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Request body must be valid JSON") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Request body must be a JSON object")
+    node = payload.get("node") or {}
+    description = str(payload.get("description", ""))
+    page_url = str(payload.get("page_url", ""))
+    context = str(payload.get("context", ""))
+    try:
+        item = create_issue(
+            PROJECT_ROOT,
+            node=node,
+            description=description,
+            page_url=page_url,
+            context=context,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "item": item}
+
+
+@app.post("/issues/{issue_id}/status")
+async def api_update_issue_status(issue_id: str, request: Request) -> dict:
+    try:
+        payload = await request.json()
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Request body must be valid JSON") from exc
+    status = str(payload.get("status", "")).strip()
+    note = str(payload.get("note", "")).strip()
+    try:
+        item = update_issue_status(PROJECT_ROOT, issue_id=issue_id, status=status, note=note)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True, "item": item}

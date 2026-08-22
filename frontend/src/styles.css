@@ -1264,3 +1264,11 @@ button{cursor:pointer}
   .inline-legal-reference{grid-column:1/-1;margin-left:10px}
   .reader-reference-index>div{grid-column:2}
 }
+
+/* Issue reporting */
+.report-issue-btn{display:inline-flex;align-items:center;gap:.4rem;margin-top:.6rem;padding:.45rem .8rem;border:1px solid var(--border,#cbd5e1);border-radius:8px;background:transparent;color:inherit;font:inherit;font-size:.82rem;cursor:pointer;transition:background .15s,border-color .15s}
+.report-issue-btn:hover{background:rgba(148,163,184,.12);border-color:#94a3b8}
+.reader-header-actions{display:flex;align-items:center;gap:.5rem;margin-left:auto}
+.issue-report-modal .issue-context-note{margin:.4rem 0 0;font-size:.78rem;color:#64748b}
+.issue-report-modal .modal-actions button.issue-saved{background:#16a34a;border-color:#16a34a;color:white}
+.feedback-editor textarea{min-height:90px;resize:vertical}

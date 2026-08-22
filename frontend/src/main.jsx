@@ -113,9 +113,10 @@ function App(){
   const [graphExpanded,setGraphExpanded]=useState(false);
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
-  const [feedbackNode,setFeedbackNode]=useState(null);
-  const [feedbackText,setFeedbackText]=useState('');
-  const [feedbackSaving,setFeedbackSaving]=useState(false);
+  const [issueReportNode,setIssueReportNode]=useState(null);
+  const [issueText,setIssueText]=useState('');
+  const [issueSaving,setIssueSaving]=useState(false);
+  const [issueSaved,setIssueSaved]=useState(false);
   const [readingNode,setReadingNode]=useState(null);
 
   const typesKey=useMemo(()=>[...types].sort().join('|'),[types]);
@@ -212,16 +213,18 @@ function App(){
   const showPartAudienceFilters=!railContext&&results.some(r=>r.node_type==='part'&&partAudienceCategories(r).length);
   const railResults=useMemo(()=>showPartAudienceFilters?results.filter(r=>partAudienceFilter==='all'||partAudienceCategories(r).includes(partAudienceFilter)):results,[results,showPartAudienceFilters,partAudienceFilter]);
   const selectedEdges=useMemo(()=>visibleGraph.edges.filter(e=>detail&&(e.from_node_id===detail.id||e.to_node_id===detail.id)),[visibleGraph,detail]);
-  async function submitNodeFeedback(e){
-    e?.preventDefault();
-    if(!feedbackNode || !feedbackText.trim()) return;
-    setFeedbackSaving(true); setError('');
+  async function submitIssueReport(nodeOverride){
+    const node=nodeOverride||issueReportNode;
+    if(!node) return;
+    setIssueSaving(true); setError('');
     try{
-      const res=await fetch(API_BASE+'/feedback/node',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({node:feedbackNode,feedback:feedbackText.trim(),page_url:window.location.href})});
+      const description=(typeof nodeOverride==='string'?issueText:issueText).trim();
+      const res=await fetch(API_BASE+'/issues/node',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({node,description,page_url:window.location.href,context:readingNode?'reading_mode':'graph_view'})});
       if(!res.ok) throw new Error(await responseErrorText(res));
-      setFeedbackNode(null); setFeedbackText('');
+      setIssueReportNode(null); setIssueText(''); setIssueSaved(true);
+      setTimeout(()=>setIssueSaved(false),2500);
     }catch(err){ setError(err.message||String(err)); }
-    finally{ setFeedbackSaving(false); }
+    finally{ setIssueSaving(false); }
   }
 
   function toggleNodeType(t){
@@ -288,31 +291,34 @@ function App(){
     </aside>
 
     <main className="canvas">
-      {readingNode?<ProvisionReader rootNode={readingNode} api={api} onClose={()=>setReadingNode(null)}/>:view==='reporting'?<ReportingGraphView onFeedback={n=>{setFeedbackNode(n);setFeedbackText('');}}/>:<>
+      {readingNode?<ProvisionReader rootNode={readingNode} api={api} onClose={()=>setReadingNode(null)} onReportIssue={n=>{setIssueReportNode(n);setIssueText('');}}/>:view==='reporting'?<ReportingGraphView onFeedback={n=>{setIssueReportNode(n);setIssueText('');}}/>:<>
         <div className="canvas-meta"><strong>{selected?.title||'Select a node'}</strong><span>{activeRep.label} · {visibleGraph.nodes.length} shown · {visibleGraph.edges.length} visible links · {Object.values(graph.available_edge_types||{}).reduce((a,b)=>a+b,0)} direct links available</span><button className="expand-graph" onClick={()=>setGraphExpanded(v=>!v)}>{graphExpanded?'Collapse graph':'Expand graph'}</button></div>
-        <Graph graph={visibleGraph} selected={selected} detail={detail} nodeTypes={nodeTypes} relationshipTypes={types} relationshipFilters={relationshipFilters} availableEdgeTypes={graph.available_edge_types||{}} onToggleNodeType={toggleNodeType} onToggleRelationship={toggleType} onSelect={n=>{setDetail(n);setPanelOpen(true);}} onOpen={n=>choose(n,{drill:true})} onFeedback={n=>{setFeedbackNode(n);setFeedbackText('');}}/>
+        <Graph graph={visibleGraph} selected={selected} detail={detail} nodeTypes={nodeTypes} relationshipTypes={types} relationshipFilters={relationshipFilters} availableEdgeTypes={graph.available_edge_types||{}} onToggleNodeType={toggleNodeType} onToggleRelationship={toggleType} onSelect={n=>{setDetail(n);setPanelOpen(true);}} onOpen={n=>choose(n,{drill:true})} onFeedback={n=>{setIssueReportNode(n);setIssueText('');}}/>
       </>}
     </main>
 
     <aside className={panelOpen?'inspector open':'inspector'}>
-      <Explore node={detail} edges={selectedEdges} graph={graph} onChoose={choose} onRead={openReadingMode}/>
+      <Explore node={detail} edges={selectedEdges} graph={graph} onChoose={choose} onRead={openReadingMode} onReportIssue={n=>{setIssueReportNode(n);setIssueText('');}}/>
     </aside>
-    {feedbackNode&&<NodeFeedbackModal node={feedbackNode} text={feedbackText} setText={setFeedbackText} saving={feedbackSaving} onClose={()=>setFeedbackNode(null)} onSubmit={submitNodeFeedback}/>}  
+    {issueReportNode&&<IssueReportModal node={issueReportNode} text={issueText} setText={setIssueText} saving={issueSaving} saved={issueSaved} context={readingNode?'reading_mode':'graph_view'} onClose={()=>setIssueReportNode(null)} onSubmit={submitIssueReport}/>}
   </div>;
 }
 
-function NodeFeedbackModal({node,text,setText,saving,onClose,onSubmit}){
-  return <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Provide feedback on this node">
-    <form className="node-feedback-modal" onSubmit={onSubmit}>
-      <div className="modal-head"><div><span className="eyebrow">Node feedback</span><h3>Provide feedback on this node</h3></div><button type="button" onClick={onClose} aria-label="Close">×</button></div>
-      <div className="feedback-node-summary"><span>{label(node.node_type)}</span><strong>{displayNodeTitle(node)}</strong>{node.url&&<a href={node.url} target="_blank" rel="noopener noreferrer">Open source</a>}</div>
-      <label className="feedback-editor">What should Declan fix or investigate?<textarea value={text} onChange={e=>setText(e.target.value)} placeholder="Example: this node should link to SS3/18, but the reference is missing." autoFocus/></label>
-      <div className="modal-actions"><button type="button" onClick={onClose}>Cancel</button><button type="submit" disabled={saving||!text.trim()}>{saving?'Saving…':'Add to feedback queue'}</button></div>
+function IssueReportModal({node,text,setText,saving,saved,context,onClose,onSubmit}){
+  return <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Report an issue with this node" onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+    <form className="node-feedback-modal issue-report-modal" onSubmit={e=>{e.preventDefault();onSubmit();}}>
+      <div className="modal-head"><div><span className="eyebrow">Report an issue</span><h3>Report an issue with this node</h3></div><button type="button" onClick={onClose} aria-label="Close">×</button></div>
+      <div className="feedback-node-summary"><span>{label(node.node_type)}</span><strong>{displayNodeTitle(node)}</strong>{node.url&&<a href={node.url} target="_blank" rel="noopener noreferrer">Open source ↗</a>}</div>
+      <label className="feedback-editor">Describe the issue (optional)<textarea value={text} onChange={e=>setText(e.target.value)} placeholder="Example: this node should link to SS3/18, but the reference is missing." autoFocus/></label>
+      <p className="muted issue-context-note">{context==='reading_mode'?'Reported from reading mode.':'Reported from graph view.'}</p>
+      <div className="modal-actions">
+        <button type="button" onClick={onClose}>Cancel</button>
+        <button type="submit" disabled={saving||saved} className={saved?'issue-saved':''}>{saved?'✓ Reported':saving?'Saving…':'Submit report'}</button>
+      </div>
     </form>
   </div>;
 }
-
-function ProvisionReader({rootNode,api,onClose}){
+function ProvisionReader({rootNode,api,onClose,onReportIssue}){
   const [root,setRoot]=useState(rootNode);
   const [referenceDepth,setReferenceDepth]=useState(1);
   const [contents,setContents]=useState({root:null,children:[]});
@@ -485,9 +491,12 @@ function ProvisionReader({rootNode,api,onClose}){
     <header className="provision-reader-header">
       <button type="button" className="provision-reader-back" onClick={onClose}>← Graph</button>
       <div><span>Reading mode</span><strong>{displayNodeTitle(root)}</strong></div>
-      <button type="button" className="reference-shelf-toggle" onClick={()=>setMobileShelfOpen(true)}>
-        Pinned references <b>{pinnedReferences.length}</b>
-      </button>
+      <div className="reader-header-actions">
+        <button type="button" className="report-issue-btn reader-report-btn" onClick={()=>onReportIssue?.(root)}>⚑ Report an issue with this node</button>
+        <button type="button" className="reference-shelf-toggle" onClick={()=>setMobileShelfOpen(true)}>
+          Pinned references <b>{pinnedReferences.length}</b>
+        </button>
+      </div>
     </header>
     <div className="provision-reader-layout">
       <main className="provision-reading-scroll" ref={readingScrollRef}>
@@ -1378,7 +1387,7 @@ function ReportingGraphInfo({node,catalogDetail,edges,graph,onSelect,onFeedback}
     {isRoot&&<><ReportingInfoLinks title="Templates" items={templates}/><ReportingInfoLinks title="Instructions" items={instructions}/></>}
     {!isRoot&&links.length>0&&<Collapsible title="Source files" count={`${links.length}`} open><div className="source-link-list">{links.slice(0,12).map(link=><a key={link.url} href={link.url} target="_blank" rel="noopener noreferrer"><span>{link.kind}</span><strong>{link.label}</strong><em>Open source ↗</em></a>)}</div></Collapsible>}
     {edges.length>0&&<Collapsible title="Connected nodes" count={`${edges.length}`} open><div className="edge-list">{edges.slice(0,30).map(edge=>{const other=neighbours.get(edge.from_node_id===node.id?edge.to_node_id:edge.from_node_id);return <button key={edge.id} type="button" onClick={()=>other&&onSelect(other)}><span>{relationLabel(edge.edge_type)}</span><strong>{displayNodeTitle(other||{})}</strong></button>})}</div></Collapsible>}
-    <button className="reporting-info-feedback" onClick={()=>onFeedback(node)}>Flag an issue with this node</button>
+    <button className="reporting-info-feedback" onClick={()=>onFeedback(node)}>⚑ Report an issue with this node</button>
   </div>;
 }
 
@@ -1820,8 +1829,8 @@ function parallelEdgeKey(edge){
   return `${a}→${b}→${edge.edge_type||''}`;
 }
 
-function Explore({node,edges,graph,onChoose,onRead}){
-  return <div className="pane explore-pane"><Evidence node={node} edges={edges} graph={graph} onChoose={onChoose} onRead={onRead}/></div>;
+function Explore({node,edges,graph,onChoose,onRead,onReportIssue}){
+  return <div className="pane explore-pane"><Evidence node={node} edges={edges} graph={graph} onChoose={onChoose} onRead={onRead} onReportIssue={onReportIssue}/></div>;
 }
 function ContentNode({node,onChoose}){
   const kids=node.children||[];
@@ -1836,7 +1845,7 @@ function ContentNode({node,onChoose}){
   </div>;
 }
 
-function Evidence({node,edges,graph,onChoose,onRead}){
+function Evidence({node,edges,graph,onChoose,onRead,onReportIssue}){
   const byId=new Map(graph.nodes.map(n=>[n.id,n]));
   if(!node)return <section className="explore-layer evidence-layer"><p className="muted">Select a node.</p></section>;
   const analytical=edges.filter(e=>e.edge_type!=='contains');
@@ -1847,6 +1856,7 @@ function Evidence({node,edges,graph,onChoose,onRead}){
       <span className="kind">{label(node.node_type)}</span><h2><NodeTitle node={node}/></h2>{node.url&&<a className="source" href={node.url} target="_blank" rel="noopener noreferrer">Open source ↗</a>}
       <p className="text">{node.text?truncate(node.text,1300):emptyNodeMessage(node,edges)}</p>
       <button type="button" className="reading-mode-entry" onClick={()=>onRead(node)}><span>Reading mode</span><strong>Read this provision with its references →</strong></button>
+      <button type="button" className="report-issue-btn" onClick={()=>onReportIssue?.(node)}>⚑ Report an issue with this node</button>
     </Collapsible>
     {groups.length
       ? groups.map(([edgeType,items],i)=><Collapsible key={edgeType} title={evidenceLabel(edgeType)} count={`${items.length} link${items.length===1?'':'s'}`} open={i<2}>
