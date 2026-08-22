@@ -10,7 +10,7 @@ import networkx as nx
 import numpy as np
 from sklearn.cluster import KMeans
 
-from .db import row_to_edge, row_to_node
+from .db import get_node, row_to_edge, row_to_node
 
 EXPLICIT_METHODS = {"site_structure", "html_link", "html_anchor_resolved", "html_glossary_link", "glossary_source", "crr_terms_source", "legal_instrument_listing", "legal_reference_occurrence_v1", "reference_recall_stage_v1", "regex_reference", "regex_named_reference", "llm_extracted_reference", "resolved_part_reference", "fca_waivers_list"}
 EDGE_LABELS = {"contains":"contains / child", "references":"cross-reference", "uses_defined_term":"uses defined term", "defines":"defines", "has_topic":"topic assignment", "has_topic_cluster":"topic cluster", "has_obligation_pattern":"obligation pattern", "shares_obligation_pattern":"shared obligation pattern", "has_structured_obligation":"structured obligation", "amends":"amends", "has_permission":"firm permission", "has_version":"provision version", "sourced_from":"source page"}
@@ -279,15 +279,96 @@ def _is_statement_guidance(node: dict[str, Any]) -> bool:
 
 
 def shortest_path(conn: sqlite3.Connection, source: str, target: str, *, max_edges: int = 200000) -> dict[str, Any]:
-    graph = nx.Graph()
-    for row in conn.execute("SELECT id,from_node_id,to_node_id,edge_type,source_method,confidence FROM edge LIMIT ?", (max_edges,)):
-        graph.add_edge(row["from_node_id"], row["to_node_id"], id=row["id"], edge_type=row["edge_type"], source_method=row["source_method"], confidence=row["confidence"])
-    path = nx.shortest_path(graph, source, target)
+    """Bidirectional BFS over indexed adjacency lookups.
+
+    Uses idx_edge_from / idx_edge_to to expand frontiers without loading the
+    whole edge table. Returns as soon as forward and backward frontiers meet.
+    """
+    if source == target:
+        node = get_node(conn, source)
+        if not node:
+            raise ValueError(f"node {source!r} not found")
+        return {"node_ids": [source], "nodes": [node], "edges": [], "length": 0}
+
+    if not conn.execute("SELECT 1 FROM node WHERE id=?", (source,)).fetchone():
+        raise ValueError(f"source node {source!r} not found")
+    if not conn.execute("SELECT 1 FROM node WHERE id=?", (target,)).fetchone():
+        raise ValueError(f"target node {target!r} not found")
+
+    visited_fwd: dict[str, int] = {source: 0}
+    visited_bwd: dict[str, int] = {target: 0}
+    parent_fwd: dict[str, str] = {}
+    parent_bwd: dict[str, str] = {}
+    frontier_fwd = [source]
+    frontier_bwd = [target]
+    meet_node: str | None = None
+    edges_scanned = 0
+
+    while frontier_fwd and frontier_bwd and meet_node is None:
+        expand_forward = len(frontier_fwd) <= len(frontier_bwd)
+        current = frontier_fwd if expand_forward else frontier_bwd
+        nxt: list[str] = []
+        for nid in current:
+            rows = conn.execute(
+                "SELECT from_node_id, to_node_id FROM edge WHERE from_node_id=? OR to_node_id=? LIMIT 500",
+                (nid, nid),
+            ).fetchall()
+            edges_scanned += len(rows)
+            if edges_scanned > max_edges:
+                raise ValueError("path search exceeded edge budget")
+            for row in rows:
+                neighbour = row["to_node_id"] if row["from_node_id"] == nid else row["from_node_id"]
+                other_visited = visited_bwd if expand_forward else visited_fwd
+                own_visited = visited_fwd if expand_forward else visited_bwd
+                own_parent = parent_fwd if expand_forward else parent_bwd
+                if neighbour in own_visited:
+                    continue
+                own_visited[neighbour] = -1
+                own_parent[neighbour] = nid
+                if neighbour in other_visited:
+                    meet_node = neighbour
+                    break
+                nxt.append(neighbour)
+            if meet_node:
+                break
+        if expand_forward:
+            frontier_fwd = nxt
+        else:
+            frontier_bwd = nxt
+
+    if meet_node is None:
+        raise ValueError(f"no path between {source!r} and {target!r}")
+
+    fwd_half: list[str] = []
+    cursor = meet_node
+    while cursor != source:
+        fwd_half.append(cursor)
+        cursor = parent_fwd[cursor]
+    fwd_half.append(source)
+    fwd_half.reverse()
+
+    bwd_half: list[str] = []
+    cursor = meet_node
+    while cursor != target:
+        cursor = parent_bwd[cursor]
+        bwd_half.append(cursor)
+
+    node_ids = fwd_half + bwd_half
+
     edges = []
-    for a, b in zip(path, path[1:]):
-        edges.append(graph[a][b])
-    nodes = [row_to_node(conn.execute("SELECT id,node_type,stable_key,title,text,url,metadata_json FROM node WHERE id=?", (nid,)).fetchone()) for nid in path]
-    return {"node_ids": path, "nodes": nodes, "edges": edges, "length": len(edges)}
+    for a, b in zip(node_ids, node_ids[1:]):
+        row = conn.execute(
+            "SELECT id,edge_type,source_method,confidence FROM edge WHERE (from_node_id=? AND to_node_id=?) OR (from_node_id=? AND to_node_id=?) LIMIT 1",
+            (a, b, b, a),
+        ).fetchone()
+        if row:
+            edges.append({"id": row["id"], "edge_type": row["edge_type"], "source_method": row["source_method"], "confidence": row["confidence"]})
+
+    nodes = [row_to_node(conn.execute(
+        "SELECT id,node_type,stable_key,title,text,url,metadata_json FROM node WHERE id=?", (nid,)
+    ).fetchone()) for nid in node_ids]
+
+    return {"node_ids": node_ids, "nodes": nodes, "edges": edges, "length": len(edges)}
 
 
 def centrality(conn: sqlite3.Connection, *, limit: int = 25) -> dict[str, Any]:
