@@ -12,7 +12,8 @@ from fastapi.responses import FileResponse
 
 from .db import DEFAULT_DB, connect, ensure_indexes, get_node
 from .feedback import create_feedback, list_feedback
-from .graph import betweenness, centrality, common_neighbours, communities, components, contents_tree, interesting, list_nodes, neighbourhood, reader_bundle, search, semantic_map, shortest_path, stats
+from .analysis_cache import get_or_compute
+from .graph import common_neighbours, contents_tree, interesting, list_nodes, neighbourhood, reader_bundle, search, semantic_map, shortest_path, stats
 from .reporting import (
     datapoint_detail,
     list_returns,
@@ -589,7 +590,8 @@ def api_interesting(limit: int = 50) -> dict:
 @app.get("/centrality")
 def api_centrality(limit: int = 25) -> dict:
     conn = connect(DB_PATH)
-    return centrality(conn, limit=_limit(limit, 100))
+    payload = get_or_compute(conn, "centrality")
+    return {"degree": payload["degree"][:_limit(limit, 100)]}
 
 
 @app.get("/analysis/semantic-map")
@@ -602,21 +604,24 @@ def api_semantic_map(level: str = "part", clusters: int = 12, edge_limit: int = 
 
 
 @app.get("/analysis/betweenness")
-def api_betweenness(limit: int = 25, k: int = 100, max_nodes: int = 1000) -> dict:
+def api_betweenness(limit: int = 25) -> dict:
     conn = connect(DB_PATH)
-    return betweenness(conn, limit=_limit(limit, 100), k=_limit(k, 300), max_nodes=_limit(max_nodes, 2000))
+    payload = get_or_compute(conn, "betweenness")
+    return {**{k2: v2 for k2, v2 in payload.items() if k2 != "results"}, "results": payload["results"][:_limit(limit, 100)]}
 
 
 @app.get("/analysis/components")
 def api_components(limit: int = 20) -> dict:
     conn = connect(DB_PATH)
-    return components(conn, limit=_limit(limit, 100))
+    payload = get_or_compute(conn, "components")
+    return {"component_count": payload["component_count"], "largest_size": payload["largest_size"], "components": payload["components"][:_limit(limit, 100)]}
 
 
 @app.get("/analysis/communities")
-def api_communities(limit: int = 20, max_nodes: int = 2500) -> dict:
+def api_communities(limit: int = 20) -> dict:
     conn = connect(DB_PATH)
-    return communities(conn, limit=_limit(limit, 100), max_nodes=_limit(max_nodes, 5000))
+    payload = get_or_compute(conn, "communities")
+    return {**{k2: v2 for k2, v2 in payload.items() if k2 != "communities"}, "communities": payload["communities"][:_limit(limit, 100)]}
 
 
 

@@ -6,6 +6,7 @@ from pathlib import Path
 from .db import DEFAULT_DB, connect, ensure_indexes
 from .embeddings import build_embeddings, derive_similar_edges
 from .graph import stats
+from .analysis_cache import precompute_all
 from .integrity import integrity_report
 from .migrations import LATEST_SCHEMA_VERSION, apply_migrations, schema_version
 
@@ -43,8 +44,9 @@ def cmd_stabilize(args: argparse.Namespace) -> None:
     conn = connect(args.db)
     applied = apply_migrations(conn)
     ensure_indexes(conn)
+    analysis = precompute_all(conn)
     report = integrity_report(conn)
-    print({"applied": applied, "schema_version": schema_version(conn), **report})
+    print({"applied": applied, "schema_version": schema_version(conn), "analysis_cache": analysis, **report})
     if not report["ok"]:
         raise SystemExit(1)
 

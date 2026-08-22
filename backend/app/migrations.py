@@ -4,7 +4,7 @@ import sqlite3
 from datetime import datetime, timezone
 
 
-LATEST_SCHEMA_VERSION = 10
+LATEST_SCHEMA_VERSION = 11
 
 
 ENRICHMENT_SCHEMA = """
@@ -130,6 +130,10 @@ def apply_migrations(conn: sqlite3.Connection) -> list[int]:
     if current < 10:
         _migrate_v10(conn)
         applied.append(10)
+        current = 10
+    if current < 11:
+        _migrate_v11(conn)
+        applied.append(11)
     return applied
 
 
@@ -718,4 +722,28 @@ def _migrate_v10(conn: sqlite3.Connection) -> None:
         """
     )
     conn.execute("PRAGMA user_version=10")
+    conn.commit()
+
+
+def _migrate_v11(conn: sqlite3.Connection) -> None:
+    """Materialised graph-analysis cache for expensive endpoints."""
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS analysis_cache (
+          cache_key TEXT PRIMARY KEY,
+          payload_json TEXT NOT NULL,
+          computed_at TEXT NOT NULL,
+          node_count INTEGER NOT NULL DEFAULT 0,
+          edge_count INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS schema_migration (
+          version INTEGER PRIMARY KEY,
+          name TEXT NOT NULL,
+          applied_at TEXT NOT NULL
+        );
+        INSERT OR REPLACE INTO schema_migration(version,name,applied_at)
+        VALUES (11,'graph_analysis_cache',CURRENT_TIMESTAMP);
+        """
+    )
+    conn.execute("PRAGMA user_version=11")
     conn.commit()
