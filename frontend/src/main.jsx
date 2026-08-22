@@ -3,7 +3,6 @@ import { createRoot } from 'react-dom/client';
 import ForceGraph2D from 'react-force-graph-2d';
 import { forceCollide, forceX, forceY } from 'd3-force';
 import { filterGraph, isInsuranceNode } from './graphFilters.js';
-import { buildQualityQueues, filterQueueRows, summariseQueue } from './qualityWorkbench.js';
 import { displayNodeTitle, documentBadge, relativeNodeRole, edgeDirectionGlyph, edgeDirectionLabel } from './graphPresentation.js';
 import {
   REPORTING_EDGE_GROUPS,
@@ -110,7 +109,6 @@ function App(){
   const [showInsurance,setShowInsurance]=useState(false);
   const [stats,setStats]=useState(null);
   const [view,setView]=useState('graph');
-  const [validation,setValidation]=useState(null);
   const [panelOpen,setPanelOpen]=useState(()=>window.innerWidth>1400);
   const [graphExpanded,setGraphExpanded]=useState(false);
   const [busy,setBusy]=useState(false);
@@ -141,15 +139,6 @@ function App(){
       setRailStack([]);
       if(roots.results?.[0]) await choose(roots.results[0], {drill:false, openPanel:false});
     }catch(e){setError(e.message||String(e));}
-  }
-  async function showQuality(){
-    setView('quality');
-    setPanelOpen(false);
-    if(validation) return;
-    setBusy(true); setError('');
-    try{ setValidation(await api('/validation/dashboard')); }
-    catch(err){ setError(err.message||String(err)); }
-    finally{ setBusy(false); }
   }
   async function loadAllParts(){
     const data=await api('/nodes?types=part&limit=300');
@@ -268,7 +257,7 @@ function App(){
     setPanelOpen(false);
   }
 
-  return <div className={`${graphExpanded?'shell graph-expanded':'shell'} ${panelOpen?'panel-open':'panel-closed'} ${view==='quality'?'quality-view':''} ${view==='reporting'?'reporting-view-mode':''} ${readingNode?'reading-view-mode':''}`}>
+  return <div className={`${graphExpanded?'shell graph-expanded':'shell'} ${panelOpen?'panel-open':'panel-closed'} ${view==='reporting'?'reporting-view-mode':''} ${readingNode?'reading-view-mode':''}`}>
     <header className="topbar">
       <a className="home" href="/">‹</a>
       <form className="command" onSubmit={search}>
@@ -277,7 +266,6 @@ function App(){
       <div className="top-actions">
         <button className={view==='graph'?'mode on':'mode'} onClick={()=>setView('graph')}>Graph</button>
         <button className={view==='reporting'?'mode on':'mode'} onClick={()=>{setView('reporting');setPanelOpen(false);}}>Reporting</button>
-        <button className={view==='quality'?'mode on':'mode'} onClick={showQuality}>Quality</button>
         <button onClick={()=>setPanelOpen(!panelOpen)} title="Toggle side panel">◧</button>
         <details className="settings"><summary title="Display settings">⚙</summary><div className="settings-pop">
           <div className="filter-section representation-section"><h4>Representation</h4><div className="type-grid representation-grid">{Object.entries(REPRESENTATIONS).map(([key,preset])=><button type="button" key={key} className={representation===key?'on':''} onClick={()=>applyRepresentation(key)}><span>{preset.label}</span></button>)}<button type="button" className={representation==='custom'?'on':''} onClick={()=>applyRepresentation('custom')}><span>Custom</span></button></div><p className="rep-hint"><b>{activeRep.label}</b>{activeRep.hint}</p></div>
@@ -300,7 +288,7 @@ function App(){
     </aside>
 
     <main className="canvas">
-      {readingNode?<ProvisionReader rootNode={readingNode} api={api} onClose={()=>setReadingNode(null)}/>:view==='quality'?<ValidationDashboard data={validation} busy={busy}/>:view==='reporting'?<ReportingGraphView onFeedback={n=>{setFeedbackNode(n);setFeedbackText('');}}/>:<>
+      {readingNode?<ProvisionReader rootNode={readingNode} api={api} onClose={()=>setReadingNode(null)}/>:view==='reporting'?<ReportingGraphView onFeedback={n=>{setFeedbackNode(n);setFeedbackText('');}}/>:<>
         <div className="canvas-meta"><strong>{selected?.title||'Select a node'}</strong><span>{activeRep.label} · {visibleGraph.nodes.length} shown · {visibleGraph.edges.length} visible links · {Object.values(graph.available_edge_types||{}).reduce((a,b)=>a+b,0)} direct links available</span><button className="expand-graph" onClick={()=>setGraphExpanded(v=>!v)}>{graphExpanded?'Collapse graph':'Expand graph'}</button></div>
         <Graph graph={visibleGraph} selected={selected} detail={detail} nodeTypes={nodeTypes} relationshipTypes={types} relationshipFilters={relationshipFilters} availableEdgeTypes={graph.available_edge_types||{}} onToggleNodeType={toggleNodeType} onToggleRelationship={toggleType} onSelect={n=>{setDetail(n);setPanelOpen(true);}} onOpen={n=>choose(n,{drill:true})} onFeedback={n=>{setFeedbackNode(n);setFeedbackText('');}}/>
       </>}
@@ -1493,253 +1481,6 @@ function sourceFileName(value){
   const raw=String(value).split('#').pop() || String(value);
   try{ return decodeURIComponent(raw.split('/').pop()||''); }catch{return raw.split('/').pop()||'';}
 }
-
-function ValidationDashboard({data,busy}){
-  const [activeQueue,setActiveQueue]=useState('feedback');
-  const [feedbackQueue,setFeedbackQueue]=useState({items:[],runs:[],counts:{}});
-  const [query,setQuery]=useState('');
-  const [selectedRow,setSelectedRow]=useState(null);
-  const [reviewChoices,setReviewChoices]=useState({});
-
-  useEffect(()=>{ loadFeedbackQueue(); },[]);
-  useEffect(()=>{ setQuery(''); setSelectedRow(null); },[activeQueue]);
-
-  if(busy&&!data) return <section className="quality quality-workbench"><div className="quality-loading">Loading quality queues…</div></section>;
-  if(!data) return <section className="quality quality-workbench"><div className="quality-loading">Open Quality to load queues.</div></section>;
-
-  const queues=buildQualityQueues({validation:data,feedback:feedbackQueue});
-  const active=queues.find(q=>q.id===activeQueue)||queues[0];
-  const unverifiedRows=active.id==='unverified-links'?filterQueueRows(active.rows||[],query):[];
-  const selected=selectedRow || unverifiedRows[0] || null;
-
-  async function loadFeedbackQueue(){
-    try{ setFeedbackQueue(await fetchJson(API_BASE+'/feedback')); }
-    catch(err){ setFeedbackQueue(prev=>({...prev,last_error:err.message||String(err)})); }
-  }
-  return <section className="quality quality-workbench">
-    <div className="quality-topline">
-      <div><span>Quality</span><strong>{active.label}</strong></div>
-      <p>{active.description}</p>
-    </div>
-    <div className="quality-workspace">
-      <nav className="quality-queue-rail" aria-label="Quality queues">
-        {queues.map(queue=>{
-          const summary=summariseQueue(queue);
-          return <button key={queue.id} type="button" className={queue.id===active.id?'on':''} onClick={()=>setActiveQueue(queue.id)}>
-            <strong>{queue.label}</strong>
-            <span>{summary.primary}</span>
-            <em>{summary.secondary}</em>
-          </button>;
-        })}
-      </nav>
-      <main className="quality-workflow" aria-label={`${active.label} workflow`}>
-        {active.id==='feedback'
-          ? <FeedbackQueueWorksurface queue={feedbackQueue} onRefresh={loadFeedbackQueue}/>
-          : <UnverifiedLinksWorksurface rows={unverifiedRows} query={query} setQuery={setQuery} selected={selected} setSelected={setSelectedRow} choices={reviewChoices} setChoices={setReviewChoices}/>
-        }
-      </main>
-    </div>
-  </section>;
-}
-
-function FeedbackQueueWorksurface({queue,onRefresh}){
-  const items=(queue?.items||[]).slice().reverse();
-  const pending=(queue?.items||[]).filter(item=>['pending','failed'].includes(item.status));
-  return <div className="queue-surface feedback-surface">
-    <div className="workflow-bar">
-      <div><span>Node feedback queue</span><strong>{fmt(pending.length)} item(s) awaiting review</strong></div>
-      <div className="workflow-actions"><button type="button" onClick={onRefresh}>Refresh</button></div>
-    </div>
-    {queue?.last_error&&<div className="quality-error">{queue.last_error}</div>}
-    <div className="feedback-ledger">
-      <div className="ledger-head"><span>Status</span><span>Node</span><span>Feedback</span><span>Result</span></div>
-      {items.length?items.map(item=><article key={item.id} className={`ledger-row ${item.status}`}>
-        <b>{item.status}</b>
-        <strong>{displayNodeTitle(item.node||{})}</strong>
-        <p>{truncate(item.feedback,260)}</p>
-        <ExpandableResult text={item.last_result||''}/>
-      </article>):<div className="empty-workflow">No node feedback queued.</div>}
-    </div>
-    {(queue?.runs||[]).length>0&&<details className="run-history"><summary>Run history</summary>{queue.runs.slice().reverse().slice(0,8).map(run=><p key={run.id}><b>{run.status}</b><span>{run.feedback_id}</span>{truncate(run.result||'',260)}</p>)}</details>}
-  </div>;
-}
-
-
-function ExpandableResult({text}){
-  const [open,setOpen]=useState(false);
-  if(!text) return <small>—</small>;
-  const canExpand=text.length>260 || text.includes('\n');
-  return <div className={`result-cell ${open?'open':'collapsed'}`}>
-    <small>{open?text:truncate(text,260)}</small>
-    {canExpand&&<button type="button" onClick={()=>setOpen(v=>!v)}>{open?'Hide full result':'Show full result'}</button>}
-  </div>;
-}
-
-function UnverifiedLinksWorksurface({rows,query,setQuery,selected,setSelected,choices,setChoices}){
-  const [saving,setSaving]=useState(false);
-  const rowKey=row=>row?.sample_id||row?.edge_id||row?.target_id||`${row?.source_title||''}:${row?.target_title||''}`;
-  const draft={decision:selected?.review_decision||'',replacement_url:selected?.review_replacement_url||'',rulebook_target:selected?.review_rulebook_target||'',note:selected?.review_note||'',...(choices[rowKey(selected)]||{})};
-  function setDraft(patch){ if(selected) setChoices(prev=>({...prev,[rowKey(selected)]:{...draft,...patch}})); }
-  async function saveDecision(){
-    if(!selected || !draft.decision) return;
-    setSaving(true);
-    try{
-      const res=await fetch(API_BASE+'/validation/unresolved-reference-review',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target_id:selected.target_id,edge_id:selected.edge_id,sample_id:selected.sample_id,decision:draft.decision,replacement_url:draft.replacement_url||'',rulebook_target:draft.rulebook_target||'',note:draft.note||''})});
-      if(!res.ok) throw new Error(await res.text());
-      setDraft({saved:true});
-    }catch(err){ alert(err.message||String(err)); }
-    finally{ setSaving(false); }
-  }
-  return <div className="queue-surface links-surface">
-    <div className="workflow-bar">
-      <div><span>Unverified links</span><strong>{fmt(rows.length)} unresolved relationship(s)</strong></div>
-      <div className="workflow-actions"><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Filter by node, URL, source or target…"/><button type="button" onClick={()=>downloadCsv('unverified-links.csv',rows)}>Export</button></div>
-    </div>
-    <div className="links-workgrid">
-      <div className="link-ledger" role="list">
-        {rows.length?rows.map(row=><button key={rowKey(row)} type="button" className={rowKey(row)===rowKey(selected)?'on':''} onClick={()=>setSelected(row)}>
-          <span>{row.target_type||'link'}</span>
-          <strong>{row.target_title||row.target_url||'Untitled target'}</strong>
-          <em>{row.source_title||row.source_container_title||'Unknown source'}</em>
-        </button>):<div className="empty-workflow">No unverified links match this filter.</div>}
-      </div>
-      <article className="link-review-sheet">
-        {selected?<>
-          <header><span>{selected.target_type||'unverified'}</span><h3>{selected.target_title||selected.target_url||'Untitled target'}</h3><p>{selected.source_title||selected.source_container_title||'Unknown source'}</p></header>
-          <dl className="link-facts">
-            <div><dt>Source node</dt><dd>{selected.source_title||'—'}</dd></div>
-            <div><dt>Target id</dt><dd>{selected.target_id||'—'}</dd></div>
-            <div><dt>Confidence</dt><dd>{selected.confidence!==undefined?cell(selected.confidence,'confidence'):'—'}</dd></div>
-            <div><dt>Original method</dt><dd>{selected.original_source_method||selected.source_method||'—'}</dd></div>
-          </dl>
-          <blockquote>{selected.source_text||selected.evidence_text||'No source text captured.'}</blockquote>
-          <div className="link-openers">
-            {selected.source_url&&<a href={selected.source_url} target="_blank" rel="noopener noreferrer">Open source</a>}
-            {selected.target_url&&<a href={selected.target_url} target="_blank" rel="noopener noreferrer">Open target</a>}
-          </div>
-          <div className="decision-strip">
-            {[['resolved','Resolved'],['external-valid','External valid'],['broken','Broken'],['not-relevant','Not relevant'],['no-longer-valid','No longer valid'],['not-a-link','Not a link']].map(([value,label])=><button key={value} type="button" className={draft.decision===value?'on':''} onClick={()=>setDraft({decision:value})}>{label}</button>)}
-          </div>
-          <div className="decision-fields">
-            <input value={draft.rulebook_target||''} onChange={e=>setDraft({rulebook_target:e.target.value})} placeholder="Rulebook target, if resolved internally"/>
-            <input value={draft.replacement_url||''} onChange={e=>setDraft({replacement_url:e.target.value})} placeholder="Replacement URL, if needed"/>
-            <textarea value={draft.note||''} onChange={e=>setDraft({note:e.target.value})} placeholder="Short finding"/>
-            <button type="button" className="primary" disabled={saving||!draft.decision} onClick={saveDecision}>{saving?'Saving…':draft.saved?'Saved':'Save finding'}</button>
-          </div>
-        </>:<div className="empty-workflow">Select a link to review.</div>}
-      </article>
-    </div>
-  </div>;
-}
-
-function QualityTable({title,rows,cols}){
-  const tableClass=title==='Live unresolved reference samples'?'quality-table unresolved-reference-table':'quality-table';
-  return <section className={tableClass}>{title&&<h3>{title}</h3>}<div className="table-wrap"><table><thead><tr>{cols.map(c=><th key={c}>{metricLabel(c)}</th>)}</tr></thead><tbody>{rows.length?rows.map((r,i)=><tr key={i}>{cols.map(c=><td key={c} title={String(r[c]??'')}>{cell(r[c],c)}</td>)}</tr>):<tr><td colSpan={cols.length}>No rows</td></tr>}</tbody></table></div></section>;
-}
-
-function cell(v,key){
-  if(v===null||v===undefined||v==='') return '—';
-  if(key?.includes('confidence')&&typeof v==='number') return <span className={`confidence ${v<.6?'low':v<.8?'mid':'high'}`}><i style={{width:`${Math.max(3,Math.min(100,v*100))}%`}} />{Math.round(v*100)}%</span>;
-  if(typeof v==='number') return fmt(v);
-  const s=String(v);
-  if(key==='source_url'&&s.startsWith('http')) return <a className="table-link full-url" href={s} target="_blank" rel="noopener noreferrer">{s}</a>;
-  if((key==='url'||key==='target_url')&&s.startsWith('http')) return <a className="table-link" href={s} target="_blank" rel="noopener noreferrer">{compactUrl(s)}</a>;
-  return s.length>120?s.slice(0,117)+'…':s;
-}
-
-function suspect403IssueConfig(rows){
-  if(!rows.length) return null;
-  return {
-    id:'suspect-403-links',
-    check:'suspect 403 links',
-    status:'warn',
-    metrics:{suspect_403_links:rows.length, affected_references:rows.reduce((a,r)=>a+(Number(r.live_edges)||0),0)},
-    title:'403 link review',
-    severity:'high',
-    affected:rows.length,
-    cols:['review_id','status','title','url','live_edges','target_id'],
-    rows,
-    sampleLimit:500,
-    sampleTitle:'403 links for manual review',
-    summary:`${fmt(rows.length)} external-reference URLs returned HTTP 403 to automated checks.`,
-    impact:'These may be valid links blocked to scripts, or genuinely unavailable links hidden behind access controls.',
-    cause:'Most 403s are BoE/PRA media or reporting URLs. The HTTP checker cannot distinguish bot protection from real access failure.',
-    fix:'Open a sample in a normal browser. If it loads, mark as blocked-but-valid or update the URL if redirected. If it fails for a human too, classify it as a broken reference.',
-    test:'Each 403 review row is either accepted as blocked-but-valid, corrected to a working URL, or classified as a broken reference.',
-    runbook:[
-      {title:'Open the review id',text:'Use the review id, e.g. 403-0042, to identify the exact target_id and URL in the table.'},
-      {title:'Check manually',text:'Open the URL in a normal browser session. Record whether it loads, redirects to a better canonical URL, or fails.'},
-      {title:'Apply outcome',text:'For valid blocked links, label as externally blocked/valid. For dead links, label as Broken reference. For redirects, update the external reference URL.'},
-    ],
-  };
-}
-
-function reportingIssueConfig(reporting){
-  const checks=reporting.checks||[];
-  const totals=reporting.totals||{};
-  const status=checks.some(c=>c.status==='fail')?'fail':checks.some(c=>c.status==='warn')?'warn':'pass';
-  const affected=checks.flatMap(c=>Object.values(c.metrics||{})).filter(v=>typeof v==='number').reduce((a,b)=>Math.max(a,b),0);
-  const prospectiveIssues=checks.map(c=>({
-    ...c,
-    affected:Object.values(c.metrics||{}).filter(v=>typeof v==='number').reduce((a,b)=>Math.max(a,b),0),
-  }));
-  return {
-    id:'reporting-rules',
-    check:'reporting rules',
-    reporting:true,
-    reportingData:reporting,
-    prospectiveIssues,
-    status,
-    metrics:totals,
-    title:'Reporting rules',
-    severity:status==='fail'?'critical':status==='warn'?'high':'passed',
-    affected,
-    cols:['status','issue','affected','purpose'],
-    rows:prospectiveIssues,
-    sampleTitle:'Prospective reporting issues',
-    summary:`${fmt(totals.data_items||0)} data items, ${fmt(totals.templates||0)} templates, ${fmt(totals.datapoints||0)} datapoints and ${fmt(totals.reporting_reference_edges||0)} reporting-rule reference links.`,
-    impact:'Reporting links may be incomplete or insufficiently evidenced if these candidate checks are not monitored.',
-    cause:'The reporting dataset has separate tables and graph edges from the core Rulebook graph, so it needs its own prospective coverage checks.',
-    fix:'Review the prospective reporting issues, decide which are expected gaps, then promote agreed checks into hard validation gates.',
-    test:'Reporting appears as one Checks-panel item and exposes candidate coverage, evidence and resolution issues without a separate dashboard section.',
-    runbook:[{title:'Review prospective issues',text:'Check the reporting coverage, reference evidence and resolution checks against the database baseline.'}],
-  };
-}
-
-function issueConfig(check,data,raw={check,status:'pass',metrics:{}}){
-  const metrics=raw.metrics||{};
-  const base={id:check.replace(/[^a-z0-9]+/gi,'-').replace(/^-|-$/g,'').toLowerCase(),check,status:raw.status||'pass',metrics,title:plainCheckName(check),severity:raw.status==='fail'?'critical':raw.status==='warn'?'high':'passed',affected:Object.values(metrics).filter(v=>typeof v==='number').reduce((a,b)=>Math.max(a,b),0),cols:['title'],rows:[],sampleTitle:'Samples',summary:checkPlainEnglish(raw),impact:'No active issue.',cause:'The check is passing.',fix:'Keep this check in the regression set.',test:'Validation remains green after the next extraction run.',runbook:[{title:'Rerun validation',text:'Confirm this check remains stable after data or parser changes.',command:'python scripts/validate_edge_evidence.py'}]};
-  if(check==='self-loops / near-self-loops') return {...base,severity:'high',affected:metrics.near_self_loop_sample_rows||0,summary:'Potential duplicate node identities expressed as relationships.',impact:'Can make the graph invent relationships between what is actually the same legal paragraph.',cause:'Extractor canonicalisation mismatch between paragraph keys, HTML ids, aliases or roll-up nodes.',fix:'Inspect candidate pairs, merge genuine duplicates, preserve aliases, and leave appendix paragraph-number collisions separate.',test:'Near-self-loop samples fall to zero or are explainable retained cases; exact duplicate and paragraph/HTML duplicate checks remain zero.',sampleTitle:'Near-self-loop samples',rows:(data.near_self_loop_samples||[]),cols:['edge_type','source_method','node_type','title'],runbook:[{title:'Inspect samples',text:'Start with repeated titles and source methods to separate true duplicates from legitimate appendix repeats.'},{title:'Patch canonicalisation',text:'Merge genuine duplicate nodes while preserving legacy aliases and source URLs.',command:'python scripts/fix_guidance_duplicate_aliases_fast.py'},{title:'Validate evidence',text:'Rerun edge evidence checks and refresh the dashboard.',command:'python scripts/validate_edge_evidence.py'}]};
-  if(check==='unresolved references') return {...base,severity:'high',affected:metrics.live_placeholder_reference_nodes||0,summary:'Live references still point to placeholder targets rather than resolved legal nodes.',impact:'Users can see that a provision references something, but cannot reliably navigate to the target law.',cause:'The remaining set is now mostly internal PRA rule/guidance shorthand plus a smaller number of generic anchors and raw URLs.',fix:'Use the Samples tab as an action workflow: resolve internal Rulebook-looking rows, check raw URLs, inspect generic link text, and classify true external references without forcing them into Rulebook nodes.',test:'Each unresolved row has a clear next action and the live placeholder count reduces without an increase in bad matches.',sampleTitle:'Live unresolved reference workflow',patterns:data.unresolved_reference_patterns||[],rows:(data.unresolved_reference_samples||[]),sampleLimit:2000,cols:['next_action','why','target_type','target_title','source_title','source_text','source_url','confidence'],runbook:[{title:'Pick an action queue',text:'Start with Resolve internally for Rulebook-looking rows, then Check URL and Inspect context.'},{title:'Resolve Rulebook-looking placeholders',text:'Use title, part date, article and paragraph context to map placeholders to stable nodes.',command:'python scripts/patch_unresolved_reference_patterns.py'},{title:'Classify true externals',text:'Do not force external documents into Rulebook nodes. Keep them explicit as labelled external references.'}]};
-  if(check==='missing evidence/source URL') return {...base,severity:raw.status==='pass'?'passed':'critical',affected:(metrics.missing_evidence_text||0)+(metrics.missing_source_url||0),summary:'Relationships without auditable provenance.',impact:'Hard legal links cannot be trusted unless a user can inspect source URL, method and evidence text.',cause:'Backfill or importer path missed evidence metadata on one or more edge types.',fix:'Backfill missing source URL/evidence text and block hard legal edges without provenance.',test:'All missing evidence/source metrics are zero.',runbook:[{title:'Backfill metadata',text:'Fill source URL, method, confidence, extraction run and evidence text.',command:'python scripts/backfill_edge_evidence.py'},{title:'Validate',text:'Run the strict evidence validation gate.',command:'python scripts/validate_edge_evidence.py'}]};
-  if(check==='duplicate logical nodes') return {...base,severity:raw.status==='pass'?'passed':'critical',affected:(metrics.exact_html_duplicate_groups||0)+(metrics.paragraph_vs_html_id_key_pairs||0),summary:'The same paragraph may exist as more than one node.',impact:'Duplicate legal nodes contaminate navigation, counts and derived relationship evidence.',cause:'Stable-key generation or alias merging failed for some guidance/rule paragraphs.',fix:'Merge duplicate identities and preserve aliases.',test:'Duplicate groups and paragraph/HTML-id key pairs are zero.',runbook:[{title:'Run duplicate alias fixer',text:'Apply canonical guidance node merge rules.',command:'python scripts/fix_guidance_duplicate_aliases_fast.py'},{title:'Audit canonical views',text:'Regenerate canonical views if parser logic changed.',command:'python scripts/create_canonical_guidance_views.py'}]};
-  if(check==='hard vs soft edge split') return {...base,severity:'passed',affected:metrics.hard_explicit_edges||0,summary:'Confirms direct legal links are distinguishable from inferred analytical links.',impact:'Prevents inferred similarity/roll-up edges being mistaken for legal proof.',cause:'N/A, this split currently passes.',fix:'Keep UI labels and API filters explicit: direct/source-backed versus inferred/derived.',test:'Hard and soft edge counts remain separately reported.',runbook:[{title:'Regression check',text:'Confirm new importers populate evidence_status consistently.',command:'python scripts/validate_edge_evidence.py'}]};
-  return base;
-}
-function issueRank(i){if(i.status==='pass') return 0; const sev={critical:100,high:60,medium:30,low:10}[i.severity]||20; return sev+Math.min(50,Math.log10((i.affected||0)+1)*18)}
-function filterRows(rows,q){const needle=q.trim().toLowerCase(); if(!needle) return rows; return rows.filter(r=>Object.values(r).some(v=>String(v??'').toLowerCase().includes(needle)))}
-function filterEvidenceRows(rows,f){return rows.filter(r=>(f.type==='all'||r.edge_type===f.type)&&(f.evidence==='all'||r.evidence_status===f.evidence)&&(f.method==='all'||r.source_method===f.method)&&((r.min_confidence??0)>=f.minConfidence)&&(!f.query||Object.values(r).some(v=>String(v??'').toLowerCase().includes(f.query.toLowerCase())))).sort((a,b)=>(a.min_confidence??1)-(b.min_confidence??1)||(b.edges||0)-(a.edges||0))}
-function unique(xs){return [...new Set(xs.filter(Boolean))].sort()}
-function readAuditState(){try{return JSON.parse(localStorage.getItem('pra-rulebook-audit-state')||'{}')}catch{return {}}}
-function writeAuditState(next){localStorage.setItem('pra-rulebook-audit-state',JSON.stringify(next));return next}
-function setIssueState(id,status,setter){setter(prev=>writeAuditState({...prev,[id]:{...(prev[id]||{}),status,updated_at:new Date().toISOString()}}))}
-function appendIssueNote(id,text,setter){if(!text.trim()) return; setter(prev=>writeAuditState({...prev,[id]:{...(prev[id]||{}),notes:[...((prev[id]||{}).notes||[]),{text:text.trim(),ts:Date.now()}],updated_at:new Date().toISOString()}}))}
-function downloadCsv(filename,rows){const list=rows||[]; const cols=unique(list.flatMap(r=>Object.keys(r||{}))); const esc=v=>`"${String(v??'').replaceAll('"','""')}"`; const csv=[cols.join(','),...list.map(r=>cols.map(c=>esc(r[c])).join(','))].join('\n'); const blob=new Blob([csv],{type:'text/csv'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=filename; a.click(); URL.revokeObjectURL(a.href)}
-function fmt(v){return typeof v==='number'?v.toLocaleString(undefined,{maximumFractionDigits:3}):v}
-function human(s){return String(s).replace(/_/g,' ')}
-function compactUrl(value){try{const u=new URL(value); const path=u.pathname.length>38?u.pathname.slice(0,35)+'…':u.pathname; return `${u.hostname}${path}`;}catch{return value.length>80?value.slice(0,77)+'…':value}}
-function statusIcon(s){return s==='pass'?'✓':s==='warn'?'!':'×'}
-function plainCheckName(s){return ({'duplicate logical nodes':'Duplicate paragraphs','missing evidence/source URL':'Evidence coverage','self-loops / near-self-loops':'Loop checks','unresolved references':'Unresolved links','hard vs soft edge split':'Hard vs soft links','suspect 403 links':'403 link review','reporting coverage':'Reporting coverage','reporting reference evidence':'Reference evidence','reporting reference resolution':'Reference resolution'}[s]||s)}
-function checkPlainEnglish(c){
-  if(c.check==='duplicate logical nodes') return 'Looks for the same paragraph appearing twice.';
-  if(c.check==='missing evidence/source URL') return 'Checks every link has a reason and a source.';
-  if(c.check==='self-loops / near-self-loops') return 'Finds links that may really point back to the same item.';
-  if(c.check==='unresolved references') return 'Counts links that still need matching to real Rulebook nodes.';
-  if(c.check==='hard vs soft edge split') return 'Separates direct legal links from analytical suggestions.';
-  if(c.check==='suspect 403 links') return 'Manual review queue for external URLs blocked during automated link checks.';
-  return c.purpose||'';
-}
-function metricLabel(k){return ({exact_html_duplicate_groups:'Exact duplicate groups',paragraph_vs_html_id_key_pairs:'Paragraph/HTML-id duplicates',ambiguous_doc_paragraph_groups_not_auto_merged:'Repeated paragraph numbers kept separate',missing_source_method:'Missing method',missing_confidence:'Missing confidence',missing_source_url:'Missing source URL',missing_evidence_text:'Missing evidence text',missing_extraction_run_id:'Missing run id',missing_evidence_status:'Missing evidence status',hard_edges_missing_evidence_or_url:'Hard links missing evidence',self_loops:'Self-loops',near_self_loop_sample_rows:'Near-self-loop examples',near_self_loop_sample_capped:'More examples exist',placeholder_reference_nodes:'Placeholder references',live_placeholder_reference_nodes:'Live unresolved targets',all_placeholder_reference_nodes:'All placeholder targets',orphan_placeholder_reference_nodes:'Stale/orphan placeholder targets',external_reference:'External references',rule_reference:'Rule references',hard_explicit_edges:'Hard links',soft_inferred_edges:'Soft links',evidence_status_direct_text:'Direct text evidence',evidence_status_document_metadata:'Document metadata evidence',evidence_status_html_structure:'HTML structure evidence',evidence_status_inferred:'Inferred evidence',edge_type:'Link type',source_method:'How found',extraction_method:'Extraction method',review_status:'Review status',evidence_status:'Evidence kind',edges:'Links',avg_confidence:'Average confidence',min_confidence:'Lowest confidence',max_confidence:'Highest confidence',sample_id:'Sample ID',review_id:'Review ID',suspect_403_links:'403 links',affected_references:'Affected references',node_type:'Node type',node_id:'Node ID',label:'Label',source_table:'Source table',source_pk:'Source key',title:'Title',target_id:'Target ID',target_type:'Target type',target_title:'Unresolved target',target_url:'Target URL',source_type:'Source type',source_title:'Source provision',source_text:'Original provision text',source_container_title:'Container',original_source_method:'Original method',source_url:'Source URL',degree:'Total links',out_degree:'Outgoing links',in_degree:'Incoming links',url:'URL',normative_force:'Force',obligations:'Obligations',pct:'Share',data_items:'Data items',templates:'Templates',datapoints:'Datapoints',source_documents:'Source documents',reporting_reference_edges:'Reporting references',data_items_without_templates:'Data items without templates',data_items_without_source_documents:'Data items without source documents',templates_without_datapoints:'Templates without datapoints',obligations_without_data_item_node:'Obligations without data item',missing_evidence_span:'Missing evidence span',low_confidence_under_60pct:'Low confidence <60%',extracted_references:'Extracted references',unresolved_references:'Unresolved references',resolved_without_added_edge:'Resolved without link'}[k]||human(k))}
 
 function Graph({graph,selected,detail,nodeTypes,relationshipTypes,relationshipFilters,materialFilters=MATERIAL_FILTERS,availableEdgeTypes,onToggleNodeType,onToggleRelationship,onSelect,onOpen,onFeedback}){
   const fgRef=useRef(null);

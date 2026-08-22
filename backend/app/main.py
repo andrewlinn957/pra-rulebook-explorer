@@ -126,63 +126,6 @@ async def api_node_feedback(request: Request) -> dict:
     return {"ok": True, "item": item}
 
 
-@app.post("/validation/suspect-403-review")
-async def api_suspect_403_review(request: Request) -> dict:
-    payload = await request.json()
-    target_id = str(payload.get("target_id", "")).strip()
-    review_id = str(payload.get("review_id", "")).strip()
-    decision = str(payload.get("decision", "")).strip()
-    note = str(payload.get("note", "")).strip()
-    if not target_id:
-        raise HTTPException(status_code=400, detail="target_id is required")
-    if decision not in {"valid", "broken", "needs_url_fix", "unsure"}:
-        raise HTTPException(status_code=400, detail="decision must be valid, broken, needs_url_fix, or unsure")
-    path = PROJECT_ROOT / "outputs/broken-reference-check/suspect-403-review-decisions.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        existing = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
-    except json.JSONDecodeError:
-        existing = {}
-    existing[target_id] = {"target_id": target_id, "review_id": review_id, "decision": decision, "note": note}
-    path.write_text(json.dumps(existing, indent=2, sort_keys=True), encoding="utf-8")
-    return {"ok": True, "target_id": target_id, "decision": decision, "saved": len(existing)}
-
-
-@app.post("/validation/unresolved-reference-review")
-async def api_unresolved_reference_review(request: Request) -> dict:
-    payload = await request.json()
-    target_id = str(payload.get("target_id", "")).strip()
-    edge_id = str(payload.get("edge_id", "")).strip()
-    sample_id = str(payload.get("sample_id", "")).strip()
-    decision = str(payload.get("decision", "")).strip()
-    replacement_url = str(payload.get("replacement_url", "")).strip()
-    rulebook_target = str(payload.get("rulebook_target", "")).strip()
-    note = str(payload.get("note", "")).strip()
-    allowed = {"outdated", "irrelevant", "dead", "rulebook_target", "keep_external"}
-    if not target_id:
-        raise HTTPException(status_code=400, detail="target_id is required")
-    if decision not in allowed:
-        raise HTTPException(status_code=400, detail="decision must be outdated, irrelevant, dead, rulebook_target, or keep_external")
-    path = PROJECT_ROOT / "outputs/broken-reference-check/unresolved-reference-review-decisions.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        existing = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
-    except json.JSONDecodeError:
-        existing = {}
-    existing[target_id] = {
-        "target_id": target_id,
-        "edge_id": edge_id,
-        "sample_id": sample_id,
-        "decision": decision,
-        "replacement_url": replacement_url,
-        "rulebook_target": rulebook_target,
-        "note": note,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-    }
-    path.write_text(json.dumps(existing, indent=2, sort_keys=True), encoding="utf-8")
-    return {"ok": True, "target_id": target_id, "decision": decision, "saved": len(existing)}
-
-
 @app.get("/unified/stats")
 def api_unified_stats() -> dict:
     conn = connect(DB_PATH)
