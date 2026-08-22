@@ -1,12 +1,11 @@
 import json
-import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
 import httpx
 
-from backend.app.feedback import create_feedback, list_feedback, process_feedback_queue
+from backend.app.feedback import create_feedback, list_feedback
 from backend.app.main import app
 
 
@@ -31,106 +30,43 @@ class NodeFeedbackTests(unittest.TestCase):
             root = Path(tmp)
             item = create_feedback(
                 root,
-                node={"id": "node-1", "node_type": "rule", "title": "Liquidity 1.1", "url": "https://example/rule"},
-                feedback="This node is missing the relevant SS reference.",
+                node={"id": "node:1", "title": "Test Node"},
+                feedback="Something looks wrong here.",
+                page_url="https://example.com/page",
             )
-
             self.assertEqual(item["status"], "pending")
-            self.assertEqual(item["node"]["id"], "node-1")
-            self.assertIn("This node is missing", item["feedback"])
+            self.assertEqual(item["feedback"], "Something looks wrong here.")
+            stored = json.loads((root / "outputs/node-feedback/feedback-queue.jsonl").read_text().strip())
+            self.assertEqual(stored["id"], item["id"])
+            self.assertEqual(stored["node"]["title"], "Test Node")
 
-            queued = list_feedback(root)
-            self.assertEqual(len(queued["items"]), 1)
-            self.assertEqual(queued["items"][0]["id"], item["id"])
-
-    def test_process_feedback_queue_runs_openclaw_for_pending_items_and_records_result(self):
+    def test_create_feedback_rejects_empty_and_oversized(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            create_feedback(
-                root,
-                node={"id": "node-1", "node_type": "rule", "title": "Liquidity 1.1", "text": "A firm must..."},
-                feedback="Please fix the missing reference edge.",
-            )
-            calls = []
+            with self.assertRaises(ValueError):
+                create_feedback(root, node={"id": "n"}, feedback="   ")
+            with self.assertRaises(ValueError):
+                create_feedback(root, node={"id": "n"}, feedback="x" * 2001)
 
-            def fake_run(cmd, **kwargs):
-                calls.append((cmd, kwargs))
-                return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps({"reply": "Fixed and tested."}), stderr="")
-
-            result = process_feedback_queue(root, runner=fake_run, limit=5)
-
-            self.assertEqual(result["processed"], 1)
-            self.assertEqual(result["runs"][0]["status"], "completed")
-            self.assertEqual(len(calls), 1)
-            self.assertIn("openclaw", calls[0][0][0])
-            self.assertIn("Please fix the missing reference edge", " ".join(calls[0][0]))
-
-            queued = list_feedback(root)
-            self.assertEqual(queued["items"][0]["status"], "completed")
-            self.assertEqual(queued["items"][0]["last_result"], "Fixed and tested.")
-
-
-    def test_process_feedback_queue_prefers_openclaw_final_visible_text(self):
+    def test_list_feedback_returns_items_and_counts_without_runs_key(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            create_feedback(root, node={"id": "node-1", "title": "Node"}, feedback="Fix this")
-            payload = {
-                "status": "completed",
-                "result": {
-                    "prompt": "Return a concise summary of what you did",
-                    "finalAssistantVisibleText": "Actual concise fix summary.",
-                    "finalAssistantRawText": "Raw concise fix summary.",
-                },
-            }
+            create_feedback(root, node={"id": "a"}, feedback="one")
+            create_feedback(root, node={"id": "b"}, feedback="two")
+            result = list_feedback(root)
+            self.assertNotIn("runs", result)
+            self.assertEqual(len(result["items"]), 2)
+            self.assertEqual(result["counts"], {"pending": 2})
 
-            def fake_run(cmd, **kwargs):
-                return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(payload), stderr="")
-
-            result = process_feedback_queue(root, runner=fake_run)
-
-            self.assertEqual(result["runs"][0]["result"], "Actual concise fix summary.")
-            self.assertEqual(list_feedback(root)["items"][0]["last_result"], "Actual concise fix summary.")
-
-    def test_list_feedback_normalises_previous_openclaw_json_results(self):
+    def test_list_feedback_handles_corrupt_lines_gracefully(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            item = create_feedback(root, node={"id": "node-1", "title": "Node"}, feedback="Fix this")
-            queued_path = root / "outputs/node-feedback/feedback-queue.jsonl"
-            item["status"] = "completed"
-            item["last_result"] = json.dumps({
-                "prompt": "Return a concise summary of what you did",
-                "finalAssistantVisibleText": "Recovered display summary.",
-            })
-            queued_path.write_text(json.dumps(item) + "\n", encoding="utf-8")
-
-            self.assertEqual(list_feedback(root)["items"][0]["last_result"], "Recovered display summary.")
-
-
-    def test_list_feedback_recovers_visible_text_from_truncated_openclaw_fragment(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            item = create_feedback(root, node={"id": "node-1", "title": "Node"}, feedback="Fix this")
-            queued_path = root / "outputs/node-feedback/feedback-queue.jsonl"
-            item["status"] = "completed"
-            item["last_result"] = 'runner prompt text", "finalAssistantVisibleText": "Recovered from fragment.\nAll passed.", "finalAssistantRawText": "Raw"}'
-            queued_path.write_text(json.dumps(item) + "\n", encoding="utf-8")
-
-            self.assertEqual(list_feedback(root)["items"][0]["last_result"], "Recovered from fragment.\nAll passed.")
-
-    def test_process_feedback_queue_reports_failed_openclaw_run(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            create_feedback(root, node={"id": "node-1", "title": "Node"}, feedback="Fix this")
-
-            def fake_run(cmd, **kwargs):
-                return subprocess.CompletedProcess(cmd, 2, stdout="", stderr="boom")
-
-            result = process_feedback_queue(root, runner=fake_run)
-
-            self.assertEqual(result["processed"], 1)
-            self.assertEqual(result["runs"][0]["status"], "failed")
-            self.assertIn("boom", result["runs"][0]["result"])
-            self.assertEqual(list_feedback(root)["items"][0]["status"], "failed")
+            path = root / "outputs/node-feedback/feedback-queue.jsonl"
+            path.parent.mkdir(parents=True)
+            path.write_text("{\"id\": \"ok\", \"status\": \"pending\"}\nnot-json\n")
+            result = list_feedback(root)
+            self.assertEqual(len(result["items"]), 2)
+            self.assertEqual(result["items"][1]["status"], "corrupt")
 
 
 if __name__ == "__main__":
