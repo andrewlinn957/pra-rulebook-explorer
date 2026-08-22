@@ -704,29 +704,42 @@ def extract_guidance_detail(html: str, url: str) -> tuple[list[Node], list[Edge]
 
 
 def extract_crr_terms(html: str, url: str) -> tuple[list[Node], list[Edge]]:
+    """Parse CRR Terms List, remapping every edge endpoint consistently.
+
+    Glossary parsing emits glossary-style IDs. After renaming nodes to the
+    CRR namespace, every edge must have both from_node_id and to_node_id
+    remapped through the same id_map, then be re-keyed.
+    """
     nodes, edges = extract_glossary(html, url)
     old_root = node_id("glossary")
     new_root = node_id("crr_terms_list")
+    id_map: dict[str, str] = {}
     for n in nodes:
         if n.node_type == "glossary":
+            id_map[n.id] = new_root
             n.node_type = "crr_terms_list"
             n.stable_key = "crr_terms_list"
             n.title = "CRR Terms List"
             n.id = new_root
         elif n.node_type == "defined_term":
-            n.stable_key = n.stable_key.replace("defined_term:glossary:", "defined_term:crr:")
-            n.id = node_id(n.stable_key)
+            new_stable = n.stable_key.replace("defined_term:glossary:", "defined_term:crr:")
+            new_id = node_id(new_stable)
+            id_map[n.id] = new_id
+            n.stable_key = new_stable
+            n.id = new_id
             n.metadata["source"] = "crr_terms_list"
-    for e in edges:
-        if e.from_node_id == old_root:
-            e.from_node_id = new_root
-        if e.edge_type == "defines":
-            # Recompute to_node_id from target_key is not needed for current rows;
-            # define edges point at nodes in order, so align by evidence later.
-            e.source_method = "crr_terms_source"
-            e.id = edge_id(e.from_node_id, e.to_node_id, "defines")
-    # Safer rebuild define edges after node ids change.
+
+    # Drop defines edges; rebuild them from the renamed root below.
     edges = [e for e in edges if e.edge_type != "defines"]
+
+    # Remap BOTH endpoints of every remaining edge, then re-key.
+    for e in edges:
+        e.from_node_id = id_map.get(e.from_node_id, e.from_node_id)
+        e.to_node_id = id_map.get(e.to_node_id, e.to_node_id)
+        if e.source_method == "glossary_source":
+            e.source_method = "crr_terms_source"
+        e.id = edge_id(e.from_node_id, e.to_node_id, e.edge_type)
+
     for n in nodes:
         if n.node_type == "defined_term":
             edges.append(Edge(edge_id(new_root, n.id, "defines"), new_root, n.id, "defines", "crr_terms_source", source_url=url))

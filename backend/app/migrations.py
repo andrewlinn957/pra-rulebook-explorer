@@ -4,7 +4,7 @@ import sqlite3
 from datetime import datetime, timezone
 
 
-LATEST_SCHEMA_VERSION = 9
+LATEST_SCHEMA_VERSION = 10
 
 
 ENRICHMENT_SCHEMA = """
@@ -126,6 +126,10 @@ def apply_migrations(conn: sqlite3.Connection) -> list[int]:
     if current < 9:
         _migrate_v9(conn)
         applied.append(9)
+        current = 9
+    if current < 10:
+        _migrate_v10(conn)
+        applied.append(10)
     return applied
 
 
@@ -656,3 +660,62 @@ def _has_table(conn: sqlite3.Connection, name: str) -> bool:
 
 def _columns(conn: sqlite3.Connection, table: str) -> set[str]:
     return {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+
+
+def _migrate_v10(conn: sqlite3.Connection) -> None:
+    """Immutable source snapshots with parser version and ingestion run."""
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS source_snapshot_version (
+          version_id TEXT PRIMARY KEY,
+          source_id TEXT NOT NULL,
+          url TEXT NOT NULL,
+          fetched_at TEXT NOT NULL,
+          content_hash TEXT NOT NULL,
+          raw_html TEXT NOT NULL,
+          raw_text TEXT DEFAULT '',
+          parser_version TEXT NOT NULL DEFAULT '',
+          ingestion_run_id TEXT DEFAULT '',
+          UNIQUE(url, content_hash, fetched_at)
+        );
+        CREATE INDEX IF NOT EXISTS idx_source_snapshot_version_source
+          ON source_snapshot_version(source_id, fetched_at);
+        CREATE INDEX IF NOT EXISTS idx_source_snapshot_version_url
+          ON source_snapshot_version(url, fetched_at);
+        CREATE INDEX IF NOT EXISTS idx_source_snapshot_version_run
+          ON source_snapshot_version(ingestion_run_id);
+        """
+    )
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO source_snapshot_version
+          (version_id, source_id, url, fetched_at, content_hash, raw_html, raw_text,
+           parser_version, ingestion_run_id)
+        SELECT
+          snapshot_id || ':' || fetched_at,
+          source_id, url, fetched_at, content_hash, raw_html, raw_text,
+          'parse_v10_backfill', ''
+        FROM document_snapshot
+        WHERE NOT EXISTS (
+          SELECT 1 FROM source_snapshot_version v
+          WHERE v.url=document_snapshot.url AND v.content_hash=document_snapshot.content_hash
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS schema_migration (
+          version INTEGER PRIMARY KEY,
+          name TEXT NOT NULL,
+          applied_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        INSERT OR REPLACE INTO schema_migration(version,name,applied_at)
+        VALUES (10,'immutable_source_snapshot_versions',CURRENT_TIMESTAMP)
+        """
+    )
+    conn.execute("PRAGMA user_version=10")
+    conn.commit()

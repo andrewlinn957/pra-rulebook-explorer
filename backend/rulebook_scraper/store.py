@@ -40,6 +40,26 @@ CREATE INDEX IF NOT EXISTS idx_document_snapshot_source
 CREATE INDEX IF NOT EXISTS idx_document_snapshot_url
   ON document_snapshot(url, fetched_at);
 
+CREATE TABLE IF NOT EXISTS source_snapshot_version (
+  version_id TEXT PRIMARY KEY,
+  source_id TEXT NOT NULL,
+  url TEXT NOT NULL,
+  fetched_at TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  raw_html TEXT NOT NULL,
+  raw_text TEXT DEFAULT '',
+  parser_version TEXT NOT NULL DEFAULT '',
+  ingestion_run_id TEXT DEFAULT '',
+  UNIQUE(url, content_hash, fetched_at)
+);
+
+CREATE INDEX IF NOT EXISTS idx_source_snapshot_version_source
+  ON source_snapshot_version(source_id, fetched_at);
+CREATE INDEX IF NOT EXISTS idx_source_snapshot_version_url
+  ON source_snapshot_version(url, fetched_at);
+CREATE INDEX IF NOT EXISTS idx_source_snapshot_version_run
+  ON source_snapshot_version(ingestion_run_id);
+
 CREATE TABLE IF NOT EXISTS node (
   id TEXT PRIMARY KEY,
   node_type TEXT NOT NULL,
@@ -193,6 +213,18 @@ def upsert_source(conn: sqlite3.Connection, *, source_type: str, url: str, fetch
         VALUES (?,?,?,?,?,?,?)
         """,
         (snapshot_id(url, raw_html), source_id, url, fetched_at, content_hash, raw_html, raw_text),
+    )
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO source_snapshot_version
+          (version_id,source_id,url,fetched_at,content_hash,raw_html,raw_text,parser_version,ingestion_run_id)
+        VALUES (?,?,?,?,?,?,?,?,?)
+        """,
+        (
+            f"{snapshot_id(url, raw_html)}:{fetched_at}",
+            source_id, url, fetched_at, content_hash, raw_html, raw_text,
+            "parse_current", "",
+        ),
     )
     conn.execute(
         """
