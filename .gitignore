@@ -10,3 +10,6 @@ frontend/dist/
 logs/
 .cleanup-trash/
 outputs/reporting-catalog-enrichment-batches/
+backups/
+outputs/
+backend/data/
