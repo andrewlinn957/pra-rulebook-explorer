@@ -9,7 +9,9 @@ from pathlib import Path
 
 from backend.app.reported_issues import (
     create_issue,
+    delete_issue,
     list_issues,
+    update_issue,
     update_issue_status,
 )
 
@@ -86,6 +88,50 @@ class ReportedIssuesTests(unittest.TestCase):
     def test_update_missing_issue_raises(self):
         with self.assertRaises(ValueError):
             update_issue_status(self.root, issue_id="ghost", status="resolved")
+
+    def test_update_issue_changes_description_and_status_but_preserves_report_context(self):
+        item = create_issue(
+            self.root,
+            node={"id": "a", "title": "Node A", "node_type": "rule"},
+            description="Original report",
+            page_url="https://example.test/node-a",
+            context="reading_mode",
+        )
+        updated = update_issue(
+            self.root,
+            issue_id=item["id"],
+            description="Amended report",
+            status="resolved",
+        )
+
+        self.assertEqual(updated["description"], "Amended report")
+        self.assertEqual(updated["status"], "resolved")
+        self.assertEqual(updated["node"], item["node"])
+        self.assertEqual(updated["created_at"], item["created_at"])
+        self.assertEqual(updated["page_url"], item["page_url"])
+        self.assertEqual(updated["context"], item["context"])
+        self.assertTrue(updated["updated_at"])
+
+    def test_update_issue_rejects_invalid_values(self):
+        item = create_issue(self.root, node={"id": "a"})
+        with self.assertRaises(ValueError):
+            update_issue(self.root, issue_id=item["id"], status="bogus")
+        with self.assertRaises(ValueError):
+            update_issue(self.root, issue_id=item["id"], description="x" * 2001)
+
+    def test_delete_issue_removes_only_requested_item(self):
+        first = create_issue(self.root, node={"id": "first"})
+        second = create_issue(self.root, node={"id": "second"})
+
+        deleted = delete_issue(self.root, issue_id=first["id"])
+
+        self.assertEqual(deleted["id"], first["id"])
+        remaining = list_issues(self.root)["items"]
+        self.assertEqual([item["id"] for item in remaining], [second["id"]])
+
+    def test_delete_missing_issue_raises(self):
+        with self.assertRaises(ValueError):
+            delete_issue(self.root, issue_id="ghost")
 
     def test_concurrent_writes_do_not_lose_entries(self):
         def worker(n):

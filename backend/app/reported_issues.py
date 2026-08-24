@@ -17,6 +17,7 @@ QUEUE_DIR = Path("outputs/reported-issues")
 QUEUE_FILE = "reported-issues.jsonl"
 MAX_DESCRIPTION_CHARS = 2_000
 MAX_PAGE_URL_CHARS = 1_000
+ALLOWED_STATUSES = frozenset({"open", "in_progress", "resolved", "wont_fix"})
 
 
 def _now() -> str:
@@ -25,6 +26,10 @@ def _now() -> str:
 
 def _queue_path(root: Path) -> Path:
     return root / QUEUE_DIR / QUEUE_FILE
+
+
+def _lock_path(path: Path) -> Path:
+    return path.with_name(f".{path.name}.lock")
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -43,28 +48,41 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
 
 def _append_jsonl(path: Path, item: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as fh:
-        fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+    with _lock_path(path).open("a", encoding="utf-8") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
         try:
-            fh.write(json.dumps(item, sort_keys=True) + "\n")
-            fh.flush()
-        finally:
-            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
-
-
-def _rewrite_jsonl(path: Path, items: list[dict[str, Any]]) -> None:
-    """Rewrite whole file under lock (for status updates)."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    with tmp.open("w", encoding="utf-8") as fh:
-        fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
-        try:
-            for item in items:
+            with path.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps(item, sort_keys=True) + "\n")
-            fh.flush()
+                fh.flush()
         finally:
-            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+
+
+def _write_jsonl_unlocked(path: Path, items: list[dict[str, Any]]) -> None:
+    tmp = path.with_suffix(f"{path.suffix}.tmp")
+    with tmp.open("w", encoding="utf-8") as fh:
+        for item in items:
+            fh.write(json.dumps(item, sort_keys=True) + "\n")
+        fh.flush()
     tmp.replace(path)
+
+
+def _mutate_issue(path: Path, issue_id: str, mutation) -> dict[str, Any]:
+    """Apply a mutation while holding the same lock used by appends."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with _lock_path(path).open("a", encoding="utf-8") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        try:
+            items = _read_jsonl(path)
+            found = next((item for item in items if item.get("id") == issue_id), None)
+            if not found:
+                raise ValueError(f"issue {issue_id!r} not found")
+            mutation(found)
+            found["updated_at"] = _now()
+            _write_jsonl_unlocked(path, items)
+            return found
+        finally:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
 
 
 def _clean_node(node: dict[str, Any]) -> dict[str, Any]:
@@ -106,7 +124,7 @@ def create_issue(
 
 
 def list_issues(root: Path, *, status: str | None = None) -> dict[str, Any]:
-    items = _read_jsonl(_queue_path(root))
+    items = list(reversed(_read_jsonl(_queue_path(root))))
     counts: dict[str, int] = {}
     filtered: list[dict[str, Any]] = []
     for item in items:
@@ -124,22 +142,63 @@ def update_issue_status(
     status: str,
     note: str = "",
 ) -> dict[str, Any]:
-    allowed = {"open", "in_progress", "resolved", "wont_fix"}
-    if status not in allowed:
-        raise ValueError(f"status must be one of: {sorted(allowed)}")
     path = _queue_path(root)
-    items = _read_jsonl(path)
-    found = None
-    for item in items:
-        if item.get("id") == issue_id:
+    _validate_status(status)
+
+    def mutation(item: dict[str, Any]) -> None:
+        item["status"] = status
+        if note.strip():
+            notes = item.setdefault("notes", [])
+            notes.append({"text": note.strip(), "ts": _now()})
+
+    return _mutate_issue(path, issue_id, mutation)
+
+
+def _validate_status(status: str) -> None:
+    if status not in ALLOWED_STATUSES:
+        raise ValueError(f"status must be one of: {sorted(ALLOWED_STATUSES)}")
+
+
+def update_issue(
+    root: Path,
+    *,
+    issue_id: str,
+    description: str | None = None,
+    status: str | None = None,
+) -> dict[str, Any]:
+    """Amend an issue without changing its linked node or report context."""
+    if description is None and status is None:
+        raise ValueError("description or status is required")
+    clean_description = None
+    if description is not None:
+        clean_description = description.strip()
+        if len(clean_description) > MAX_DESCRIPTION_CHARS:
+            raise ValueError(f"description must be at most {MAX_DESCRIPTION_CHARS} characters")
+    if status is not None:
+        _validate_status(status)
+
+    def mutation(item: dict[str, Any]) -> None:
+        if clean_description is not None:
+            item["description"] = clean_description
+        if status is not None:
             item["status"] = status
-            item["updated_at"] = _now()
-            if note.strip():
-                notes = item.setdefault("notes", [])
-                notes.append({"text": note.strip(), "ts": _now()})
-            found = item
-            break
-    if not found:
-        raise ValueError(f"issue {issue_id!r} not found")
-    _rewrite_jsonl(path, items)
-    return found
+
+    return _mutate_issue(_queue_path(root), issue_id, mutation)
+
+
+def delete_issue(root: Path, *, issue_id: str) -> dict[str, Any]:
+    """Permanently remove one issue and return the deleted item."""
+    path = _queue_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with _lock_path(path).open("a", encoding="utf-8") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        try:
+            items = _read_jsonl(path)
+            index = next((index for index, item in enumerate(items) if item.get("id") == issue_id), None)
+            if index is None:
+                raise ValueError(f"issue {issue_id!r} not found")
+            deleted = items.pop(index)
+            _write_jsonl_unlocked(path, items)
+            return deleted
+        finally:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)

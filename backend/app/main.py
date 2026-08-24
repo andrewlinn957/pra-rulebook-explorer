@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse
 
 from .db import DEFAULT_DB, connect, ensure_indexes, get_node
 from .feedback import create_feedback, list_feedback
-from .reported_issues import create_issue, list_issues, update_issue_status
+from .reported_issues import delete_issue, create_issue, list_issues, update_issue, update_issue_status
 from .analysis_cache import get_or_compute
 from .graph import common_neighbours, contents_tree, interesting, list_nodes, neighbourhood, reader_bundle, search, semantic_map, shortest_path, stats
 from .reporting import (
@@ -54,7 +54,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_credentials=False,
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["Content-Type"],
 )
 
@@ -169,6 +169,42 @@ async def api_update_issue_status(issue_id: str, request: Request) -> dict:
         item = update_issue_status(PROJECT_ROOT, issue_id=issue_id, status=status, note=note)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "item": item}
+
+
+@app.patch("/issues/{issue_id}")
+async def api_update_issue(issue_id: str, request: Request) -> dict:
+    try:
+        payload = await request.json()
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Request body must be valid JSON") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Request body must be a JSON object")
+    description = payload.get("description")
+    status = payload.get("status")
+    if description is not None and not isinstance(description, str):
+        raise HTTPException(status_code=400, detail="description must be a string")
+    if status is not None and not isinstance(status, str):
+        raise HTTPException(status_code=400, detail="status must be a string")
+    try:
+        item = update_issue(
+            PROJECT_ROOT,
+            issue_id=issue_id,
+            description=description,
+            status=status,
+        )
+    except ValueError as exc:
+        status_code = 404 if "not found" in str(exc) else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    return {"ok": True, "item": item}
+
+
+@app.delete("/issues/{issue_id}")
+def api_delete_issue(issue_id: str) -> dict:
+    try:
+        item = delete_issue(PROJECT_ROOT, issue_id=issue_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {"ok": True, "item": item}
 
 

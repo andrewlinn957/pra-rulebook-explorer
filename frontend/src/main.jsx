@@ -42,6 +42,7 @@ import {
   referenceDisplayTitle,
   referenceShelfDensity,
 } from './readingMode.js';
+import { filterIssues, issueCounts, issueDateLabel, issueStatusLabel, ISSUE_STATUSES } from './issuesLog.js';
 import './styles.css';
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/pra-rulebook-api';
@@ -262,7 +263,16 @@ function App(){
     setPanelOpen(false);
   }
 
-  return <div className={`shell ${panelOpen?'panel-open':'panel-closed'} ${view==='reporting'?'reporting-view-mode':''} ${readingNode?'reading-view-mode':''} ${readingNode&&issueReportNode?'reading-issue-open':''}`}>
+  function openIssuesLog(event){
+    event?.currentTarget?.closest('details')?.removeAttribute('open');
+    setReadingNode(null);
+    setIssueReportNode(null);
+    setView('issues');
+    setPanelOpen(false);
+    setError('');
+  }
+
+  return <div className={`shell ${panelOpen?'panel-open':'panel-closed'} ${view==='reporting'?'reporting-view-mode':''} ${view==='issues'?'issues-view-mode':''} ${readingNode?'reading-view-mode':''} ${readingNode&&issueReportNode?'reading-issue-open':''}`}>
     <header className="topbar">
       <a className="home" href="/">‹</a>
       <form className="command" onSubmit={search}>
@@ -292,6 +302,7 @@ function App(){
           <summary aria-label="Graph settings" title="Graph settings">⚙</summary>
           <div className="settings-pop">
             <div className="settings-pop-heading"><strong>Graph settings</strong><span>Structure, filters and link visibility</span></div>
+            <div className="settings-view-link"><button type="button" onClick={openIssuesLog}><span>Issues log</span><small>Review and maintain reported node issues</small></button></div>
             <div className="filter-section representation-section"><h4>Representation</h4><div className="type-grid representation-grid">{Object.entries(REPRESENTATIONS).map(([key,preset])=><button type="button" key={key} className={representation===key?'on':''} onClick={()=>applyRepresentation(key)}><span>{preset.label}</span></button>)}<button type="button" className={representation==='custom'?'on':''} onClick={()=>applyRepresentation('custom')}><span>Custom</span></button></div><p className="rep-hint"><b>{activeRep.label}</b>{activeRep.hint}</p></div>
             <label className="depth-control"><span>Graph depth</span><input type="range" min="1" max="3" step="1" value={depth} onInput={e=>{setDepth(Number(e.currentTarget.value));setRepresentation('custom')}} onChange={e=>{setDepth(Number(e.currentTarget.value));setRepresentation('custom')}}/><b>{depth}</b><span className="stepper"><button type="button" onClick={()=>{setDepth(d=>Math.max(1,d-1));setRepresentation('custom')}}>−</button><button type="button" onClick={()=>{setDepth(d=>Math.min(3,d+1));setRepresentation('custom')}}>＋</button></span></label>
             <label>Visible node cap <input type="number" min="30" max="800" value={limit} onChange={e=>setLimit(Number(e.target.value))}/></label>
@@ -307,7 +318,7 @@ function App(){
     </aside>
 
     <main className="canvas">
-      {readingNode?<ProvisionReader rootNode={readingNode} api={api} onClose={()=>setReadingNode(null)} onReportIssue={n=>{setIssueReportNode(n);setIssueText('');}}/>:view==='reporting'?<ReportingGraphView onFeedback={n=>{setIssueReportNode(n);setIssueText('');}}/>:<>
+      {readingNode?<ProvisionReader rootNode={readingNode} api={api} onClose={()=>setReadingNode(null)} onReportIssue={n=>{setIssueReportNode(n);setIssueText('');}}/>:view==='reporting'?<ReportingGraphView onFeedback={n=>{setIssueReportNode(n);setIssueText('');}}/>:view==='issues'?<IssuesLogView onBack={()=>setView('graph')}/>:<>
         <div className="canvas-meta"><strong>{selected?.title||'Select a node'}</strong><span>{activeRep.label} · {visibleGraph.nodes.length} shown · {visibleGraph.edges.length} visible links · {Object.values(graph.available_edge_types||{}).reduce((a,b)=>a+b,0)} direct links available</span></div>
         <Graph graph={visibleGraph} selected={selected} detail={detail} nodeTypes={nodeTypes} relationshipTypes={types} relationshipFilters={relationshipFilters} availableEdgeTypes={graph.available_edge_types||{}} onToggleNodeType={toggleNodeType} onToggleRelationship={toggleType} onSelect={n=>{setDetail(n);setPanelOpen(true);}} onOpen={n=>choose(n,{drill:true})} onFeedback={n=>{setIssueReportNode(n);setIssueText('');}}/>
       </>}
@@ -318,6 +329,122 @@ function App(){
     </aside>
     {issueReportNode&&<IssueReportModal node={issueReportNode} text={issueText} setText={setIssueText} saving={issueSaving} saved={issueSaved} context={readingNode?'reading_mode':'graph_view'} onClose={()=>setIssueReportNode(null)} onSubmit={submitIssueReport}/>}
   </div>;
+}
+
+function IssuesLogView({onBack}){
+  const [items,setItems]=useState([]);
+  const [counts,setCounts]=useState(issueCounts([]));
+  const [statusFilter,setStatusFilter]=useState('all');
+  const [loading,setLoading]=useState(true);
+  const [error,setError]=useState('');
+  const [editing,setEditing]=useState(null);
+  const [deleting,setDeleting]=useState('');
+
+  async function loadIssues(){
+    setLoading(true);
+    try{
+      const data=await fetchJson(API_BASE+'/issues');
+      const nextItems=data.items||[];
+      setItems(nextItems);
+      setCounts(issueCounts(nextItems));
+      setError('');
+    }catch(err){setError(err.message||String(err));}
+    finally{setLoading(false);}
+  }
+
+  useEffect(()=>{loadIssues();},[]);
+
+  const visibleItems=filterIssues(items,statusFilter);
+
+  async function saveIssue(issueId,changes){
+    setError('');
+    const response=await fetch(API_BASE+`/issues/${encodeURIComponent(issueId)}`,{
+      method:'PATCH',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(changes),
+    });
+    if(!response.ok) throw new Error(await responseErrorText(response));
+    setEditing(null);
+    await loadIssues();
+  }
+
+  async function removeIssue(issue){
+    const title=issueNodeTitle(issue);
+    if(!window.confirm(`Delete the issue reported for “${title}”?`)) return;
+    setDeleting(issue.id); setError('');
+    try{
+      const response=await fetch(API_BASE+`/issues/${encodeURIComponent(issue.id)}`,{method:'DELETE'});
+      if(!response.ok) throw new Error(await responseErrorText(response));
+      await loadIssues();
+    }catch(err){setError(err.message||String(err));}
+    finally{setDeleting('');}
+  }
+
+  return <section className="issues-workspace" aria-labelledby="issues-log-title">
+    <header className="issues-head">
+      <div><span className="eyebrow">Workspace maintenance</span><h1 id="issues-log-title">Issues log</h1><p>Reported node issues from graph and reader views.</p></div>
+      <button type="button" className="issues-back" onClick={onBack}>← Back to explorer</button>
+    </header>
+    <div className="issues-toolbar">
+      <div className="issues-summary" aria-label="Issue counts">
+        <span><strong>{counts.all}</strong> total</span>
+        {ISSUE_STATUSES.map(key=><span key={key}><strong>{counts[key]}</strong> {issueStatusLabel(key).toLowerCase()}</span>)}
+      </div>
+      <label className="issues-filter"><span>Filter</span><select value={statusFilter} onChange={event=>setStatusFilter(event.target.value)} aria-label="Filter issues by status"><option value="all">All statuses</option>{ISSUE_STATUSES.map(key=><option key={key} value={key}>{issueStatusLabel(key)}</option>)}</select></label>
+    </div>
+    {error&&<div className="issues-error" role="alert">{error}</div>}
+    {loading
+      ? <div className="issues-state">Loading reported issues…</div>
+      : error&&!items.length
+        ? <div className="issues-state"><strong>Could not load reported issues</strong><span>Try opening the Issues log again. The API returned an error.</span></div>
+      : !items.length
+        ? <div className="issues-state"><strong>No reported issues</strong><span>Reports created from graph or reader views will appear here.</span></div>
+        : !visibleItems.length
+          ? <div className="issues-state"><strong>No issues match this filter</strong><span>Choose another status to see the remaining reports.</span></div>
+          : <div className="issues-table-wrap"><table className="issues-table"><caption className="sr-only">Reported node issues</caption><thead><tr><th scope="col">Status</th><th scope="col">Reported</th><th scope="col">Node</th><th scope="col">Issue</th><th scope="col">Actions</th></tr></thead><tbody>{visibleItems.map(issue=><tr key={issue.id}>
+            <td><span className={`issue-status status-${issue.status||'unknown'}`}>{issueStatusLabel(issue.status)}</span></td>
+            <td className="issue-date"><time dateTime={issue.created_at||undefined}>{issueDateLabel(issue.created_at)}</time></td>
+            <td className="issue-node"><strong>{issueNodeTitle(issue)}</strong><span>{nodeTypeLabel(issue.node?.node_type)}</span>{issue.node?.url&&<a href={issue.node.url} target="_blank" rel="noopener noreferrer">Source ↗</a>}</td>
+            <td className="issue-copy"><span>{issue.description||'No description provided.'}</span><small>{issueContextLabel(issue.context)}</small></td>
+            <td className="issue-actions"><button type="button" onClick={()=>setEditing(issue)}>Edit</button><button type="button" className="issue-delete" disabled={deleting===issue.id} onClick={()=>removeIssue(issue)}>{deleting===issue.id?'Deleting…':'Delete'}</button></td>
+          </tr>)}</tbody></table></div>}
+    {editing&&<IssueEditModal issue={editing} onClose={()=>setEditing(null)} onSave={saveIssue}/>}
+  </section>;
+}
+
+function IssueEditModal({issue,onClose,onSave}){
+  const [description,setDescription]=useState(issue.description||'');
+  const [status,setStatus]=useState(issue.status||'open');
+  const [saving,setSaving]=useState(false);
+  const [error,setError]=useState('');
+
+  async function submit(event){
+    event.preventDefault(); setSaving(true); setError('');
+    try{ await onSave(issue.id,{description,status}); }
+    catch(err){setError(err.message||String(err));}
+    finally{setSaving(false);}
+  }
+
+  return <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Amend reported issue" onClick={event=>{if(event.target===event.currentTarget)onClose();}}>
+    <form className="node-feedback-modal issue-edit-modal" onSubmit={submit}>
+      <div className="modal-head"><div><span className="eyebrow">Issue maintenance</span><h3>Amend reported issue</h3></div><button type="button" onClick={onClose} aria-label="Close">×</button></div>
+      <div className="feedback-node-summary"><span>{nodeTypeLabel(issue.node?.node_type)}</span><strong>{issueNodeTitle(issue)}</strong></div>
+      <label className="feedback-editor"><span>Description</span><textarea value={description} maxLength={2000} onChange={event=>setDescription(event.target.value)} autoFocus/></label>
+      <label className="issue-status-editor"><span>Status</span><select value={status} onChange={event=>setStatus(event.target.value)}>{ISSUE_STATUSES.map(key=><option key={key} value={key}>{issueStatusLabel(key)}</option>)}</select></label>
+      {error&&<p className="issues-error" role="alert">{error}</p>}
+      <div className="modal-actions"><button type="button" onClick={onClose}>Cancel</button><button type="submit" disabled={saving}>{saving?'Saving…':'Save changes'}</button></div>
+    </form>
+  </div>;
+}
+
+function issueNodeTitle(issue){
+  return issue?.node?.title||issue?.node?.stable_key||issue?.node?.id||'Unknown node';
+}
+function nodeTypeLabel(value){
+  return String(value||'Unknown node').replaceAll('_',' ');
+}
+function issueContextLabel(value){
+  return value==='reading_mode'?'Reader view':value==='graph_view'?'Graph view':value||'Unknown context';
 }
 
 function IssueReportModal({node,text,setText,saving,saved,context,onClose,onSubmit}){
