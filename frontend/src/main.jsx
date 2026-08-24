@@ -288,7 +288,7 @@ function App(){
     <aside className="rail">
       <div className="rail-brand">
         <a className="rail-brand-mark" href="/" aria-label="PRA Rulebook home">
-          <svg viewBox="0 0 32 32" role="img" aria-hidden="true"><path d="M16 2.75 27 7v8.2c0 6.6-4.4 11.2-11 14.05C10.4 26.4 6 21.8 6 15.2V7l10-4.25Z" fill="none" stroke="currentColor" strokeWidth="1.8"/><path d="m11 16 3.1 3.1L21.8 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          <img className="rail-brand-logo" src={`${import.meta.env.BASE_URL}pra-rulebook-graph-logo.svg`} alt="" aria-hidden="true" />
         </a>
         <div className="rail-brand-copy"><span>Rulebook Explorer</span><strong>PRA Rulebook</strong></div>
         <a className="rail-collapse" href="/" aria-label="Return to PRA Rulebook home" title="PRA Rulebook home">«</a>

@@ -1885,7 +1885,7 @@ body{background:var(--colour-page);color:var(--colour-text)}
   color:var(--colour-accent);
   text-decoration:none;
 }
-.rail-brand-mark svg{display:block;width:29px;height:29px}
+.rail-brand-mark svg,.rail-brand-logo{display:block;width:29px;height:29px}
 .rail-brand-copy{display:none}
 .rail-collapse{
   margin-left:auto;

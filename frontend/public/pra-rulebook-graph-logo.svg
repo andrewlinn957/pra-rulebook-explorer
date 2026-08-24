@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">PRA Rulebook graph logo</title>
+  <desc id="desc">A central node connected to six surrounding nodes.</desc>
+  <g fill="none" stroke="#43D9B1" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M32 32 32 10M32 32 50.5 20.5M32 32 50.5 43.5M32 32 32 54M32 32 13.5 43.5M32 32 13.5 20.5" stroke-width="2.4"/>
+    <path d="M13.5 20.5Q32 7 50.5 20.5M50.5 20.5Q58 32 50.5 43.5M50.5 43.5Q32 57 13.5 43.5M13.5 43.5Q6 32 13.5 20.5" stroke-width="1.5" opacity=".72"/>
+  </g>
+  <g stroke="#123524" stroke-width="1.5">
+    <circle cx="32" cy="10" r="5.5" fill="#A6B8AE"/>
+    <circle cx="50.5" cy="20.5" r="5.5" fill="#B0EEDD"/>
+    <circle cx="50.5" cy="43.5" r="5.5" fill="#D8E2DC"/>
+    <circle cx="32" cy="54" r="5.5" fill="#B0EEDD"/>
+    <circle cx="13.5" cy="43.5" r="5.5" fill="#D8E2DC"/>
+    <circle cx="13.5" cy="20.5" r="5.5" fill="#B0EEDD"/>
+    <circle cx="32" cy="32" r="8.5" fill="#FFFFFF"/>
+  </g>
+</svg>
