@@ -4,6 +4,7 @@ import ForceGraph2D from 'react-force-graph-2d';
 import { forceCollide, forceX, forceY } from 'd3-force';
 import { filterGraph, isInsuranceNode } from './graphFilters.js';
 import { displayNodeTitle, documentBadge, relativeNodeRole, edgeDirectionGlyph, edgeDirectionLabel } from './graphPresentation.js';
+import { CHART_SEQUENCE, COLOURS, EDGE_COLOURS, MATERIAL_COLOURS } from './colourTokens.js';
 import {
   REPORTING_EDGE_GROUPS,
   REPORTING_OVERVIEW_EDGE_GROUP_KEYS,
@@ -59,9 +60,6 @@ const EXPLICIT = new Set(['site_structure','html_link','html_anchor_resolved','h
 const RELATION_LABELS = { contains:'contains / child', references:'Cross-references', uses_defined_term:'Definitions used', defines:'Definitions provided', shares_defined_term:'Shared defined terms', has_obligation_pattern:'Obligation themes', shares_obligation_pattern:'Similar obligations', has_structured_obligation:'Extracted obligations', amends:'Amendments', has_permission:'Firms with permissions', has_version:'Provision versions', sourced_from:'Source page', HAS_REGIME:'Has regime', HAS_COLLECTION:'Has collection', BELONGS_TO_REGIME:'Belongs to regime', BELONGS_TO_COLLECTION:'Belongs to collection', HAS_EDITION:'Has edition', SUPERSEDES:'Supersedes', HAS_TEMPLATE_RESOURCE:'Has template resource', HAS_INSTRUCTION_RESOURCE:'Has instruction resource', HAS_RESOURCE:'Has resource', CONTAINS_SHEET:'Contains worksheet', IMPLEMENTS_TEMPLATE:'Implements template', SUPPORTED_BY_TAXONOMY:'Supported by taxonomy', HAS_TAXONOMY_RESOURCE:'Has taxonomy resource', USES_TEMPLATE:'Uses template', USES_INSTRUCTIONS:'Uses instructions', EVIDENCED_BY:'Evidenced by', LEGAL_BASIS:'Legal basis', APPLIES_TO:'Applies to', HAS_SCOPE_RULE:'Scope rule', MAY_BE_AFFECTED_BY_PERMISSION:'Affected by permission', REFERENCES_RULE:'References rule', REFERENCES_SOURCE:'References source', REFERENCES_EXTERNAL:'References external', REFERENCES_RETURN:'References return', REFERENCES_TEMPLATE:'References template', SUMMARISES_DATAPOINTS:'Summarises datapoints', HAS_DATAPOINT:'Has datapoint', REPORTS_CONCEPT:'Reports concept' };
 const EVIDENCE_LABELS = { references:'Cross-references', uses_defined_term:'Definitions used by this provision', defines:'Definitions provided here', shares_defined_term:'Provisions sharing defined terms', has_obligation_pattern:'Obligation themes found here', shares_obligation_pattern:'Provisions with similar obligations', has_structured_obligation:'Extracted obligation statements', amends:'Legal instruments amending this material', has_permission:'Firms with active permissions' };
 const ORIGIN_FILTERS = { all:'All links', explicit:'Direct links', inferred:'Inferred / derived links' };
-const EDGE_COLOURS = { contains:'#94a3b8', references:'#2563eb', uses_defined_term:'#d97706', defines:'#ca8a04', shares_defined_term:'#0f766e', has_obligation_pattern:'#db2777', shares_obligation_pattern:'#ea580c', has_structured_obligation:'#be123c', amends:'#dc2626', has_permission:'#8b5cf6', has_version:'#7c3aed', sourced_from:'#0f766e', HAS_REGIME:'#1d4ed8', HAS_COLLECTION:'#0284c7', BELONGS_TO_REGIME:'#1d4ed8', BELONGS_TO_COLLECTION:'#0284c7', HAS_EDITION:'#4f46e5', SUPERSEDES:'#64748b', HAS_TEMPLATE_RESOURCE:'#0f766e', HAS_INSTRUCTION_RESOURCE:'#d97706', HAS_RESOURCE:'#7c3aed', CONTAINS_SHEET:'#0891b2', IMPLEMENTS_TEMPLATE:'#0f766e', SUPPORTED_BY_TAXONOMY:'#6d28d9', HAS_TAXONOMY_RESOURCE:'#7c3aed', USES_TEMPLATE:'#2563eb', USES_INSTRUCTIONS:'#0f766e', EVIDENCED_BY:'#7c3aed', LEGAL_BASIS:'#dc2626', APPLIES_TO:'#0891b2', HAS_SCOPE_RULE:'#0d9488', MAY_BE_AFFECTED_BY_PERMISSION:'#8b5cf6', REFERENCES_RULE:'#be123c', REFERENCES_SOURCE:'#9333ea', REFERENCES_EXTERNAL:'#64748b', REFERENCES_RETURN:'#ea580c', REFERENCES_TEMPLATE:'#4f46e5', SUMMARISES_DATAPOINTS:'#475569', HAS_DATAPOINT:'#94a3b8', REPORTS_CONCEPT:'#0f766e' };
-const MATERIAL_COLOURS = { rule:'#2563eb', supervisory_statement:'#16a34a', statement_of_policy:'#0f766e', definition:'#b45309', permission:'#8b5cf6', external_reference:'#64748b', legal_instrument:'#b91c1c', obligation_pattern:'#db2777', obligation_statement:'#be123c', analysis:'#9333ea', rulebook:'#6d28d9', reporting_estate:'#172554', reporting_regime:'#1d4ed8', reporting_collection:'#0284c7', reporting_requirement:'#2457d6', reporting_edition:'#4f46e5', reporting_resource:'#7c3aed', reporting_template:'#0f766e', reporting_instruction:'#d97706', reporting_source:'#7c3aed', reporting_xbrl_source:'#6d28d9', reporting_datapoint:'#64748b', reporting_provision:'#be123c', reporting_concept:'#0891b2' };
-const CLUSTER_COLOURS = ['#4f7cff','#d28b24','#58a978','#d35cff','#cc5c5c','#35b6b4','#d7ff64','#a78bfa','#fb7185','#60a5fa','#f59e0b','#34d399'];
 const MATERIAL_FILTERS = ['rule','supervisory_statement','statement_of_policy','definition','permission','legal_instrument','external_reference'];
 const RELATIONSHIP_ORDER = TYPES;
 const REPORTING_NODE_TYPES = ['ReportingEstate','ReportingRegime','ReportingCollection','ReportingRequirement','RequirementEdition','ReportingResource','Worksheet','LogicalTemplate','InstructionSection','TaxonomyRelease','TaxonomyEntryPoint','DataItem','ReportingReturn','DisclosureSet','ReportingObligation','Template','InstructionSet','SourceDocument','Provision','ExternalReference','LegalInstrument','PolicyStatement','TemplateSet','DataPointGroup','DataPoint','TemplateRow','TemplateColumn','Concept','ScopeRule','FirmType','Permission','ValidationRule'];
@@ -109,8 +107,7 @@ function App(){
   const [showInsurance,setShowInsurance]=useState(false);
   const [stats,setStats]=useState(null);
   const [view,setView]=useState('graph');
-  const [panelOpen,setPanelOpen]=useState(()=>window.innerWidth>1400);
-  const [graphExpanded,setGraphExpanded]=useState(false);
+  const [panelOpen,setPanelOpen]=useState(()=>window.innerWidth>900);
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
   const [issueReportNode,setIssueReportNode]=useState(null);
@@ -138,7 +135,8 @@ function App(){
       setResults(parts.results||[]);
       setRailContext(null);
       setRailStack([]);
-      if(roots.results?.[0]) await choose(roots.results[0], {drill:false, openPanel:false});
+      const initialNode=parts.results?.[0]||roots.results?.[0];
+      if(initialNode) await choose(initialNode, {drill:false, openPanel:window.innerWidth>900});
     }catch(e){setError(e.message||String(e));}
   }
   async function loadAllParts(){
@@ -164,7 +162,7 @@ function App(){
   }
   async function choose(n, opts={drill:true}){
     const full=await api(`/node/${n.id}`);
-    setSelected(full); setDetail(full); setPanelOpen(opts.openPanel ?? window.innerWidth>1400);
+    setSelected(full); setDetail(full); setPanelOpen(opts.openPanel ?? window.innerWidth>900);
     const [tree]=await Promise.all([loadContents(full.id), ['whole_map','article_map'].includes(representation)?Promise.resolve(null):loadNeighbourhood(full.id)]);
     if(opts.drill!==false && tree?.children?.length && ['rulebook','part','chapter','provision','guidance_document','guidance_section'].includes(full.node_type)){
       setRailStack(stack=>[...stack,{results,railContext}]);
@@ -260,7 +258,7 @@ function App(){
     setPanelOpen(false);
   }
 
-  return <div className={`${graphExpanded?'shell graph-expanded':'shell'} ${panelOpen?'panel-open':'panel-closed'} ${view==='reporting'?'reporting-view-mode':''} ${readingNode?'reading-view-mode':''}`}>
+  return <div className={`shell ${panelOpen?'panel-open':'panel-closed'} ${view==='reporting'?'reporting-view-mode':''} ${readingNode?'reading-view-mode':''} ${readingNode&&issueReportNode?'reading-issue-open':''}`}>
     <header className="topbar">
       <a className="home" href="/">‹</a>
       <form className="command" onSubmit={search}>
@@ -270,29 +268,43 @@ function App(){
         <button className={view==='graph'?'mode on':'mode'} onClick={()=>setView('graph')}>Graph</button>
         <button className={view==='reporting'?'mode on':'mode'} onClick={()=>{setView('reporting');setPanelOpen(false);}}>Reporting</button>
         <button onClick={()=>setPanelOpen(!panelOpen)} title="Toggle side panel">◧</button>
-        <details className="settings"><summary title="Display settings">⚙</summary><div className="settings-pop">
-          <div className="filter-section representation-section"><h4>Representation</h4><div className="type-grid representation-grid">{Object.entries(REPRESENTATIONS).map(([key,preset])=><button type="button" key={key} className={representation===key?'on':''} onClick={()=>applyRepresentation(key)}><span>{preset.label}</span></button>)}<button type="button" className={representation==='custom'?'on':''} onClick={()=>applyRepresentation('custom')}><span>Custom</span></button></div><p className="rep-hint"><b>{activeRep.label}</b>{activeRep.hint}</p></div>
-          <label className="depth-control"><span>Depth</span><input type="range" min="1" max="3" step="1" value={depth} onInput={e=>{setDepth(Number(e.currentTarget.value));setRepresentation('custom')}} onChange={e=>{setDepth(Number(e.currentTarget.value));setRepresentation('custom')}}/><b>{depth}</b><span className="stepper"><button type="button" onClick={()=>{setDepth(d=>Math.max(1,d-1));setRepresentation('custom')}}>−</button><button type="button" onClick={()=>{setDepth(d=>Math.min(3,d+1));setRepresentation('custom')}}>＋</button></span></label>
-          <label>Node cap <input type="number" min="30" max="800" value={limit} onChange={e=>setLimit(Number(e.target.value))}/></label>
-          <label className="check"><input type="checkbox" checked={explicitOnly} onChange={e=>{setExplicitOnly(e.target.checked);setRepresentation('custom')}}/> Direct links only when loading</label>
-          <label className="check"><input type="checkbox" checked={showInsurance} onChange={e=>setShowInsurance(e.target.checked)}/> Insurance parts</label>
-          <div className="filter-section"><h4>Link origin</h4><div className="type-grid origin-grid">{Object.entries(ORIGIN_FILTERS).map(([key,label])=><button type="button" key={key} className={originFilter===key?'on':''} onClick={()=>setOriginFilter(key)}><span>{label}</span></button>)}</div></div>
-          <div className="filter-section"><h4>Material</h4><div className="type-grid material-grid">{MATERIAL_FILTERS.map(t=><button type="button" key={t} className={materialFilterOn(t,nodeTypes)?'on':''} onClick={()=>toggleNodeType(t)}><span>{materialLabel(t)}</span></button>)}</div></div>
-          <div className="filter-section"><h4>Relationship edges</h4><div className="type-grid">{relationshipFilters.map(t=><button type="button" key={t} className={types.has(t)?'on':''} onClick={()=>toggleType(t)}><span>{relationLabel(t)}</span><em>{relationshipCount(t,stats,graph)}</em></button>)}</div></div>
-        </div></details>
       </div>
     </header>
 
     <aside className="rail">
+      <div className="rail-brand">
+        <a className="rail-brand-mark" href="/" aria-label="PRA Rulebook home">
+          <svg viewBox="0 0 32 32" role="img" aria-hidden="true"><path d="M16 2.75 27 7v8.2c0 6.6-4.4 11.2-11 14.05C10.4 26.4 6 21.8 6 15.2V7l10-4.25Z" fill="none" stroke="currentColor" strokeWidth="1.8"/><path d="m11 16 3.1 3.1L21.8 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
+        </a>
+        <div className="rail-brand-copy"><span>Rulebook Explorer</span><strong>PRA Rulebook</strong></div>
+        <a className="rail-collapse" href="/" aria-label="Return to PRA Rulebook home" title="PRA Rulebook home">«</a>
+      </div>
       <div className="product"><strong>PRA Rulebook</strong><span>{railContext?`${railContext.kind} · ${railContext.title}`:(q.trim()?'Search results':'All Rulebook Parts')} · {stats?`${stats.nodes.toLocaleString()} nodes`:''}</span><div className="rail-actions">{railStack.length>0&&<button className="back-link" onClick={goUp}>‹ Up one level</button>}{railContext&&<button className="back-link secondary" onClick={loadAllParts}>All Parts</button>}</div></div>
       {error&&<div className="error">{error}</div>}
       {showPartAudienceFilters&&<div className="part-filter" aria-label="Rulebook part filters"><button type="button" className={partAudienceFilter==='all'?'on':''} onClick={()=>setPartAudienceFilter('all')}>All</button>{PART_AUDIENCE_FILTERS.map(f=><button type="button" key={f.key} className={partAudienceFilter===f.category?'on':''} onClick={()=>setPartAudienceFilter(f.category)}>{f.label}</button>)}</div>}
       <div className="result-stack">{railResults.map(r=><button key={r.id} className={selected?.id===r.id?'hit active':'hit'} onClick={()=>choose(r)}><strong><NodeTitle node={r}/></strong></button>)}</div>
+      <nav className="rail-utilities" aria-label="Workspace utilities">
+        <details className="settings rail-settings">
+          <summary aria-label="Graph settings" title="Graph settings">⚙</summary>
+          <div className="settings-pop">
+            <div className="settings-pop-heading"><strong>Graph settings</strong><span>Structure, filters and link visibility</span></div>
+            <div className="filter-section representation-section"><h4>Representation</h4><div className="type-grid representation-grid">{Object.entries(REPRESENTATIONS).map(([key,preset])=><button type="button" key={key} className={representation===key?'on':''} onClick={()=>applyRepresentation(key)}><span>{preset.label}</span></button>)}<button type="button" className={representation==='custom'?'on':''} onClick={()=>applyRepresentation('custom')}><span>Custom</span></button></div><p className="rep-hint"><b>{activeRep.label}</b>{activeRep.hint}</p></div>
+            <label className="depth-control"><span>Graph depth</span><input type="range" min="1" max="3" step="1" value={depth} onInput={e=>{setDepth(Number(e.currentTarget.value));setRepresentation('custom')}} onChange={e=>{setDepth(Number(e.currentTarget.value));setRepresentation('custom')}}/><b>{depth}</b><span className="stepper"><button type="button" onClick={()=>{setDepth(d=>Math.max(1,d-1));setRepresentation('custom')}}>−</button><button type="button" onClick={()=>{setDepth(d=>Math.min(3,d+1));setRepresentation('custom')}}>＋</button></span></label>
+            <label>Visible node cap <input type="number" min="30" max="800" value={limit} onChange={e=>setLimit(Number(e.target.value))}/></label>
+            <label className="check"><input type="checkbox" checked={explicitOnly} onChange={e=>{setExplicitOnly(e.target.checked);setRepresentation('custom')}}/> Direct links only</label>
+            <label className="check"><input type="checkbox" checked={showInsurance} onChange={e=>setShowInsurance(e.target.checked)}/> Insurance parts</label>
+            <div className="filter-section"><h4>Link origin</h4><div className="type-grid origin-grid">{Object.entries(ORIGIN_FILTERS).map(([key,label])=><button type="button" key={key} className={originFilter===key?'on':''} onClick={()=>setOriginFilter(key)}><span>{label}</span></button>)}</div></div>
+            <div className="filter-section"><h4>Material</h4><div className="type-grid material-grid">{MATERIAL_FILTERS.map(t=><button type="button" key={t} className={materialFilterOn(t,nodeTypes)?'on':''} onClick={()=>toggleNodeType(t)}><span>{materialLabel(t)}</span></button>)}</div></div>
+            <div className="filter-section"><h4>Relationship edges</h4><div className="type-grid">{relationshipFilters.map(t=><button type="button" key={t} className={types.has(t)?'on':''} onClick={()=>toggleType(t)}><span>{relationLabel(t)}</span><em>{relationshipCount(t,stats,graph)}</em></button>)}</div></div>
+          </div>
+        </details>
+        <a href="help.html" target="_blank" rel="noopener noreferrer" aria-label="Help" title="Help">?</a>
+      </nav>
     </aside>
 
     <main className="canvas">
       {readingNode?<ProvisionReader rootNode={readingNode} api={api} onClose={()=>setReadingNode(null)} onReportIssue={n=>{setIssueReportNode(n);setIssueText('');}}/>:view==='reporting'?<ReportingGraphView onFeedback={n=>{setIssueReportNode(n);setIssueText('');}}/>:<>
-        <div className="canvas-meta"><strong>{selected?.title||'Select a node'}</strong><span>{activeRep.label} · {visibleGraph.nodes.length} shown · {visibleGraph.edges.length} visible links · {Object.values(graph.available_edge_types||{}).reduce((a,b)=>a+b,0)} direct links available</span><button className="expand-graph" onClick={()=>setGraphExpanded(v=>!v)}>{graphExpanded?'Collapse graph':'Expand graph'}</button></div>
+        <div className="canvas-meta"><strong>{selected?.title||'Select a node'}</strong><span>{activeRep.label} · {visibleGraph.nodes.length} shown · {visibleGraph.edges.length} visible links · {Object.values(graph.available_edge_types||{}).reduce((a,b)=>a+b,0)} direct links available</span></div>
         <Graph graph={visibleGraph} selected={selected} detail={detail} nodeTypes={nodeTypes} relationshipTypes={types} relationshipFilters={relationshipFilters} availableEdgeTypes={graph.available_edge_types||{}} onToggleNodeType={toggleNodeType} onToggleRelationship={toggleType} onSelect={n=>{setDetail(n);setPanelOpen(true);}} onOpen={n=>choose(n,{drill:true})} onFeedback={n=>{setIssueReportNode(n);setIssueText('');}}/>
       </>}
     </main>
@@ -305,8 +317,9 @@ function App(){
 }
 
 function IssueReportModal({node,text,setText,saving,saved,context,onClose,onSubmit}){
-  return <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Report an issue with this node" onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
-    <form className="node-feedback-modal issue-report-modal" onSubmit={e=>{e.preventDefault();onSubmit();}}>
+  const readingIssue=context==='reading_mode';
+  return <div className={`modal-backdrop ${readingIssue?'reading-issue-backdrop':''}`} role="dialog" aria-modal="true" aria-label="Report an issue with this node" onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+    <form className={`node-feedback-modal issue-report-modal ${readingIssue?'reading-issue-report-modal':''}`} onSubmit={e=>{e.preventDefault();onSubmit();}}>
       <div className="modal-head"><div><span className="eyebrow">Report an issue</span><h3>Report an issue with this node</h3></div><button type="button" onClick={onClose} aria-label="Close">×</button></div>
       <div className="feedback-node-summary"><span>{label(node.node_type)}</span><strong>{displayNodeTitle(node)}</strong>{node.url&&<a href={node.url} target="_blank" rel="noopener noreferrer">Open source ↗</a>}</div>
       <label className="feedback-editor">Describe the issue (optional)<textarea value={text} onChange={e=>setText(e.target.value)} placeholder="Example: this node should link to SS3/18, but the reference is missing." autoFocus/></label>
@@ -1034,7 +1047,6 @@ function ReportingGraphView({onFeedback}){
     ()=>reportingRequirementEditions(selectedRow,catalog.returns||[]),
     [selectedRow,catalog.returns],
   );
-
   return <section className={`reporting-view reporting-surface-${reportingSurface}`}>
     <div className="reporting-toolbar">
       <div className="reporting-product"><span aria-hidden="true">R</span><div><small>Rulebook Explorer</small><h2>PRA Reporting</h2></div></div>
@@ -1682,11 +1694,11 @@ function drawGraphNode(node,ctx,globalScale,selected,graphDensity){
   else if(role==='parent'){ ctx.rect(node.x-radius,node.y-radius,radius*2,radius*2); }
   else if(role==='child'){ ctx.moveTo(node.x,node.y-radius*1.2); ctx.lineTo(node.x+radius*1.15,node.y); ctx.lineTo(node.x,node.y+radius*1.2); ctx.lineTo(node.x-radius*1.15,node.y); ctx.closePath(); }
   else { ctx.arc(node.x,node.y,radius,0,Math.PI*2); }
-  ctx.fillStyle=visual==='template'?'#dcfce7':visual==='instruction'?'#fef3c7':visual==='xbrl_source'?'#ede9fe':badge?.kind==='pdf'?'#b91c1c':badge?.kind==='spreadsheet'?'#047857':role==='parent'?'#fff1f2':node.colour||nodeFill(raw,{});
+  ctx.fillStyle=visual==='template'?COLOURS.successSoft:visual==='instruction'?COLOURS.warningSoft:visual==='xbrl_source'?COLOURS.infoSoft:badge?.kind==='pdf'?COLOURS.error:badge?.kind==='spreadsheet'?COLOURS.success:role==='parent'?COLOURS.errorSoft:node.colour||nodeFill(raw,{});
   ctx.fill();
   ctx.lineWidth=selectedNode?4:visual?3:role==='parent'?3:2;
   ctx.setLineDash(!visual&&(role==='parent'||role==='child')?[4,3]:[]);
-  ctx.strokeStyle=selectedNode?'#2457d6':visual==='template'?'#047857':visual==='instruction'?'#d97706':visual==='xbrl_source'?'#6d28d9':role==='parent'?'#be123c':role==='child'?'#2563eb':'#ffffff';
+  ctx.strokeStyle=selectedNode?COLOURS.accent:visual==='template'?COLOURS.success:visual==='instruction'?COLOURS.warning:visual==='xbrl_source'?COLOURS.purple:role==='parent'?COLOURS.error:role==='child'?COLOURS.accent:'rgba(255,255,255,.92)';
   ctx.stroke();
   ctx.setLineDash([]);
   drawReportingNodeGlyph(ctx,visual,node.x,node.y,radius,globalScale);
@@ -1719,7 +1731,7 @@ function drawReportingNodeGlyph(ctx,visual,x,y,r,globalScale){
   if(!visual) return;
   ctx.save();
   ctx.lineWidth=Math.max(1,1.35/globalScale);
-  ctx.strokeStyle=visual==='template'?'#047857':visual==='instruction'?'#92400e':'#5b21b6';
+  ctx.strokeStyle=visual==='template'?COLOURS.success:visual==='instruction'?COLOURS.warning:COLOURS.purple;
   ctx.fillStyle=ctx.strokeStyle;
   if(visual==='template'){
     for(const dy of [-.25,.08,.41]){ ctx.beginPath(); ctx.moveTo(x-r*.55,y+r*dy); ctx.lineTo(x+r*.35,y+r*dy); ctx.stroke(); }
@@ -1769,10 +1781,10 @@ function drawParallelEdgeCount(edge,ctx,globalScale){
   ctx.textAlign='center'; ctx.textBaseline='middle';
   const width=Math.max(18/globalScale,ctx.measureText(label).width+10/globalScale);
   const height=Math.max(16/globalScale,size+6/globalScale);
-  ctx.fillStyle='rgba(36,87,214,.96)';
+  ctx.fillStyle=`${COLOURS.brandRaised}`;
   roundedRectPath(ctx,x-width/2,y-height/2,width,height,height/2); ctx.fill();
-  ctx.strokeStyle='rgba(255,255,255,.92)'; ctx.lineWidth=1.5/globalScale; ctx.stroke();
-  ctx.fillStyle='#fff'; ctx.fillText(label,x,y+.5/globalScale);
+  ctx.strokeStyle=COLOURS.accent; ctx.lineWidth=1.5/globalScale; ctx.stroke();
+  ctx.fillStyle=COLOURS.white; ctx.fillText(label,x,y+.5/globalScale);
   ctx.restore();
 }
 function drawCanvasLabel(ctx,text,x,y,fontSize,globalScale,strong=false,minFontSize=8){
@@ -1781,10 +1793,10 @@ function drawCanvasLabel(ctx,text,x,y,fontSize,globalScale,strong=false,minFontS
   ctx.textAlign='center'; ctx.textBaseline='middle';
   const width=Math.min(220/globalScale,ctx.measureText(text).width+10/globalScale);
   const height=size+7/globalScale;
-  ctx.fillStyle='rgba(255,255,255,.92)';
+  ctx.fillStyle='rgba(255,255,255,.95)';
   roundedRectPath(ctx,x-width/2,y-height/2,width,height,5/globalScale); ctx.fill();
-  ctx.strokeStyle='rgba(148,163,184,.45)'; ctx.lineWidth=1/globalScale; ctx.stroke();
-  ctx.fillStyle='#172033'; ctx.fillText(text,x,y);
+  ctx.strokeStyle='rgba(63,94,78,.55)'; ctx.lineWidth=1/globalScale; ctx.stroke();
+  ctx.fillStyle=COLOURS.brand; ctx.fillText(text,x,y);
 }
 function roundedRectPath(ctx,x,y,w,h,r){
   ctx.beginPath(); ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.quadraticCurveTo(x+w,y,x+w,y+r); ctx.lineTo(x+w,y+h-r); ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h); ctx.lineTo(x+r,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-r); ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y); ctx.closePath();
@@ -1832,7 +1844,16 @@ function parallelEdgeKey(edge){
 }
 
 function Explore({node,edges,graph,onChoose,onRead,onReportIssue}){
-  return <div className="pane explore-pane"><Evidence node={node} edges={edges} graph={graph} onChoose={onChoose} onRead={onRead} onReportIssue={onReportIssue}/></div>;
+  const [inspectorTab,setInspectorTab]=useState('selected-node');
+  return <div className="pane explore-pane">
+    <div className="inspector-tabs" role="tablist" aria-label="Inspector views">
+      <button type="button" id="inspector-connections-tab" role="tab" aria-selected={inspectorTab==='connections'} aria-controls="inspector-connections-panel" tabIndex={inspectorTab==='connections'?0:-1} className={inspectorTab==='connections'?'active':''} onClick={()=>setInspectorTab('connections')}>Connections</button>
+      <button type="button" id="inspector-selected-node-tab" role="tab" aria-selected={inspectorTab==='selected-node'} aria-controls="inspector-selected-node-panel" tabIndex={inspectorTab==='selected-node'?0:-1} className={inspectorTab==='selected-node'?'active':''} onClick={()=>setInspectorTab('selected-node')}>Selected node</button>
+    </div>
+    {inspectorTab==='connections'
+      ? <div id="inspector-connections-panel" role="tabpanel" aria-labelledby="inspector-connections-tab"><ConnectionsOverview node={node} edges={edges} graph={graph} onChoose={onChoose}/></div>
+      : <div id="inspector-selected-node-panel" role="tabpanel" aria-labelledby="inspector-selected-node-tab"><SelectedNodeDetails node={node} edges={edges} onRead={onRead} onReportIssue={onReportIssue}/></div>}
+  </div>;
 }
 function ContentNode({node,onChoose}){
   const kids=node.children||[];
@@ -1847,25 +1868,33 @@ function ContentNode({node,onChoose}){
   </div>;
 }
 
-function Evidence({node,edges,graph,onChoose,onRead,onReportIssue}){
-  const byId=new Map(graph.nodes.map(n=>[n.id,n]));
+function ConnectionsOverview({node,edges,graph,onChoose}){
+  const byId=new Map((graph?.nodes||[]).map(n=>[n.id,n]));
   if(!node)return <section className="explore-layer evidence-layer"><p className="muted">Select a node.</p></section>;
   const analytical=edges.filter(e=>e.edge_type!=='contains');
   const groups=groupEdges(analytical);
-  return <section className="explore-layer evidence-layer" aria-label="Connections">
-    <div className="layer-head"><span>Connections</span><h3>Selected node</h3></div>
+  return <section className="explore-layer evidence-layer connections-overview" aria-label="Connections">
+    <span className="kind">{label(node.node_type)}</span>
+    <h2><NodeTitle node={node}/></h2>
+    {groups.length
+      ? groups.map(([edgeType,items],i)=><Collapsible key={edgeType} title={edgeType==='references'?'Cross-references':evidenceLabel(edgeType)} count={`${items.length} link${items.length===1?'':'s'}`} open={i<2}>
+          <div className="edge-list">{items.slice(0,40).map(e=>{const other=byId.get(e.from_node_id===node.id?e.to_node_id:e.from_node_id);return <button key={e.id} className={`edge-direction-${edgeDirectionLabel(e,node.id)}`} onClick={()=>other&&onChoose(other)}><span><b className="edge-arrow">{edgeDirectionGlyph(e,node.id)}</b>{edgeSummary(e,node.id)}</span><strong><NodeTitle node={other}/></strong>{edgeContext(e,other)&&<small>{edgeContext(e,other)}</small>}{e.evidence_text&&<small>{truncate(e.evidence_text,160)}</small>}</button>})}</div>
+          {items.length>40&&<p className="muted">Showing first 40 of {items.length} visible links. Increase the graph cap to load more.</p>}
+        </Collapsible>)
+      : <Collapsible title="Visible connections" count="0 links" open><p className="muted">No reference, definition or obligation links are visible for this node under the current settings.</p></Collapsible>}
+  </section>;
+}
+
+function SelectedNodeDetails({node,edges,onRead,onReportIssue}){
+  if(!node)return <section className="explore-layer evidence-layer"><p className="muted">Select a node.</p></section>;
+  return <section className="explore-layer evidence-layer selected-node-details" aria-label="Selected node details">
+    <div className="selected-node-heading"><span>Selected node</span></div>
     <Collapsible title="Selected material" count={label(node.node_type)} open>
       <span className="kind">{label(node.node_type)}</span><h2><NodeTitle node={node}/></h2>{node.url&&<a className="source" href={node.url} target="_blank" rel="noopener noreferrer">Open source ↗</a>}
       <p className="text">{node.text?truncate(node.text,1300):emptyNodeMessage(node,edges)}</p>
       <button type="button" className="reading-mode-entry" onClick={()=>onRead(node)}><span>Reading mode</span><strong>Read this provision with its references →</strong></button>
       <button type="button" className="report-issue-btn" onClick={()=>onReportIssue?.(node)}>⚑ Report an issue with this node</button>
     </Collapsible>
-    {groups.length
-      ? groups.map(([edgeType,items],i)=><Collapsible key={edgeType} title={evidenceLabel(edgeType)} count={`${items.length} link${items.length===1?'':'s'}`} open={i<2}>
-          <div className="edge-list">{items.slice(0,40).map(e=>{const other=byId.get(e.from_node_id===node.id?e.to_node_id:e.from_node_id);return <button key={e.id} className={`edge-direction-${edgeDirectionLabel(e,node.id)}`} onClick={()=>other&&onChoose(other)}><span><b className="edge-arrow">{edgeDirectionGlyph(e,node.id)}</b>{edgeSummary(e,node.id)}</span><strong><NodeTitle node={other}/></strong>{edgeContext(e,other)&&<small>{edgeContext(e,other)}</small>}{e.evidence_text&&<small>{truncate(e.evidence_text,160)}</small>}</button>})}</div>
-          {items.length>40&&<p className="muted">Showing first 40 of {items.length} visible links. Increase the graph cap to load more.</p>}
-        </Collapsible>)
-      : <Collapsible title="Visible connections" count="0 links" open><p className="muted">No reference, definition or obligation links are visible for this node under the current settings.</p></Collapsible>}
   </section>;
 }
 function NodeTitle({node}){
@@ -1941,8 +1970,8 @@ function labelChars(n,view,graph,selected){
 }
 function nodeFill(n,graph){
   if(n.visual?.colour) return n.visual.colour;
-  if(graph?.level==='part' || graph?.level==='article') return CLUSTER_COLOURS[(n.metadata?.semantic_cluster??0)%CLUSTER_COLOURS.length];
-  return MATERIAL_COLOURS[materialType(n)]||'#64748b';
+  if(graph?.level==='part' || graph?.level==='article') return CHART_SEQUENCE[(n.metadata?.semantic_cluster??0)%CHART_SEQUENCE.length];
+  return MATERIAL_COLOURS[materialType(n)]||COLOURS.brandMid;
 }
 function emptyNodeMessage(node,edges=[]){
   if(['part','chapter','guidance_document','guidance_section','rulebook'].includes(node?.node_type)){
@@ -1953,11 +1982,11 @@ function emptyNodeMessage(node,edges=[]){
   if(node?.metadata?.placeholder) return 'This is a placeholder reference node. Open the source link for the external definition or referenced material.';
   return 'No body text for this node.';
 }
-function edgeColour(v){return EDGE_COLOURS[v]||'#94a3b8'}
+function edgeColour(v){return EDGE_COLOURS[v]||COLOURS.brandSoft}
 function edgeDirectionColour(e,currentId){
   const dir=edgeDirectionLabel(e,currentId);
-  if(dir==='incoming') return '#be123c';
-  if(dir==='outgoing') return '#2563eb';
+  if(dir==='incoming') return COLOURS.error;
+  if(dir==='outgoing') return COLOURS.accent;
   return e.visual?.colour||edgeColour(e.edge_type);
 }
 function relationLabel(v){
@@ -2087,9 +2116,10 @@ function isXbrlSourceDocument(n){
   return /\b(xbrl|taxonomy|dpm|annotated templates|template package|reporting package)\b/.test(hay) || /\.(zip|xbrl|xml|xsd)(#|$)/.test(hay);
 }
 function materialLabel(v){return ({rule:'Rulebook part / rule',supervisory_statement:'Supervisory statement',statement_of_policy:'Statement of policy',definition:'Definition',permission:'Firm permission',external_reference:'External reference',legal_instrument:'Legal instrument',obligation_pattern:'Obligation pattern',obligation_statement:'Structured obligation',analysis:'Obligation marker',reporting_estate:'Reporting estate',reporting_regime:'Reporting regime',reporting_collection:'Reporting collection',reporting_requirement:'Reporting requirement',reporting_edition:'Requirement edition',reporting_resource:'Reporting resource',reporting_return:'Reporting requirement',reporting_template:'Reporting template',reporting_instruction:'Reporting instructions',reporting_source:'Source document',reporting_xbrl_source:'XBRL taxonomy',reporting_datapoint:'Datapoints',reporting_provision:'Referenced provision',reporting_concept:'Reporting concept',ReportingEstate:'Reporting estate',ReportingRegime:'Reporting regime',ReportingCollection:'Reporting collection',ReportingRequirement:'Reporting requirement',RequirementEdition:'Requirement edition',ReportingResource:'Reporting resource',Worksheet:'Worksheet',LogicalTemplate:'Logical template',TaxonomyRelease:'XBRL taxonomy release',DataItem:'Reporting return',Template:'Reporting template',TemplateSet:'XBRL source',InstructionSet:'Reporting instructions',SourceDocument:'Source document',DataPointGroup:'Datapoint summary',DataPoint:'Datapoint',Provision:'Referenced provision'}[v]||String(v||'').replaceAll('_',' '))}
-function displayColour(v){return MATERIAL_COLOURS[materialType(v)]||'#64748b'}
+function displayColour(v){return MATERIAL_COLOURS[materialType(v)]||COLOURS.brandMid}
 function label(v){return materialLabel(materialType(v))}
 function truncate(s='',n=120){return s&&s.length>n?s.slice(0,n-1)+'…':s}
+function fmt(v){return typeof v==='number'?v.toLocaleString(undefined,{maximumFractionDigits:3}):v}
 function partAudienceCategories(node){
   const categories=node?.metadata?.firm_categories;
   if(!Array.isArray(categories)) return [];

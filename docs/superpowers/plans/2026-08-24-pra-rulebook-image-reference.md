@@ -116,13 +116,13 @@
 
 **Acceptance Criteria:**
 
-- [ ] The graph screenshot is captured at 1280×853 and its computed rail width is 200px, inspector width is 370px ± 4px, topbar height is 58px and canvas background is `rgb(244, 247, 245)`.
+- [ ] The graph screenshot is captured at 1280×853 and its computed grid tracks are 200px / flexible / 370px, the inset inspector panel is 344px ± 4px, the topbar height is 58px and the canvas background is `rgb(244, 247, 245)`.
 - [ ] The graph screenshot shows `.canvas-meta`, `.legend`, `.zoom` and `.inspector.open`.
 - [ ] The reporting screenshot confirms White/Mist light surfaces.
 - [ ] The reader screenshot confirms White reader and shelf surfaces.
 - [ ] The log records the exact viewport, computed geometry and screenshot paths.
 
-**Verify:** `.venv-webwright/bin/python outputs/pra-rulebook-image-reference/check.py` with the frontend dev server running → exit 0 and three PNG screenshots.
+**Verify:** `/root/.openclaw/workspace/.venv-webwright/bin/python outputs/pra-rulebook-image-reference/check.py` with the frontend dev server running → exit 0 and three PNG screenshots.
 
 **Steps:**
 

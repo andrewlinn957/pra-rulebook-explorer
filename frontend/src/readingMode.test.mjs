@@ -621,3 +621,13 @@ test('reference shelf is space-aware, sticky, scrollable and becomes a narrow-sc
   assert.match(interfaceStyles, /@media\(max-width:860px\)[\s\S]*\.reference-shelf\{[\s\S]*position:fixed/);
   assert.match(interfaceStyles, /\.reference-shelf\.is-mobile-open\{transform:translateX\(0\)\}/);
 });
+
+test('reading issue reports use a side column between the provision text and reference shelf', () => {
+  assert.match(interfaceSource, /reading-issue-open/);
+  assert.match(interfaceSource, /reading-issue-backdrop/);
+  assert.match(interfaceSource, /reading-issue-report-modal/);
+  assert.match(interfaceStyles, /\.shell\.reading-issue-open \.provision-reader-layout\{[^}]*grid-template-columns:minmax\(0,1fr\) minmax\(280px,320px\) minmax\(290px,350px\)/);
+  assert.match(interfaceStyles, /\.shell\.reading-issue-open \.reference-shelf\{[^}]*grid-column:3/);
+  assert.match(interfaceStyles, /\.reading-issue-backdrop\{[^}]*grid-template-columns:minmax\(0,1fr\) minmax\(280px,320px\) minmax\(290px,350px\)/);
+  assert.match(interfaceStyles, /@media\(max-width:860px\)[\s\S]*\.reading-issue-backdrop\{[^}]*grid-template-columns:1fr/);
+});
