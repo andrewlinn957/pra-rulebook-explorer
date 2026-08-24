@@ -1093,7 +1093,29 @@ def _nodes_for_ids(conn: sqlite3.Connection, ids: list[str]) -> list[dict[str, A
     return [by_id[nid] for nid in ids if nid in by_id]
 
 
-def list_nodes(conn: sqlite3.Connection, *, node_types: list[str] | None = None, limit: int = 500, offset: int = 0) -> list[dict[str, Any]]:
+def _summary_node(row: sqlite3.Row) -> dict[str, Any]:
+    node = row_to_node(row)
+    metadata = node.get("metadata") or {}
+    return {
+        "id": node["id"],
+        "node_type": node["node_type"],
+        "stable_key": node["stable_key"],
+        "title": node["title"],
+        "url": node["url"],
+        "metadata": {
+            "firm_categories": metadata["firm_categories"],
+        } if isinstance(metadata.get("firm_categories"), list) else {},
+    }
+
+
+def list_nodes(
+    conn: sqlite3.Connection,
+    *,
+    node_types: list[str] | None = None,
+    limit: int = 500,
+    offset: int = 0,
+    summary: bool = False,
+) -> list[dict[str, Any]]:
     type_clause = "WHERE cn.is_canonical=1"
     params: list[Any] = []
     if node_types:
@@ -1101,11 +1123,11 @@ def list_nodes(conn: sqlite3.Connection, *, node_types: list[str] | None = None,
         params.extend(node_types)
     rows = conn.execute(
         f"""
-        SELECT n.id,n.node_type,n.stable_key,n.title,n.text,n.url,n.metadata_json
+        SELECT n.id,n.node_type,n.stable_key,n.title,{'' if summary else 'n.text,'}n.url,n.metadata_json
         FROM node n JOIN canonical_node cn ON cn.id=n.id {type_clause}
         ORDER BY n.title COLLATE NOCASE
         LIMIT ? OFFSET ?
         """,
         [*params, limit, offset],
     ).fetchall()
-    return [row_to_node(r) for r in rows]
+    return [_summary_node(r) if summary else row_to_node(r) for r in rows]

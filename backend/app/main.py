@@ -507,9 +507,22 @@ def api_search(q: str, types: Annotated[list[str] | None, Query()] = None, limit
 
 
 @app.get("/nodes")
-def api_nodes(types: Annotated[list[str] | None, Query()] = None, limit: int = 500, offset: int = 0) -> dict:
+def api_nodes(
+    types: Annotated[list[str] | None, Query()] = None,
+    limit: int = 500,
+    offset: int = 0,
+    summary: bool = False,
+) -> dict:
     conn = connect(DB_PATH)
-    return {"results": list_nodes(conn, node_types=types, limit=_limit(limit, 1000), offset=_offset(offset))}
+    return {
+        "results": list_nodes(
+            conn,
+            node_types=types,
+            limit=_limit(limit, 1000),
+            offset=_offset(offset),
+            summary=summary,
+        )
+    }
 
 
 @app.get("/node/{node_id}")

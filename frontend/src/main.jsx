@@ -128,19 +128,23 @@ function App(){
   }
   async function bootstrap(){
     try{
-      const [statsData,parts,roots]=await Promise.all([
-        api('/stats'), api('/nodes?types=part&limit=300'), api('/nodes?types=rulebook&limit=1')
-      ]);
-      setStats(statsData);
+      const statsPromise=api('/stats').then(data=>setStats(data));
+      statsPromise.catch(e=>setError(e.message||String(e)));
+      const parts=await api('/nodes?types=part&limit=300&summary=true');
       setResults(parts.results||[]);
       setRailContext(null);
       setRailStack([]);
-      const initialNode=parts.results?.[0]||roots.results?.[0];
-      if(initialNode) await choose(initialNode, {drill:false, openPanel:window.innerWidth>900});
+      const initialNode=parts.results?.[0];
+      if(initialNode){
+        await choose(initialNode, {drill:false, openPanel:window.innerWidth>900});
+      }else{
+        const roots=await api('/nodes?types=rulebook&limit=1');
+        if(roots.results?.[0]) await choose(roots.results[0], {drill:false, openPanel:window.innerWidth>900});
+      }
     }catch(e){setError(e.message||String(e));}
   }
   async function loadAllParts(){
-    const data=await api('/nodes?types=part&limit=300');
+    const data=await api('/nodes?types=part&limit=300&summary=true');
     setResults(data.results||[]);
     setRailContext(null);
     setRailStack([]);
@@ -163,7 +167,7 @@ function App(){
   async function choose(n, opts={drill:true}){
     const full=await api(`/node/${n.id}`);
     setSelected(full); setDetail(full); setPanelOpen(opts.openPanel ?? window.innerWidth>900);
-    const [tree]=await Promise.all([loadContents(full.id), ['whole_map','article_map'].includes(representation)?Promise.resolve(null):loadNeighbourhood(full.id)]);
+    const tree=await loadContents(full.id);
     if(opts.drill!==false && tree?.children?.length && ['rulebook','part','chapter','provision','guidance_document','guidance_section'].includes(full.node_type)){
       setRailStack(stack=>[...stack,{results,railContext}]);
       setResults(tree.children);

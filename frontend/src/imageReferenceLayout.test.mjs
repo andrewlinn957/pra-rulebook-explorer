@@ -41,5 +41,6 @@ test('image-reference workspace exposes a branded rail and light work surfaces',
 
 test('image-reference desktop panel opens above the mobile threshold', () => {
   assert.match(mainSource, /useState\(\(\)=>window\.innerWidth>900\)/u);
-  assert.match(mainSource, /const initialNode=parts\.results\?\.\[0\]\|\|roots\.results\?\.\[0\]/u);
+  assert.match(mainSource, /const initialNode=parts\.results\?\.\[0\]/u);
+  assert.match(mainSource, /const roots=await api\('\/nodes\?types=rulebook&limit=1'\)/u);
 });
