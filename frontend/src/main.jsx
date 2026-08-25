@@ -34,10 +34,10 @@ import {
 } from './reportingCells.js';
 import {
   assignReferencesToParagraphs,
-  legalTextBlocks,
   mergeOverlappingReferences,
   paragraphCitationSegments,
   readerReferences,
+  readerTextBlocks,
   readingSpine,
   referenceDisplayTitle,
   referenceShelfDensity,
@@ -536,9 +536,7 @@ function ProvisionReader({rootNode,api,onClose,onReportIssue}){
     return bySource;
   },[referenceGraph]);
   const sections=useMemo(()=>readingSpine(contents).map(entry=>{
-    const blocks=entry.sourceBlocks?.length
-      ?entry.sourceBlocks.map(b=>({kind:b.marker?'list-item':'prose',marker:b.marker||'',depth:b.depth||0,text:b.text}))
-      :legalTextBlocks(entry.bodyText||'');
+    const blocks=readerTextBlocks(entry.bodyText||'',entry.sourceBlocks);
     const references=blocks.length?mergeOverlappingReferences(assignReferencesToParagraphs(
       blocks,
       readerReferences(entry.node,{

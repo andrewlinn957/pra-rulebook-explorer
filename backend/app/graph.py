@@ -176,6 +176,179 @@ def _attach_reference_occurrences(
             edge.setdefault("metadata", {})["reference_occurrences"] = occurrences
 
 
+def _attach_html_link_occurrences(
+    conn: sqlite3.Connection,
+    edges: list[dict[str, Any]],
+    source_nodes: list[dict[str, Any]],
+) -> None:
+    """Project each source-page anchor into a reader citation occurrence.
+
+    The graph deliberately keeps one relationship per target for most derived
+    links.  The reader needs the lexical anchor occurrences as well, especially
+    when several anchors share one href.  Reading these occurrences from the
+    cached source HTML keeps the graph identity compact while preserving every
+    clickable citation in the reader.
+    """
+
+    if not edges or not source_nodes or not conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='document_source'"
+    ).fetchone():
+        return
+
+    import re
+    from urllib.parse import urljoin, urlparse
+
+    from bs4 import BeautifulSoup, Tag
+
+    def clean(value: str) -> str:
+        return " ".join((value or "").split()).strip()
+
+    def href_key(value: str) -> str:
+        parsed = urlparse(urljoin("https://www.prarulebook.co.uk", value or ""))
+        return (
+            f"{parsed.scheme.casefold()}://{parsed.netloc.casefold()}"
+            f"{parsed.path}?{parsed.query}#{parsed.fragment}"
+        ).rstrip("?#")
+
+    def sibling_tail(anchor: Tag) -> str:
+        for sibling in anchor.next_siblings:
+            if isinstance(sibling, Tag) and sibling.name == "a":
+                break
+            text = sibling if isinstance(sibling, str) else sibling.get_text(" ", strip=True)
+            text = clean(str(text))
+            if text:
+                return text
+        return ""
+
+    def citation_text(anchor: Tag) -> str:
+        title = clean(anchor.get("title") or "")
+        text = clean(anchor.get_text(" ", strip=True))
+        value = title or text
+        numeric = re.fullmatch(r"\d+(?:\.\d+)*[A-Za-z]?", value)
+        if numeric:
+            suffix = re.match(r"^(\(\d{1,3}\)(?:\([A-Za-z]\))?)", sibling_tail(anchor))
+            if suffix:
+                value = f"{value} {suffix.group(1)}"
+        value = re.sub(r"^(\d+(?:\.\d+)*[A-Za-z]?)(?=\()", r"\1 ", value)
+        return clean(value)
+
+    def source_html(source_node: dict[str, Any], source_edges: list[dict[str, Any]]) -> str:
+        metadata = source_node.get("metadata") or {}
+        source_page_id = metadata.get("source_page_id")
+        row = None
+        if source_page_id:
+            row = conn.execute(
+                "SELECT raw_html FROM document_source WHERE id=?",
+                (source_page_id,),
+            ).fetchone()
+        urls = [str(source_node.get("url") or "").split("#", 1)[0]]
+        urls.extend(str(edge.get("source_url") or "").split("#", 1)[0] for edge in source_edges)
+        if row is None:
+            for url in dict.fromkeys(url for url in urls if url):
+                row = conn.execute(
+                    "SELECT raw_html FROM document_source WHERE url=?",
+                    (url,),
+                ).fetchone()
+                if row is not None:
+                    break
+        return str(row[0] or "") if row is not None else ""
+
+    edges_by_source: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
+    for edge in edges:
+        if edge.get("edge_type") != "references":
+            continue
+        if edge.get("source_method") not in {"html_link", "html_anchor_resolved"}:
+            continue
+        edges_by_source[str(edge.get("from_node_id") or "")].append(edge)
+
+    parsed_sources: dict[str, Any] = {}
+    for source_node in source_nodes:
+        source_id = str(source_node.get("id") or "")
+        source_edges = edges_by_source.get(source_id, [])
+        if not source_edges:
+            continue
+        source_metadata = source_node.get("metadata") or {}
+        source_key = str(
+            source_metadata.get("source_page_id")
+            or str(source_node.get("url") or "").split("#", 1)[0]
+            or source_edges[0].get("source_url")
+            or source_id
+        )
+        if source_key not in parsed_sources:
+            raw_html = source_html(source_node, source_edges)
+            parsed_sources[source_key] = BeautifulSoup(raw_html, "lxml") if raw_html else None
+        soup = parsed_sources[source_key]
+        if soup is None:
+            continue
+        html_id = source_metadata.get("html_id") or urlparse(source_node.get("url") or "").fragment
+        container = soup.find(id=html_id) if html_id else None
+        if container is None:
+            continue
+        body = container.select_one(".div-row__col-2") or container
+        edges_by_href: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
+        for edge in source_edges:
+            edge_href = (edge.get("metadata") or {}).get("href")
+            if edge_href:
+                edges_by_href[href_key(str(edge_href))].append(edge)
+        occurrence_index: defaultdict[str, int] = defaultdict(int)
+        search_offset: defaultdict[str, int] = defaultdict(int)
+        source_text = str(source_node.get("text") or "")
+        for anchor in body.find_all("a", href=True):
+            matches = edges_by_href.get(href_key(anchor.get("href", "")), [])
+            if not matches:
+                continue
+            edge = sorted(
+                matches,
+                key=lambda item: (
+                    item.get("source_method") != "html_anchor_resolved",
+                    -float(item.get("confidence") or 0),
+                    str(item.get("id") or ""),
+                ),
+            )[0]
+            citation = citation_text(anchor)
+            if not citation:
+                continue
+            start = source_text.find(citation, search_offset[citation])
+            if start < 0:
+                anchor_text = clean(anchor.get_text(" ", strip=True))
+                start = source_text.find(anchor_text, search_offset[citation])
+            if start < 0:
+                start = 0
+            end = start + len(citation)
+            search_offset[citation] = max(search_offset[citation], end)
+            edge_key = str(edge.get("id") or "")
+            index = occurrence_index[edge_key]
+            occurrence_index[edge_key] += 1
+            occurrence_id = f"html-link:{source_id}:{edge_key}:{index}"
+            existing = edge.setdefault("metadata", {}).setdefault("reference_occurrences", [])
+            if any(item.get("occurrence_id") == occurrence_id for item in existing):
+                continue
+            existing.append({
+                "occurrence_id": occurrence_id,
+                "group_id": occurrence_id,
+                "source_node_id": source_id,
+                "target_node_id": edge.get("to_node_id"),
+                "edge_id": edge.get("id"),
+                "relationship_type": "REF",
+                "citation_kind": "html_link",
+                "citation_text": citation,
+                "group_text": citation,
+                "span_start": start,
+                "span_end": end,
+                "status": "materialized",
+                "source_method": "html_link_occurrence",
+                "confidence": float(edge.get("confidence") or 1.0),
+                "context_text": clean(anchor.parent.get_text(" ", strip=True)) if anchor.parent else citation,
+                "metadata": {
+                    "href": urljoin("https://www.prarulebook.co.uk", anchor.get("href", "")),
+                    "anchor_text": clean(anchor.get_text(" ", strip=True)),
+                    "anchor_title": clean(anchor.get("title") or ""),
+                    "source_html_id": html_id,
+                    "group_span": {"start": start, "end": end},
+                },
+            })
+
+
 def _roll_up_guidance_reference_nodes(conn: sqlite3.Connection, nodes: list[dict[str, Any]], edges: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     reference_node_ids = {
         endpoint
@@ -553,6 +726,7 @@ def reader_bundle(
 
     edges = list(edges_by_id.values())
     _attach_reference_occurrences(conn, edges)
+    _attach_html_link_occurrences(conn, edges, reading_source_nodes)
     endpoint_ids = set(source_ids)
     endpoint_ids.update(
         endpoint

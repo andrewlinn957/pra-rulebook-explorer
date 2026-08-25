@@ -114,14 +114,24 @@ def _li_own_text(li) -> str:
 
 def _extract_list_blocks(list_el, depth: int, out: list[dict]) -> None:
     """Recursively convert an <ol>/<ul> into marker blocks."""
-    for li in list_el.find_all("li", recursive=False):
-        text = _li_own_text(li)
-        match = re.match(r"^(\([^)]{1,6}\))\s*", text)
-        marker = match.group(1).strip() if match else ""
-        body = text[match.end():] if match else text
-        out.append({"kind": "list-item", "marker": marker, "depth": depth, "text": body})
-        for nested in li.find_all(["ol", "ul"], recursive=False):
-            _extract_list_blocks(nested, depth + 1, out)
+    # The PRA markup sometimes places a nested list beside its parent ``li``
+    # rather than inside it. Treat a list wrapper with no preceding item as a
+    # transparent container, but a list following an item as the next depth.
+    # This preserves both the intended structure and the source order.
+    saw_item = False
+    for child in list_el.find_all(recursive=False):
+        name = getattr(child, "name", None)
+        if name == "li":
+            saw_item = True
+            text = _li_own_text(child)
+            match = re.match(r"^(\([^)]{1,6}\))\s*", text)
+            marker = match.group(1).strip() if match else ""
+            body = text[match.end():] if match else text
+            out.append({"kind": "list-item", "marker": marker, "depth": depth, "text": body})
+            for nested in child.find_all(["ol", "ul"], recursive=False):
+                _extract_list_blocks(nested, depth + 1, out)
+        elif name in ("ol", "ul"):
+            _extract_list_blocks(child, depth + (1 if saw_item else 0), out)
 
 
 def extract_text_blocks(container) -> list[dict] | None:
@@ -401,6 +411,8 @@ def _add_provision_identity_layer(
         edge.to_node_id = id_map.get(old_to, old_to)
         if old_from != edge.from_node_id or old_to != edge.to_node_id:
             suffix = (edge.metadata or {}).get("href") or edge.evidence_text or edge.source_url
+            if (edge.metadata or {}).get("anchor_index") is not None:
+                suffix = f"{suffix}|anchor:{edge.metadata['anchor_index']}"
             edge.id = edge_id(edge.from_node_id, edge.to_node_id, edge.edge_type, suffix)
         edge.metadata = _replace_ids(edge.metadata, id_map)
 
@@ -546,6 +558,7 @@ def extract_glossary(html: str, url: str) -> tuple[list[Node], list[Edge]]:
 
 
 def _append_link_edges(edges: list[Edge], from_node: Node, container: Tag, source_url: str) -> None:
+    reference_occurrences: dict[str, int] = {}
     for a in container.find_all("a", href=True):
         href = a["href"]
         text = clean_text(a.get_text(" "))
@@ -561,11 +574,17 @@ def _append_link_edges(edges: list[Edge], from_node: Node, container: Tag, sourc
             fragment = f"#{parsed_href.fragment}" if parsed_href.fragment else ""
             target_key = f"url:{parsed_href.path.strip('/')}{fragment}"
             to_id = node_id(target_key)
-            edges.append(Edge(edge_id(from_node.id, to_id, "references", href), from_node.id, to_id, "references", "html_link", 1.0, text, source_url, {"href": absolute_url(href), "target_key": target_key}))
+            absolute_href = absolute_url(href)
+            occurrence_index = reference_occurrences.get(absolute_href, 0)
+            reference_occurrences[absolute_href] = occurrence_index + 1
+            edges.append(Edge(edge_id(from_node.id, to_id, "references", f"{href}|anchor:{occurrence_index}"), from_node.id, to_id, "references", "html_link", 1.0, text, source_url, {"href": absolute_href, "target_key": target_key, "anchor_index": occurrence_index}))
         elif href.startswith("/") or href.startswith("http"):
             target_key = f"external:{absolute_url(href)}"
             to_id = node_id(target_key)
-            edges.append(Edge(edge_id(from_node.id, to_id, "references", href), from_node.id, to_id, "references", "html_link", 0.8, text, source_url, {"href": absolute_url(href), "target_key": target_key}))
+            absolute_href = absolute_url(href)
+            occurrence_index = reference_occurrences.get(absolute_href, 0)
+            reference_occurrences[absolute_href] = occurrence_index + 1
+            edges.append(Edge(edge_id(from_node.id, to_id, "references", f"{href}|anchor:{occurrence_index}"), from_node.id, to_id, "references", "html_link", 0.8, text, source_url, {"href": absolute_href, "target_key": target_key, "anchor_index": occurrence_index}))
 
 
 def _append_inline_definition_nodes(nodes: list[Node], edges: list[Edge], from_node: Node, container: Tag, source_url: str, part_stable: str, part_title: str) -> None:

@@ -9,6 +9,7 @@ import {
   paragraphCitationSegments,
   readingSpine,
   readerReferences,
+  readerTextBlocks,
   referenceDisplayTitle,
   readingRelationship,
   referenceShelfDensity,
@@ -58,6 +59,102 @@ test('legal text preserves nested list markers and does not split paragraph refe
       },
     ],
   );
+});
+
+test('reader falls back to complete body text when server blocks are incomplete', () => {
+  const body = '(1) First limb. (2) Second limb. (a) Nested limb A. (b) Nested limb B.';
+  const incomplete = [
+    { kind: 'list-item', marker: '(1)', depth: 0, text: 'First limb.' },
+    { kind: 'list-item', marker: '(2)', depth: 0, text: 'Second limb.' },
+  ];
+
+  assert.deepEqual(
+    readerTextBlocks(body, incomplete).map(block => block.marker),
+    ['(1)', '(2)', '(a)', '(b)'],
+  );
+});
+
+test('reader omits an empty resolution-policy target when an explicit readable link covers the citation', () => {
+  const root = {
+    id: 'close-links-5-2',
+    text: 'The Close Links Monthly Report can be found here.',
+  };
+  const emptyPart = { id: 'close-links-part', title: 'Close Links', text: '' };
+  const report = { id: 'monthly-report', title: 'REP001a', text: 'Report source text.' };
+  const references = readerReferences(root, {
+    nodes: [root, emptyPart, report],
+    edges: [
+      {
+        id: 'policy-resolution',
+        from_node_id: root.id,
+        to_node_id: emptyPart.id,
+        edge_type: 'references',
+        source_method: 'resolution_policy_v1',
+        evidence_text: 'The Close Links Monthly Report can be found here.',
+        metadata: { reference: 'The Close Links Monthly Report', target_text_available: false },
+      },
+      {
+        id: 'explicit-report',
+        from_node_id: root.id,
+        to_node_id: report.id,
+        edge_type: 'references',
+        source_method: 'html_link',
+        evidence_text: 'here',
+        metadata: { href: 'https://example.test/report.pdf' },
+      },
+    ],
+  });
+
+  assert.deepEqual(references.map(reference => reference.node.id), [report.id]);
+});
+
+test('reader omits a duplicate resolution-policy citation when an explicit link occurrence exists', () => {
+  const root = { id: 'source', text: 'See Insurance Company – Internal Contagion Risk 4.1.' };
+  const target = { id: 'target', title: '4.1', text: 'Target source text.' };
+  const occurrence = {
+    occurrence_id: 'html-occurrence',
+    group_id: 'html-occurrence',
+    source_node_id: root.id,
+    target_node_id: target.id,
+    status: 'materialized',
+    citation_text: 'Insurance Company – Internal Contagion Risk 4.1',
+    group_text: 'Insurance Company – Internal Contagion Risk 4.1',
+    span_start: 4,
+    span_end: 52,
+  };
+  const policyOccurrence = {
+    ...occurrence,
+    occurrence_id: 'policy-occurrence',
+    group_id: 'policy-occurrence',
+    source_method: 'resolution_policy_v1',
+  };
+  const references = readerReferences(root, {
+    nodes: [root, target],
+    edges: [
+      {
+        id: 'explicit',
+        from_node_id: root.id,
+        to_node_id: target.id,
+        edge_type: 'references',
+        source_method: 'html_anchor_resolved',
+        metadata: { reference_occurrences: [occurrence] },
+      },
+      {
+        id: 'policy',
+        from_node_id: root.id,
+        to_node_id: target.id,
+        edge_type: 'references',
+        source_method: 'regex_named_reference',
+        metadata: {
+          reference: 'Insurance Company – Internal Contagion Risk 4.1',
+          reference_occurrences: [policyOccurrence],
+        },
+      },
+    ],
+  });
+
+  assert.equal(references.length, 1);
+  assert.equal(references[0].edge.id, 'explicit');
 });
 
 test('reading spine includes nested child provisions in source order', () => {

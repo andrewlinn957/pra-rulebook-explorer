@@ -52,6 +52,15 @@ def make_conn():
           confidence REAL,
           context_text TEXT,
           metadata_json TEXT
+          );
+        CREATE TABLE document_source (
+          id TEXT PRIMARY KEY,
+          source_type TEXT NOT NULL,
+          url TEXT NOT NULL UNIQUE,
+          fetched_at TEXT NOT NULL,
+          content_hash TEXT NOT NULL,
+          raw_html TEXT NOT NULL,
+          raw_text TEXT DEFAULT ''
         );
         """
     )
@@ -144,3 +153,46 @@ def test_content_order_uses_every_numeric_component_of_rule_titles():
         "two",
         "ten",
     ]
+
+
+def test_reader_bundle_preserves_repeated_html_links_to_one_target():
+    conn = make_conn()
+    source_url = "https://www.prarulebook.co.uk/pra-rules/source/01-06-2026"
+    add_node(conn, "root", "rule", "28.2A", "Apply 6.2 (6)(a) or (b), then 6.2 (6)(b).")
+    add_node(conn, "target", "rule", "6.2", "Target text.")
+    conn.execute(
+        "UPDATE node SET url=?,metadata_json=? WHERE id='root'",
+        (
+            f"{source_url}#source-row",
+            '{"html_id":"source-row","source_page_id":"source-page"}',
+        ),
+    )
+    conn.execute(
+        "INSERT INTO document_source VALUES (?,?,?,?,?,?,?)",
+        (
+            "source-page",
+            "part",
+            source_url,
+            "2026-06-25T00:00:00Z",
+            "hash",
+            """<div id="source-row"><div class="div-row__col-2"><p>
+              Apply <a href="/pra-rules/target#target" title="6.2">6.2</a>(6)(a) or (b),
+              then <a href="/pra-rules/target#target" title="6.2">6.2</a>(6)(b).
+            </p></div></div>""",
+            "",
+        ),
+    )
+    add_edge(conn, "reference", "root", "target")
+    conn.execute(
+        "UPDATE edge SET source_method='html_anchor_resolved',metadata_json=? WHERE id='reference'",
+        ('{"href":"https://www.prarulebook.co.uk/pra-rules/target#target"}',),
+    )
+    conn.commit()
+
+    bundle = reader_bundle(conn, "root")
+    edge = bundle["graph"]["edges"][0]
+
+    assert [
+        occurrence["citation_text"]
+        for occurrence in edge["metadata"]["reference_occurrences"]
+    ] == ["6.2 (6)(a)", "6.2 (6)(b)"]

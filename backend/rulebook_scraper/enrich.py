@@ -292,13 +292,20 @@ def _resolve_html_anchor_reference_edges(conn: sqlite3.Connection) -> list[Edge]
         if target_id == row[1]:
             discard_stale_resolved_edge()
             continue
+        anchor_index = meta.get("anchor_index")
+        occurrence_suffix = (
+            f"html_anchor:{html_id}:occurrence:{anchor_index}"
+            if anchor_index is not None
+            else f"html_anchor:{html_id}"
+        )
         out.append(Edge(
-            edge_id(row[1], target_id, "references", f"html_anchor:{html_id}"),
+            edge_id(row[1], target_id, "references", occurrence_suffix),
             row[1], target_id, "references", "html_anchor_resolved", 0.98,
             row[3] or target_title, row[4] or target_url,
             {
                 "href": href,
                 "html_id": html_id,
+                "anchor_index": anchor_index,
                 "target_title": target_title,
                 "replaces_edge_id": row[0],
                 "resolution_basis": resolution_basis,

@@ -50,6 +50,39 @@ class SourceHrefResolutionTests(unittest.TestCase):
         self.assertEqual(resolved[0].metadata["resolution_basis"], "source_html_href")
         self.assertEqual(conn.execute("SELECT COUNT(*) FROM edge WHERE id=?", (original.id,)).fetchone()[0], 0)
 
+    def test_preserves_repeated_parser_anchor_rows_as_distinct_resolved_edges(self):
+        conn = self.make_conn()
+        source_url = "https://www.prarulebook.co.uk/pra-rules/source-part/01-06-2026"
+        target_href = "https://www.prarulebook.co.uk/pra-rules/target-part#abc123"
+        placeholder_key = "url:pra-rules/target-part#abc123"
+        upsert_nodes(conn, [
+            Node("source", "rule", "rule:source", "Source", url=source_url),
+            Node("target", "rule", "rule:target", "6.2", url=f"{source_url}#abc123", metadata={"html_id": "abc123"}),
+            Node(node_id(placeholder_key), "rule_reference", placeholder_key, "6.2", metadata={"placeholder": True}),
+        ])
+        originals = [
+            Edge(
+                edge_id("source", node_id(placeholder_key), "references", f"{target_href}|anchor:{index}"),
+                "source",
+                node_id(placeholder_key),
+                "references",
+                "html_link",
+                1.0,
+                "6.2",
+                source_url,
+                {"href": target_href, "anchor_index": index},
+            )
+            for index in (0, 1)
+        ]
+        upsert_edges(conn, originals)
+
+        resolved = _resolve_html_anchor_reference_edges(conn)
+
+        self.assertEqual(len(resolved), 2)
+        self.assertEqual({edge.to_node_id for edge in resolved}, {"target"})
+        self.assertEqual({edge.metadata["anchor_index"] for edge in resolved}, {0, 1})
+        self.assertEqual(len({edge.id for edge in resolved}), 2)
+
     def test_resolves_guidance_anchor_href_to_guidance_paragraph(self):
         conn = self.make_conn()
         source_url = "https://www.prarulebook.co.uk/guidance/statements-of-policy/sop/01-06-2026"

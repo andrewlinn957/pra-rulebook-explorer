@@ -140,6 +140,22 @@ export function legalTextBlocks(value = '') {
   });
 }
 
+export function readerTextBlocks(bodyText = '', sourceBlocks = null) {
+  const fallback = legalTextBlocks(bodyText);
+  if (!Array.isArray(sourceBlocks) || !sourceBlocks.length) return fallback;
+  const structured = sourceBlocks.map(block => ({
+    kind: block.kind || (block.marker ? 'list-item' : 'prose'),
+    marker: block.marker || '',
+    depth: Number(block.depth || 0),
+    text: compactWhitespace(block.text || ''),
+  })).filter(block => block.text || block.marker);
+  const body = compactWhitespace(bodyText);
+  const structuredText = compactWhitespace(structured.map(block => (
+    block.marker ? `${block.marker} ${block.text}` : block.text
+  )).join(' '));
+  return body && structuredText === body ? structured : fallback;
+}
+
 export function splitLegalParagraphs(value = '') {
   return legalTextBlocks(value).map(block => (
     block.marker ? `${block.marker} ${block.text}`.trim() : block.text
@@ -248,6 +264,33 @@ function citationMatch(paragraph, reference, startAt = 0) {
   return null;
 }
 
+function emptyResolutionHasReadableAlternative(edge, target, graphEdges, byId) {
+  if (
+    edge.source_method !== 'resolution_policy_v1'
+    || target?.text?.trim()
+  ) return false;
+  const sourceIds = new Set([
+    edge.from_node_id,
+    ...(edge.metadata?.rolled_up_from_from_node_ids || []),
+  ].filter(Boolean));
+  const evidence = compactWhitespace(edge.evidence_text || '').toLocaleLowerCase();
+  return graphEdges.some(candidate => {
+    if (
+      candidate === edge
+      || candidate.edge_type !== edge.edge_type
+      || !['html_link', 'html_anchor_resolved'].includes(candidate.source_method)
+      || !sourceIds.has(candidate.from_node_id)
+    ) return false;
+    const candidateTarget = byId.get(candidate.to_node_id);
+    const candidateEvidence = compactWhitespace(candidate.evidence_text || '').toLocaleLowerCase();
+    return Boolean(
+      candidateTarget?.text?.trim()
+      && candidateEvidence
+      && evidence.includes(candidateEvidence)
+    );
+  });
+}
+
 export function readerReferences(rootNode, graph = {}) {
   const byId = new Map((graph.nodes || []).map(node => [node.id, node]));
   const references = [];
@@ -264,8 +307,22 @@ export function readerReferences(rootNode, graph = {}) {
       ))
       .map(occurrence => `${occurrence.target_node_id}|REF`),
   );
+  const explicitOccurrenceCoveredTargets = new Set(
+    (graph.edges || []).flatMap(edge => (
+      ['html_link', 'html_anchor_resolved'].includes(edge.source_method)
+        ? edge.metadata?.reference_occurrences || []
+        : []
+    ))
+      .filter(occurrence => (
+        occurrence.status === 'materialized'
+        && occurrence.source_node_id === rootNode?.id
+      ))
+      .map(occurrence => `${occurrence.target_node_id}|REF`),
+  );
   for (const edge of graph.edges || []) {
     if (!READING_EDGE_TYPES.has(edge.edge_type)) continue;
+    const edgeTarget = byId.get(edge.to_node_id);
+    if (emptyResolutionHasReadableAlternative(edge, edgeTarget, graph.edges || [], byId)) continue;
     // The reading spine follows citations made by the current provision.
     // Guidance references may be displayed at their document ancestor in the
     // graph. Preserve the original source direction so a paragraph reader can
@@ -277,6 +334,13 @@ export function readerReferences(rootNode, graph = {}) {
       && !rolledUpSources.includes(rootNode?.id)
     ) continue;
     const relationship = readingRelationship(edge.edge_type);
+    const explicitTargetCovered = explicitOccurrenceCoveredTargets.has(
+      `${edge.to_node_id}|${relationship.code}`,
+    );
+    if (
+      edge.source_method === 'resolution_policy_v1'
+      && explicitTargetCovered
+    ) continue;
     const metadata = edge.metadata || {};
     const occurrences = (metadata.reference_occurrences || [])
       .filter(occurrence => occurrence.status === 'materialized')
@@ -285,8 +349,12 @@ export function readerReferences(rootNode, graph = {}) {
         || edge.from_node_id === rootNode?.id
         || rolledUpSources.includes(occurrence.source_node_id)
       ));
-    if (occurrences.length) {
-      for (const occurrence of occurrences) {
+    const occurrencesToUse = explicitTargetCovered
+      ? occurrences.filter(occurrence => occurrence.source_method !== 'resolution_policy_v1')
+      : occurrences;
+    if (explicitTargetCovered && occurrences.length && !occurrencesToUse.length) continue;
+    if (occurrencesToUse.length) {
+      for (const occurrence of occurrencesToUse) {
         if (!occurrence.occurrence_id || seenOccurrences.has(occurrence.occurrence_id)) {
           continue;
         }
