@@ -100,7 +100,7 @@ def now() -> str:
 
 
 def connect_ledger(path: Path) -> sqlite3.Connection:
-    conn = connect(f"file:{path.resolve()}?mode=ro", uri=True, timeout=60)
+    conn = connect(path, readonly=True, timeout=60)
     conn.execute("PRAGMA query_only=ON")
     conn.execute("PRAGMA busy_timeout=30000")
     return conn

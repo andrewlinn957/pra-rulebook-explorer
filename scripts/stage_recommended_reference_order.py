@@ -580,7 +580,7 @@ def stage_crr_occurrences(
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
     source_conn = connect_source(args.db)
-    review_conn = connect(f"file:{Path(args.review_db).resolve()}?mode=ro", uri=True)
+    review_conn = connect(Path(args.review_db), readonly=True)
     stage = connect_stage(args.stage)
     # Reruns replace only this work-order's proposals, leaving any separately
     # reviewed stage methods intact.

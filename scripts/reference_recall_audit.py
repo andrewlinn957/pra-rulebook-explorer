@@ -256,8 +256,7 @@ def connect_source(path: Path | str) -> sqlite3.Connection:
     if str(path) == ":memory:":
         conn = connect(":memory:")
     else:
-        resolved = Path(path).resolve()
-        conn = connect(f"file:{resolved}?mode=ro", uri=True, timeout=60, readonly=True)
+        conn = connect(Path(path).resolve(), readonly=True, timeout=60)
     conn.execute("PRAGMA query_only=ON")
     conn.execute("PRAGMA busy_timeout=30000")
     return conn

@@ -199,7 +199,7 @@ def shifted_occurrence(occurrence, offset: int):
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
     source_conn = connect_source(args.db)
-    review_conn = connect(f"file:{args.review_db.resolve()}?mode=ro", uri=True)
+    review_conn = connect(args.review_db, readonly=True)
     stage = connect_stage(args.stage)
     stage.execute("DELETE FROM staged_repair WHERE proposal_method=?", (METHOD,))
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-legal-context"

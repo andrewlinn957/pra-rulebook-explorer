@@ -369,8 +369,8 @@ def _merge_ranges(ranges: Iterable[tuple[int, int]]) -> list[tuple[int, int]]:
 
 
 def load_queue(review_path: Path, ledger_path: Path) -> list[dict[str, Any]]:
-    review = connect(f"file:{review_path.resolve()}?mode=ro", uri=True)
-    ledger = connect(f"file:{ledger_path.resolve()}?mode=ro", uri=True)
+    review = connect(review_path, readonly=True)
+    ledger = connect(ledger_path, readonly=True)
     try:
         gaps = {row["candidate_id"]: row for row in ledger.execute("SELECT * FROM reference_gap")}
         out: list[dict[str, Any]] = []

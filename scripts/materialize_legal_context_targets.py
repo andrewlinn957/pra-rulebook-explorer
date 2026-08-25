@@ -108,7 +108,7 @@ def residual_records(
     max_window_chars: int,
 ) -> tuple[dict[tuple[str, str], list[dict[str, Any]]], dict[str, Any]]:
     source_conn = connect_source(db)
-    review_conn = connect(f"file:{review_db.resolve()}?mode=ro", uri=True)
+    review_conn = connect(review_db, readonly=True)
     registry = InstrumentRegistry.load(registry_path)
     rules = json.loads(overrides_path.read_text(encoding="utf-8"))["rules"]
 

@@ -25,7 +25,7 @@ def q(conn: sqlite3.Connection, sql: str, params=()):
 
 
 def main() -> int:
-    conn = connect(f"file:{DB}?mode=ro", uri=True, readonly=True)
+    conn = connect(DB, readonly=True)
     out: dict[str, object] = {}
 
     out["counts"] = {

@@ -132,8 +132,8 @@ def recommendation(
 
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
-    source_conn = connect(f"file:{args.db.resolve()}?mode=ro", uri=True)
-    review_conn = connect(f"file:{args.review_db.resolve()}?mode=ro", uri=True)
+    source_conn = connect(args.db, readonly=True)
+    review_conn = connect(args.review_db, readonly=True)
     nodes = {
         row["id"]: row
         for row in source_conn.execute(

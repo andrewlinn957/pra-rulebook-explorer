@@ -152,6 +152,16 @@ def test_generic_instrument_candidate_is_excluded_context():
     assert "generic_or_table_instrument_label" in reasons
 
 
+def test_connect_source_uses_the_shared_readonly_contract(tmp_path):
+    source_path = tmp_path / "source.sqlite3"
+    make_source_db(source_path, text="See Article 435 of the UK CRR.")
+
+    conn = reference_recall_audit.connect_source(source_path)
+    assert conn.execute("PRAGMA query_only").fetchone()[0] == 1
+    assert conn.execute("SELECT title FROM node").fetchone()["title"] == "2.4"
+    conn.close()
+
+
 def test_scan_node_marks_existing_occurrence_as_covered(tmp_path):
     text = "The committee must comply with Article 26(6) of the Statutory Audit Regulation."
     source_path = tmp_path / "source.sqlite3"
