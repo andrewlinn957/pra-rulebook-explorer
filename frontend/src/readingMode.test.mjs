@@ -631,6 +631,10 @@ test('reading issue reports preserve draft text while minimising the description
   assert.match(interfaceSource, /value=\{text\}/);
   assert.match(interfaceSource, /setText\(e\.target\.value\)/);
   assert.match(interfaceSource, /is-minimised/);
+  assert.match(
+    interfaceSource,
+    /id=\{readingIssue\?'reading-issue-description':undefined\} className=\{`issue-report-body[^]*issue-context-note[^]*<\/p>\n    <\/div>\n    <div className="modal-actions">/,
+  );
 
   const readerLayer = interfaceSource.match(
     /reading-issue-layer[\s\S]*?(?=modal-backdrop|function ProvisionReader)/,

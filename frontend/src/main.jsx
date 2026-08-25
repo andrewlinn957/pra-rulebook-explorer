@@ -459,10 +459,10 @@ function IssueReportModal({node,text,setText,saving,saved,context,onClose,onSubm
       <div className="feedback-node-summary"><span>{label(node.node_type)}</span><strong>{displayNodeTitle(node)}</strong>{node.url&&<a href={node.url} target="_blank" rel="noopener noreferrer">Open source ↗</a>}</div>
       <label className="feedback-editor">Describe the issue (optional)<textarea value={text} onChange={e=>setText(e.target.value)} placeholder="Example: this node should link to SS3/18, but the reference is missing." autoFocus/></label>
       <p className="muted issue-context-note">{context==='reading_mode'?'Reported from reading mode.':'Reported from graph view.'}</p>
-      <div className="modal-actions">
-        <button type="button" onClick={onClose}>Cancel</button>
-        <button type="submit" disabled={saving||saved} className={saved?'issue-saved':''}>{saved?'✓ Reported':saving?'Saving…':'Submit report'}</button>
-      </div>
+    </div>
+    <div className="modal-actions">
+      <button type="button" onClick={onClose}>Cancel</button>
+      <button type="submit" disabled={saving||saved} className={saved?'issue-saved':''}>{saved?'✓ Reported':saving?'Saving…':'Submit report'}</button>
     </div>
   </form>;
   return readingIssue
