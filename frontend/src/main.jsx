@@ -319,7 +319,7 @@ function App(){
 
     <main className="canvas">
       {readingNode?<>
-        <ProvisionReader rootNode={readingNode} api={api} onClose={()=>setReadingNode(null)} onReportIssue={n=>{setIssueReportNode(n);setIssueText('');}}/>
+        <ProvisionReader rootNode={readingNode} api={api} onClose={()=>{setReadingNode(null);setIssueReportNode(null);setIssueText('');}} onReportIssue={n=>{setIssueReportNode(n);setIssueText('');}}/>
         {issueReportNode&&<IssueReportModal node={issueReportNode} text={issueText} setText={setIssueText} saving={issueSaving} saved={issueSaved} context="reading_mode" onClose={()=>setIssueReportNode(null)} onSubmit={submitIssueReport}/>}
       </>:view==='reporting'?<ReportingGraphView onFeedback={n=>{setIssueReportNode(n);setIssueText('');}}/>:view==='issues'?<IssuesLogView onBack={()=>setView('graph')}/>:<>
         <div className="canvas-meta"><strong>{selected?.title||'Select a node'}</strong><span>{activeRep.label} · {visibleGraph.nodes.length} shown · {visibleGraph.edges.length} visible links · {Object.values(graph.available_edge_types||{}).reduce((a,b)=>a+b,0)} direct links available</span></div>
@@ -454,8 +454,8 @@ function IssueReportModal({node,text,setText,saving,saved,context,onClose,onSubm
   const readingIssue=context==='reading_mode';
   const [minimised,setMinimised]=useState(false);
   const reportForm=<form className={`node-feedback-modal issue-report-modal ${readingIssue?'reading-issue-report-modal':''}`} onSubmit={e=>{e.preventDefault();onSubmit();}}>
-    <div className="modal-head"><div><span className="eyebrow">Report an issue</span><h3>Report an issue with this node</h3></div><div className="reader-header-actions">{readingIssue&&<button type="button" onClick={()=>setMinimised(value=>!value)} aria-expanded={!minimised}>{minimised?'Expand description':'Minimise description'}</button>}<button type="button" onClick={onClose} aria-label="Close">×</button></div></div>
-    <div className={`issue-report-body ${readingIssue&&minimised?'is-minimised':''}`}>
+    <div className="modal-head"><div><span className="eyebrow">Report an issue</span><h3>Report an issue with this node</h3></div><div className="reader-header-actions">{readingIssue&&<button type="button" onClick={()=>setMinimised(value=>!value)} aria-expanded={!minimised} aria-controls={readingIssue?'reading-issue-description':undefined}>{minimised?'Expand description':'Minimise description'}</button>}<button type="button" onClick={onClose} aria-label="Close">×</button></div></div>
+    <div id={readingIssue?'reading-issue-description':undefined} className={`issue-report-body ${readingIssue&&minimised?'is-minimised':''}`}>
       <div className="feedback-node-summary"><span>{label(node.node_type)}</span><strong>{displayNodeTitle(node)}</strong>{node.url&&<a href={node.url} target="_blank" rel="noopener noreferrer">Open source ↗</a>}</div>
       <label className="feedback-editor">Describe the issue (optional)<textarea value={text} onChange={e=>setText(e.target.value)} placeholder="Example: this node should link to SS3/18, but the reference is missing." autoFocus/></label>
       <p className="muted issue-context-note">{context==='reading_mode'?'Reported from reading mode.':'Reported from graph view.'}</p>

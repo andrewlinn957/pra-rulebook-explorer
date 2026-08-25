@@ -649,3 +649,16 @@ test('reader issue reports render inside the canvas and other reports stay after
     /<\/main>[\s\S]*<aside className=\{panelOpen\?'inspector open':'inspector'\}>[\s\S]*<\/aside>[\s\S]*\{issueReportNode&&!readingNode&&<IssueReportModal[\s\S]*context="graph_view"/,
   );
 });
+
+test('closing reading mode clears its issue draft without changing graph report context', () => {
+  assert.match(
+    interfaceSource,
+    /onClose=\{\(\)=>\{setReadingNode\(null\);setIssueReportNode\(null\);setIssueText\(''\);\}\}/,
+  );
+  assert.match(interfaceSource, /aria-controls=\{readingIssue\?'reading-issue-description':undefined\}/);
+  assert.match(interfaceSource, /id=\{readingIssue\?'reading-issue-description':undefined\}/);
+  assert.match(
+    interfaceSource,
+    /\{issueReportNode&&!readingNode&&<IssueReportModal[\s\S]*context="graph_view"/,
+  );
+});
