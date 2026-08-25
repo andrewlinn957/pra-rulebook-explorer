@@ -665,6 +665,17 @@ test('reading issue reports preserve draft text while minimising the description
   assert.match(interfaceSource, /modal-backdrop[\s\S]*if\(e\.target===e\.currentTarget\)onClose\(\)/);
 });
 
+test('multi-provision reader reports expose scoped provision flags and an explicit whole-node action', () => {
+  assert.match(interfaceSource, /function readerIssueTargetLabel\(node\)/);
+  assert.match(interfaceSource, /const showProvisionReportFlags=provisionCount>1/);
+  assert.match(interfaceSource, /className="reading-provision-heading-actions"/);
+  assert.match(interfaceSource, /className="report-issue-flag"/);
+  assert.match(interfaceSource, /onReportIssue\?\.\(section\.node\)/);
+  assert.match(interfaceSource, /readerIssueTargetLabel\(node\)/);
+  assert.match(interfaceStyles, /\.reading-provision-heading-actions\{/);
+  assert.match(interfaceStyles, /\.report-issue-flag\{/);
+});
+
 test('reader issue reports render inside the canvas and other reports stay after the inspector', () => {
   assert.match(
     interfaceSource,

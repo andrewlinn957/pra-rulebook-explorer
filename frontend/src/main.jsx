@@ -450,11 +450,20 @@ function issueContextLabel(value){
   return value==='reading_mode'?'Reader view':value==='graph_view'?'Graph view':value||'Unknown context';
 }
 
+function readerIssueTargetLabel(node){
+  const type=String(node?.node_type||'').toLowerCase();
+  if(type==='part') return 'this part';
+  if(type==='chapter') return 'this chapter';
+  if(type==='rulebook') return 'this rulebook';
+  return 'this provision';
+}
+
 function IssueReportModal({node,text,setText,saving,saved,context,reportError='',onClose,onSubmit}){
   const readingIssue=context==='reading_mode';
+  const reportTarget=readingIssue?readerIssueTargetLabel(node):'this node';
   const [minimised,setMinimised]=useState(false);
   const reportForm=<form className={`node-feedback-modal issue-report-modal ${readingIssue?'reading-issue-report-modal':''}`} onSubmit={e=>{e.preventDefault();onSubmit();}}>
-    <div className="modal-head"><div><span className="eyebrow">Report an issue</span><h3>Report an issue with this node</h3></div><div className="issue-report-head-actions">{readingIssue&&<button type="button" className="issue-report-minimise" aria-label={minimised?'Expand description':'Minimise description'} onClick={()=>setMinimised(value=>!value)} aria-expanded={!minimised} aria-controls={readingIssue?'reading-issue-description':undefined}>{minimised?'Expand description':'Minimise description'}</button>}<button type="button" onClick={onClose} aria-label="Close">×</button></div></div>
+    <div className="modal-head"><div><span className="eyebrow">Report an issue</span><h3>Report an issue with {reportTarget}</h3></div><div className="issue-report-head-actions">{readingIssue&&<button type="button" className="issue-report-minimise" aria-label={minimised?'Expand description':'Minimise description'} onClick={()=>setMinimised(value=>!value)} aria-expanded={!minimised} aria-controls={readingIssue?'reading-issue-description':undefined}>{minimised?'Expand description':'Minimise description'}</button>}<button type="button" onClick={onClose} aria-label="Close">×</button></div></div>
     <div id={readingIssue?'reading-issue-description':undefined} className={`issue-report-body ${readingIssue&&minimised?'is-minimised':''}`}>
       <div className="feedback-node-summary"><span>{label(node.node_type)}</span><strong>{displayNodeTitle(node)}</strong>{node.url&&<a href={node.url} target="_blank" rel="noopener noreferrer">Open source ↗</a>}</div>
       <label className={`feedback-editor ${readingIssue?'issue-report-description':''}`}>Describe the issue (optional)<textarea value={text} onChange={e=>setText(e.target.value)} placeholder="Example: this node should link to SS3/18, but the reference is missing." autoFocus/></label>
@@ -467,7 +476,7 @@ function IssueReportModal({node,text,setText,saving,saved,context,reportError=''
     </div>
   </form>;
   return readingIssue
-    ? <div className="reading-issue-layer" role="dialog" aria-modal="false" aria-label="Report an issue with this node">{reportForm}</div>
+    ? <div className="reading-issue-layer" role="dialog" aria-modal="false" aria-label={`Report an issue with ${reportTarget}`}>{reportForm}</div>
     : <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Report an issue with this node" onClick={e=>{if(e.target===e.currentTarget)onClose();}}>{reportForm}</div>;
 }
 function ProvisionReader({rootNode,api,onClose,onReportIssue}){
@@ -640,13 +649,14 @@ function ProvisionReader({rootNode,api,onClose,onReportIssue}){
     ||root?.metadata?.source_title
     ||label(root?.node_type);
   const provisionCount=sections.filter(section=>section.blocks.length).length;
+  const showProvisionReportFlags=provisionCount>1;
   const hasBody=sections.some(section=>section.blocks.length);
   return <div className="provision-reader">
     <header className="provision-reader-header">
       <button type="button" className="provision-reader-back" onClick={onClose}>← Graph</button>
       <div><span>Reading mode</span><strong>{displayNodeTitle(root)}</strong></div>
       <div className="reader-header-actions">
-        <button type="button" className="report-issue-btn reader-report-btn" onClick={()=>onReportIssue?.(root)}>⚑ Report an issue with this node</button>
+        <button type="button" className="report-issue-btn reader-report-btn" aria-label={`Report an issue with ${displayNodeTitle(root)} (${readerIssueTargetLabel(root)})`} onClick={()=>onReportIssue?.(root)}>⚑ Report an issue with {readerIssueTargetLabel(root)}</button>
         <button type="button" className="reference-shelf-toggle" onClick={()=>setMobileShelfOpen(true)}>
           Pinned references <b>{pinnedReferences.length}</b>
         </button>
@@ -689,7 +699,10 @@ function ProvisionReader({rootNode,api,onClose,onReportIssue}){
                 {!section.isRoot&&<header className="reading-provision-heading">
                   <span>{label(section.node.node_type)}</span>
                   <h2>{section.node.title||displayNodeTitle(section.node)}</h2>
-                  {section.node.url&&<a href={section.node.url} target="_blank" rel="noopener noreferrer">Source ↗</a>}
+                  <div className="reading-provision-heading-actions">
+                    {section.node.url&&<a href={section.node.url} target="_blank" rel="noopener noreferrer">Source ↗</a>}
+                    {showProvisionReportFlags&&<button type="button" className="report-issue-flag" title={`Report an issue with ${displayNodeTitle(section.node)}`} aria-label={`Report an issue with ${displayNodeTitle(section.node)}`} onClick={()=>onReportIssue?.(section.node)}>⚑</button>}
+                  </div>
                 </header>}
                 {section.blocks.map((block,index)=>{
                   const blockId=`${section.node.id}:${index}`;

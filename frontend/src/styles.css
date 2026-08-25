@@ -1021,6 +1021,16 @@ button{cursor:pointer}
   align-self:center;color:#796041;font-size:8px;font-weight:750;text-decoration:none;
 }
 .reading-provision-heading a:hover{text-decoration:underline}
+.reading-provision-heading-actions{
+  display:flex;align-items:center;justify-content:flex-end;gap:8px;align-self:center;white-space:nowrap;
+}
+.report-issue-flag{
+  display:inline-grid;place-items:center;width:23px;height:23px;padding:0;border:1px solid var(--colour-border-strong);
+  border-radius:4px;background:var(--colour-surface);color:var(--colour-info);font-size:12px;line-height:1;cursor:pointer;
+}
+.report-issue-flag:hover,.report-issue-flag:focus-visible{
+  border-color:var(--colour-accent);background:var(--colour-accent-soft);color:var(--colour-brand);outline:none;
+}
 .legal-paragraph{
   position:relative;display:grid;grid-template-columns:38px minmax(0,1fr);column-gap:18px;
   padding:13px 0;border-top:1px solid transparent;scroll-margin-top:30px;
