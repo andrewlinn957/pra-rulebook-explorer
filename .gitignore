@@ -13,3 +13,4 @@ outputs/reporting-catalog-enrichment-batches/
 backups/
 outputs/
 backend/data/
+.worktrees/
