@@ -622,12 +622,30 @@ test('reference shelf is space-aware, sticky, scrollable and becomes a narrow-sc
   assert.match(interfaceStyles, /\.reference-shelf\.is-mobile-open\{transform:translateX\(0\)\}/);
 });
 
-test('reading issue reports use a side column between the provision text and reference shelf', () => {
-  assert.match(interfaceSource, /reading-issue-open/);
-  assert.match(interfaceSource, /reading-issue-backdrop/);
-  assert.match(interfaceSource, /reading-issue-report-modal/);
-  assert.match(interfaceStyles, /\.shell\.reading-issue-open \.provision-reader-layout\{[^}]*grid-template-columns:minmax\(0,1fr\) minmax\(280px,320px\) minmax\(290px,350px\)/);
-  assert.match(interfaceStyles, /\.shell\.reading-issue-open \.reference-shelf\{[^}]*grid-column:3/);
-  assert.match(interfaceStyles, /\.reading-issue-backdrop\{[^}]*grid-template-columns:minmax\(0,1fr\) minmax\(280px,320px\) minmax\(290px,350px\)/);
-  assert.match(interfaceStyles, /@media\(max-width:860px\)[\s\S]*\.reading-issue-backdrop\{[^}]*grid-template-columns:1fr/);
+test('reading issue reports preserve draft text while minimising the description', () => {
+  assert.match(interfaceSource, /reading-issue-layer/);
+  assert.match(interfaceSource, /aria-modal="false"/);
+  assert.match(interfaceSource, /Minimise description/);
+  assert.match(interfaceSource, /Expand description/);
+  assert.match(interfaceSource, /aria-expanded=\{!minimised\}/);
+  assert.match(interfaceSource, /value=\{text\}/);
+  assert.match(interfaceSource, /setText\(e\.target\.value\)/);
+  assert.match(interfaceSource, /is-minimised/);
+
+  const readerLayer = interfaceSource.match(
+    /reading-issue-layer[\s\S]*?(?=modal-backdrop|function ProvisionReader)/,
+  )?.[0] || '';
+  assert.doesNotMatch(readerLayer, /onClick=[^>]*onClose/);
+  assert.match(interfaceSource, /modal-backdrop[\s\S]*if\(e\.target===e\.currentTarget\)onClose\(\)/);
+});
+
+test('reader issue reports render inside the canvas and other reports stay after the inspector', () => {
+  assert.match(
+    interfaceSource,
+    /<main className="canvas">[\s\S]*readingNode\?[\s\S]*issueReportNode&&<IssueReportModal[\s\S]*context="reading_mode"[\s\S]*<\/main>/,
+  );
+  assert.match(
+    interfaceSource,
+    /<\/main>[\s\S]*<aside className=\{panelOpen\?'inspector open':'inspector'\}>[\s\S]*<\/aside>[\s\S]*\{issueReportNode&&!readingNode&&<IssueReportModal[\s\S]*context="graph_view"/,
+  );
 });

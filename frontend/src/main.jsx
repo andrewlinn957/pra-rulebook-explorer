@@ -272,7 +272,7 @@ function App(){
     setError('');
   }
 
-  return <div className={`shell ${panelOpen?'panel-open':'panel-closed'} ${view==='reporting'?'reporting-view-mode':''} ${view==='issues'?'issues-view-mode':''} ${readingNode?'reading-view-mode':''} ${readingNode&&issueReportNode?'reading-issue-open':''}`}>
+  return <div className={`shell ${panelOpen?'panel-open':'panel-closed'} ${view==='reporting'?'reporting-view-mode':''} ${view==='issues'?'issues-view-mode':''} ${readingNode?'reading-view-mode':''}`}>
     <header className="topbar">
       <a className="home" href="/">‹</a>
       <form className="command" onSubmit={search}>
@@ -318,7 +318,10 @@ function App(){
     </aside>
 
     <main className="canvas">
-      {readingNode?<ProvisionReader rootNode={readingNode} api={api} onClose={()=>setReadingNode(null)} onReportIssue={n=>{setIssueReportNode(n);setIssueText('');}}/>:view==='reporting'?<ReportingGraphView onFeedback={n=>{setIssueReportNode(n);setIssueText('');}}/>:view==='issues'?<IssuesLogView onBack={()=>setView('graph')}/>:<>
+      {readingNode?<>
+        <ProvisionReader rootNode={readingNode} api={api} onClose={()=>setReadingNode(null)} onReportIssue={n=>{setIssueReportNode(n);setIssueText('');}}/>
+        {issueReportNode&&<IssueReportModal node={issueReportNode} text={issueText} setText={setIssueText} saving={issueSaving} saved={issueSaved} context="reading_mode" onClose={()=>setIssueReportNode(null)} onSubmit={submitIssueReport}/>}
+      </>:view==='reporting'?<ReportingGraphView onFeedback={n=>{setIssueReportNode(n);setIssueText('');}}/>:view==='issues'?<IssuesLogView onBack={()=>setView('graph')}/>:<>
         <div className="canvas-meta"><strong>{selected?.title||'Select a node'}</strong><span>{activeRep.label} · {visibleGraph.nodes.length} shown · {visibleGraph.edges.length} visible links · {Object.values(graph.available_edge_types||{}).reduce((a,b)=>a+b,0)} direct links available</span></div>
         <Graph graph={visibleGraph} selected={selected} detail={detail} nodeTypes={nodeTypes} relationshipTypes={types} relationshipFilters={relationshipFilters} availableEdgeTypes={graph.available_edge_types||{}} onToggleNodeType={toggleNodeType} onToggleRelationship={toggleType} onSelect={n=>{setDetail(n);setPanelOpen(true);}} onOpen={n=>choose(n,{drill:true})} onFeedback={n=>{setIssueReportNode(n);setIssueText('');}}/>
       </>}
@@ -327,7 +330,7 @@ function App(){
     <aside className={panelOpen?'inspector open':'inspector'}>
       <Explore node={detail} edges={selectedEdges} graph={graph} onChoose={choose} onRead={openReadingMode} onReportIssue={n=>{setIssueReportNode(n);setIssueText('');}}/>
     </aside>
-    {issueReportNode&&<IssueReportModal node={issueReportNode} text={issueText} setText={setIssueText} saving={issueSaving} saved={issueSaved} context={readingNode?'reading_mode':'graph_view'} onClose={()=>setIssueReportNode(null)} onSubmit={submitIssueReport}/>}
+    {issueReportNode&&!readingNode&&<IssueReportModal node={issueReportNode} text={issueText} setText={setIssueText} saving={issueSaving} saved={issueSaved} context="graph_view" onClose={()=>setIssueReportNode(null)} onSubmit={submitIssueReport}/>}
   </div>;
 }
 
@@ -449,9 +452,10 @@ function issueContextLabel(value){
 
 function IssueReportModal({node,text,setText,saving,saved,context,onClose,onSubmit}){
   const readingIssue=context==='reading_mode';
-  return <div className={`modal-backdrop ${readingIssue?'reading-issue-backdrop':''}`} role="dialog" aria-modal="true" aria-label="Report an issue with this node" onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
-    <form className={`node-feedback-modal issue-report-modal ${readingIssue?'reading-issue-report-modal':''}`} onSubmit={e=>{e.preventDefault();onSubmit();}}>
-      <div className="modal-head"><div><span className="eyebrow">Report an issue</span><h3>Report an issue with this node</h3></div><button type="button" onClick={onClose} aria-label="Close">×</button></div>
+  const [minimised,setMinimised]=useState(false);
+  const reportForm=<form className={`node-feedback-modal issue-report-modal ${readingIssue?'reading-issue-report-modal':''}`} onSubmit={e=>{e.preventDefault();onSubmit();}}>
+    <div className="modal-head"><div><span className="eyebrow">Report an issue</span><h3>Report an issue with this node</h3></div><div className="reader-header-actions">{readingIssue&&<button type="button" onClick={()=>setMinimised(value=>!value)} aria-expanded={!minimised}>{minimised?'Expand description':'Minimise description'}</button>}<button type="button" onClick={onClose} aria-label="Close">×</button></div></div>
+    <div className={`issue-report-body ${readingIssue&&minimised?'is-minimised':''}`}>
       <div className="feedback-node-summary"><span>{label(node.node_type)}</span><strong>{displayNodeTitle(node)}</strong>{node.url&&<a href={node.url} target="_blank" rel="noopener noreferrer">Open source ↗</a>}</div>
       <label className="feedback-editor">Describe the issue (optional)<textarea value={text} onChange={e=>setText(e.target.value)} placeholder="Example: this node should link to SS3/18, but the reference is missing." autoFocus/></label>
       <p className="muted issue-context-note">{context==='reading_mode'?'Reported from reading mode.':'Reported from graph view.'}</p>
@@ -459,8 +463,11 @@ function IssueReportModal({node,text,setText,saving,saved,context,onClose,onSubm
         <button type="button" onClick={onClose}>Cancel</button>
         <button type="submit" disabled={saving||saved} className={saved?'issue-saved':''}>{saved?'✓ Reported':saving?'Saving…':'Submit report'}</button>
       </div>
-    </form>
-  </div>;
+    </div>
+  </form>;
+  return readingIssue
+    ? <div className="reading-issue-layer" role="dialog" aria-modal="false" aria-label="Report an issue with this node">{reportForm}</div>
+    : <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Report an issue with this node" onClick={e=>{if(e.target===e.currentTarget)onClose();}}>{reportForm}</div>;
 }
 function ProvisionReader({rootNode,api,onClose,onReportIssue}){
   const [root,setRoot]=useState(rootNode);
