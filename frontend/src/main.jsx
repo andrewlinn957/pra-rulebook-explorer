@@ -272,7 +272,7 @@ function App(){
     setError('');
   }
 
-  return <div className={`shell ${panelOpen?'panel-open':'panel-closed'} ${view==='reporting'?'reporting-view-mode':''} ${view==='issues'?'issues-view-mode':''} ${readingNode?'reading-view-mode':''}`}>
+  return <div className={`shell ${panelOpen?'panel-open':'panel-closed'} ${view==='reporting'?'reporting-view-mode':''} ${view==='issues'?'issues-view-mode':''} ${readingNode?'reading-view-mode':''} ${readingNode&&issueReportNode?'reading-issue-open':''}`}>
     <header className="topbar">
       <a className="home" href="/">‹</a>
       <form className="command" onSubmit={search}>
@@ -319,8 +319,8 @@ function App(){
 
     <main className="canvas">
       {readingNode?<>
-        <ProvisionReader rootNode={readingNode} api={api} onClose={()=>{setReadingNode(null);setIssueReportNode(null);setIssueText('');}} onReportIssue={n=>{setIssueReportNode(n);setIssueText('');}}/>
-        {issueReportNode&&<IssueReportModal node={issueReportNode} text={issueText} setText={setIssueText} saving={issueSaving} saved={issueSaved} context="reading_mode" onClose={()=>{setIssueReportNode(null);setIssueText('');}} onSubmit={submitIssueReport}/>}
+        <ProvisionReader rootNode={readingNode} api={api} onClose={()=>{setReadingNode(null);setIssueReportNode(null);setIssueText('');setError('');}} onReportIssue={n=>{setIssueReportNode(n);setIssueText('');setError('');}}/>
+        {issueReportNode&&<IssueReportModal node={issueReportNode} text={issueText} setText={setIssueText} saving={issueSaving} saved={issueSaved} context="reading_mode" reportError={error} onClose={()=>{setIssueReportNode(null);setIssueText('');setError('');}} onSubmit={submitIssueReport}/>}
       </>:view==='reporting'?<ReportingGraphView onFeedback={n=>{setIssueReportNode(n);setIssueText('');}}/>:view==='issues'?<IssuesLogView onBack={()=>setView('graph')}/>:<>
         <div className="canvas-meta"><strong>{selected?.title||'Select a node'}</strong><span>{activeRep.label} · {visibleGraph.nodes.length} shown · {visibleGraph.edges.length} visible links · {Object.values(graph.available_edge_types||{}).reduce((a,b)=>a+b,0)} direct links available</span></div>
         <Graph graph={visibleGraph} selected={selected} detail={detail} nodeTypes={nodeTypes} relationshipTypes={types} relationshipFilters={relationshipFilters} availableEdgeTypes={graph.available_edge_types||{}} onToggleNodeType={toggleNodeType} onToggleRelationship={toggleType} onSelect={n=>{setDetail(n);setPanelOpen(true);}} onOpen={n=>choose(n,{drill:true})} onFeedback={n=>{setIssueReportNode(n);setIssueText('');}}/>
@@ -450,7 +450,7 @@ function issueContextLabel(value){
   return value==='reading_mode'?'Reader view':value==='graph_view'?'Graph view':value||'Unknown context';
 }
 
-function IssueReportModal({node,text,setText,saving,saved,context,onClose,onSubmit}){
+function IssueReportModal({node,text,setText,saving,saved,context,reportError='',onClose,onSubmit}){
   const readingIssue=context==='reading_mode';
   const [minimised,setMinimised]=useState(false);
   const reportForm=<form className={`node-feedback-modal issue-report-modal ${readingIssue?'reading-issue-report-modal':''}`} onSubmit={e=>{e.preventDefault();onSubmit();}}>
@@ -460,6 +460,7 @@ function IssueReportModal({node,text,setText,saving,saved,context,onClose,onSubm
       <label className={`feedback-editor ${readingIssue?'issue-report-description':''}`}>Describe the issue (optional)<textarea value={text} onChange={e=>setText(e.target.value)} placeholder="Example: this node should link to SS3/18, but the reference is missing." autoFocus/></label>
       <p className="muted issue-context-note">{context==='reading_mode'?'Reported from reading mode.':'Reported from graph view.'}</p>
     </div>
+    {reportError&&<p className="issue-report-error" role="alert">{reportError}</p>}
     <div className="modal-actions">
       <button type="button" onClick={onClose}>Cancel</button>
       <button type="submit" disabled={saving||saved} className={saved?'issue-saved':''}>{saved?'✓ Reported':saving?'Saving…':'Submit report'}</button>

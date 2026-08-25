@@ -936,6 +936,7 @@ button{cursor:pointer}
 .shell.reading-view-mode>.topbar,.shell.reading-view-mode>.rail,.shell.reading-view-mode>.inspector{display:none!important}
 .shell.reading-view-mode>.canvas{
   --reader-shelf-width:clamp(290px,27vw,350px);
+  --reader-issue-width:min(340px,calc(100% - var(--reader-shelf-width) - 42px));
   grid-column:1/-1!important;grid-row:1!important;min-height:0;height:100vh;background:var(--colour-page);
 }
 .provision-reader{
@@ -1324,6 +1325,7 @@ button{cursor:pointer}
 .issue-report-body{display:grid;gap:14px;min-height:0}
 .issue-report-body.is-minimised{display:none}
 .issue-report-description textarea{min-height:110px;max-height:42vh;resize:vertical;overflow:auto}
+.issue-report-error{margin:14px 0 0;padding:9px 11px;border:1px solid var(--colour-error);border-radius:7px;background:var(--colour-error-soft);color:#7E2033;font-size:11px;line-height:1.4}
 .issue-report-modal .issue-context-note{margin:.4rem 0 0;font-size:.78rem;color:#64748b}
 .issue-report-modal .modal-actions button.issue-saved{background:#16a34a;border-color:#16a34a;color:white}
 .feedback-editor textarea{min-height:90px;resize:vertical}
@@ -2130,11 +2132,16 @@ body{background:var(--colour-page);color:var(--colour-text)}
   position:absolute;
   top:calc(58px + 18px);
   right:calc(var(--reader-shelf-width) + 18px);
-  width:min(340px,calc(100% - var(--reader-shelf-width) - 42px));
+  width:var(--reader-issue-width);
   max-height:calc(100% - 94px);
   margin:0;
   overflow:auto;
   pointer-events:auto;
+}
+@media(min-width:1101px){
+  .shell.reading-issue-open .provision-title-block{
+    padding-right:min(calc(var(--reader-issue-width) + 42px),45%);
+  }
 }
 @media(max-width:1100px){
   .reading-issue-layer{

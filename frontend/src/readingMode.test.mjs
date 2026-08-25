@@ -631,12 +631,15 @@ test('reading issue reports preserve draft text while minimising the description
   assert.match(interfaceSource, /value=\{text\}/);
   assert.match(interfaceSource, /setText\(e\.target\.value\)/);
   assert.match(interfaceSource, /is-minimised/);
+  assert.match(interfaceSource, /reportError=\{error\}/);
+  assert.match(interfaceSource, /className="issue-report-error" role="alert"/);
   assert.match(
     interfaceSource,
-    /id=\{readingIssue\?'reading-issue-description':undefined\} className=\{`issue-report-body[^]*issue-context-note[^]*<\/p>\n    <\/div>\n    <div className="modal-actions">/,
+    /id=\{readingIssue\?'reading-issue-description':undefined\} className=\{`issue-report-body[^]*issue-context-note[^]*<\/p>\n    <\/div>[^]*<div className="modal-actions">/,
   );
 
   assert.match(interfaceStyles, /\.shell\.reading-view-mode>\.canvas\{[^}]*--reader-shelf-width/);
+  assert.match(interfaceStyles, /\.shell\.reading-view-mode>\.canvas\{[^}]*--reader-issue-width/);
   assert.doesNotMatch(interfaceStyles, /\.provision-reader\{[^}]*--reader-shelf-width/);
   assert.match(
     interfaceStyles,
@@ -646,6 +649,9 @@ test('reading issue reports preserve draft text while minimising the description
   assert.match(interfaceStyles, /\.reading-issue-layer\{[^}]*pointer-events:none/);
   assert.match(interfaceStyles, /\.reading-issue-layer \.reading-issue-report-modal\{[^}]*pointer-events:auto/);
   assert.match(interfaceStyles, /right:calc\(var\(--reader-shelf-width\) \+ 18px\)/);
+  assert.match(interfaceStyles, /width:var\(--reader-issue-width\)/);
+  assert.match(interfaceStyles, /@media\(min-width:1101px\)[\s\S]*\.shell\.reading-issue-open \.provision-title-block/);
+  assert.match(interfaceStyles, /padding-right:min\(calc\(var\(--reader-issue-width\) \+ 42px\),45%\)/);
   assert.match(interfaceStyles, /\.issue-report-body\.is-minimised[^\{]*\{[^}]*display:none/);
   assert.match(interfaceStyles, /\.issue-report-description textarea[^}]*resize:vertical/);
   assert.doesNotMatch(interfaceStyles, /\.shell\.reading-issue-open \.provision-reader-layout\{[^}]*minmax\(280px,320px\)/);
@@ -673,11 +679,11 @@ test('reader issue reports render inside the canvas and other reports stay after
 test('closing reading mode clears its issue draft without changing graph report context', () => {
   assert.match(
     interfaceSource,
-    /onClose=\{\(\)=>\{setReadingNode\(null\);setIssueReportNode\(null\);setIssueText\(''\);\}\}/,
+    /onClose=\{\(\)=>\{setReadingNode\(null\);setIssueReportNode\(null\);setIssueText\(''\);setError\(''\);\}\}/,
   );
   assert.match(
     interfaceSource,
-    /context="reading_mode" onClose=\{\(\)=>\{setIssueReportNode\(null\);setIssueText\(''\);\}\}/,
+    /context="reading_mode" reportError=\{error\} onClose=\{\(\)=>\{setIssueReportNode\(null\);setIssueText\(''\);setError\(''\);\}\}/,
   );
   assert.match(
     interfaceSource,
