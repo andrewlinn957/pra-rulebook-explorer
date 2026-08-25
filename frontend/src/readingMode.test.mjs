@@ -659,6 +659,14 @@ test('closing reading mode clears its issue draft without changing graph report 
     interfaceSource,
     /onClose=\{\(\)=>\{setReadingNode\(null\);setIssueReportNode\(null\);setIssueText\(''\);\}\}/,
   );
+  assert.match(
+    interfaceSource,
+    /context="reading_mode" onClose=\{\(\)=>\{setIssueReportNode\(null\);setIssueText\(''\);\}\}/,
+  );
+  assert.match(
+    interfaceSource,
+    /context="graph_view" onClose=\{\(\)=>setIssueReportNode\(null\)\}/,
+  );
   assert.match(interfaceSource, /aria-controls=\{readingIssue\?'reading-issue-description':undefined\}/);
   assert.match(interfaceSource, /id=\{readingIssue\?'reading-issue-description':undefined\}/);
   assert.match(

@@ -320,7 +320,7 @@ function App(){
     <main className="canvas">
       {readingNode?<>
         <ProvisionReader rootNode={readingNode} api={api} onClose={()=>{setReadingNode(null);setIssueReportNode(null);setIssueText('');}} onReportIssue={n=>{setIssueReportNode(n);setIssueText('');}}/>
-        {issueReportNode&&<IssueReportModal node={issueReportNode} text={issueText} setText={setIssueText} saving={issueSaving} saved={issueSaved} context="reading_mode" onClose={()=>setIssueReportNode(null)} onSubmit={submitIssueReport}/>}
+        {issueReportNode&&<IssueReportModal node={issueReportNode} text={issueText} setText={setIssueText} saving={issueSaving} saved={issueSaved} context="reading_mode" onClose={()=>{setIssueReportNode(null);setIssueText('');}} onSubmit={submitIssueReport}/>}
       </>:view==='reporting'?<ReportingGraphView onFeedback={n=>{setIssueReportNode(n);setIssueText('');}}/>:view==='issues'?<IssuesLogView onBack={()=>setView('graph')}/>:<>
         <div className="canvas-meta"><strong>{selected?.title||'Select a node'}</strong><span>{activeRep.label} · {visibleGraph.nodes.length} shown · {visibleGraph.edges.length} visible links · {Object.values(graph.available_edge_types||{}).reduce((a,b)=>a+b,0)} direct links available</span></div>
         <Graph graph={visibleGraph} selected={selected} detail={detail} nodeTypes={nodeTypes} relationshipTypes={types} relationshipFilters={relationshipFilters} availableEdgeTypes={graph.available_edge_types||{}} onToggleNodeType={toggleNodeType} onToggleRelationship={toggleType} onSelect={n=>{setDetail(n);setPanelOpen(true);}} onOpen={n=>choose(n,{drill:true})} onFeedback={n=>{setIssueReportNode(n);setIssueText('');}}/>
