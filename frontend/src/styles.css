@@ -935,10 +935,10 @@ button{cursor:pointer}
 }
 .shell.reading-view-mode>.topbar,.shell.reading-view-mode>.rail,.shell.reading-view-mode>.inspector{display:none!important}
 .shell.reading-view-mode>.canvas{
+  --reader-shelf-width:clamp(290px,27vw,350px);
   grid-column:1/-1!important;grid-row:1!important;min-height:0;height:100vh;background:var(--colour-page);
 }
 .provision-reader{
-  --reader-shelf-width:clamp(290px,27vw,350px);
   --reader-paper:var(--colour-surface);--reader-paper-deep:var(--colour-page);--reader-ink:var(--colour-brand);
   --reader-muted:var(--colour-text-secondary);--reader-line:var(--colour-border);--reader-accent:var(--colour-accent);
   position:absolute;inset:0;display:grid;grid-template-rows:58px minmax(0,1fr);

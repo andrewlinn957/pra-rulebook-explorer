@@ -636,8 +636,12 @@ test('reading issue reports preserve draft text while minimising the description
     /id=\{readingIssue\?'reading-issue-description':undefined\} className=\{`issue-report-body[^]*issue-context-note[^]*<\/p>\n    <\/div>\n    <div className="modal-actions">/,
   );
 
-  assert.match(interfaceStyles, /\.provision-reader\{[^}]*--reader-shelf-width/);
-  assert.match(interfaceStyles, /\.provision-reader-layout\{[^}]*var\(--reader-shelf-width\)/);
+  assert.match(interfaceStyles, /\.shell\.reading-view-mode>\.canvas\{[^}]*--reader-shelf-width/);
+  assert.doesNotMatch(interfaceStyles, /\.provision-reader\{[^}]*--reader-shelf-width/);
+  assert.match(
+    interfaceStyles,
+    /\.provision-reader-layout\{[^}]*var\(--reader-shelf-width\)[\s\S]*?\.reading-issue-layer \.reading-issue-report-modal\{[^}]*var\(--reader-shelf-width\)/,
+  );
   assert.match(interfaceStyles, /\.reading-issue-layer\{[^}]*position:absolute/);
   assert.match(interfaceStyles, /\.reading-issue-layer\{[^}]*pointer-events:none/);
   assert.match(interfaceStyles, /\.reading-issue-layer \.reading-issue-report-modal\{[^}]*pointer-events:auto/);
