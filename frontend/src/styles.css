@@ -938,6 +938,7 @@ button{cursor:pointer}
   grid-column:1/-1!important;grid-row:1!important;min-height:0;height:100vh;background:var(--colour-page);
 }
 .provision-reader{
+  --reader-shelf-width:clamp(290px,27vw,350px);
   --reader-paper:var(--colour-surface);--reader-paper-deep:var(--colour-page);--reader-ink:var(--colour-brand);
   --reader-muted:var(--colour-text-secondary);--reader-line:var(--colour-border);--reader-accent:var(--colour-accent);
   position:absolute;inset:0;display:grid;grid-template-rows:58px minmax(0,1fr);
@@ -967,7 +968,7 @@ button{cursor:pointer}
   display:inline-grid;place-items:center;min-width:20px;height:20px;margin-left:6px;border-radius:999px;
   background:#745c3c;color:#fff;font-size:10px;
 }
-.provision-reader-layout{min-height:0;display:grid;grid-template-columns:minmax(0,1fr) minmax(290px,350px)}
+.provision-reader-layout{min-height:0;display:grid;grid-template-columns:minmax(0,1fr) var(--reader-shelf-width)}
 .provision-reading-scroll{min-width:0;overflow-y:auto;overflow-x:hidden;scrollbar-color:#c6baa9 transparent}
 .provision-reading-spine{width:min(900px,calc(100% - 72px));margin:0 auto;padding:56px 0 120px}
 .provision-title-block{margin:0 0 42px;padding:0 0 24px;border-bottom:1px solid var(--reader-line)}
@@ -1317,6 +1318,12 @@ button{cursor:pointer}
 .report-issue-btn{display:inline-flex;align-items:center;gap:.4rem;margin-top:.6rem;padding:.45rem .8rem;border:1px solid var(--border,#cbd5e1);border-radius:8px;background:transparent;color:inherit;font:inherit;font-size:.82rem;cursor:pointer;transition:background .15s,border-color .15s}
 .report-issue-btn:hover{background:rgba(148,163,184,.12);border-color:#94a3b8}
 .reader-header-actions{display:flex;align-items:center;gap:.5rem;margin-left:auto}
+.issue-report-head-actions{display:flex;align-items:center;gap:8px;margin-left:auto}
+.issue-report-minimise{border:1px solid var(--colour-border);border-radius:7px;background:var(--colour-page);color:var(--colour-brand);padding:5px 8px;font-size:10px;font-weight:750}
+.issue-report-minimise:hover{border-color:var(--colour-accent);background:var(--colour-accent-soft)}
+.issue-report-body{display:grid;gap:14px;min-height:0}
+.issue-report-body.is-minimised{display:none}
+.issue-report-description textarea{min-height:110px;max-height:42vh;resize:vertical;overflow:auto}
 .issue-report-modal .issue-context-note{margin:.4rem 0 0;font-size:.78rem;color:#64748b}
 .issue-report-modal .modal-actions button.issue-saved{background:#16a34a;border-color:#16a34a;color:white}
 .feedback-editor textarea{min-height:90px;resize:vertical}
@@ -2112,60 +2119,44 @@ body{background:var(--colour-page);color:var(--colour-text)}
   .zoom{right:12px;bottom:12px}
 }
 
-/* Keep reading-mode issue reports in the margin beside the provision text. */
-.shell.reading-issue-open .provision-reader-layout{
-  grid-template-columns:minmax(0,1fr) minmax(280px,320px) minmax(290px,350px);
+/* Float reader issue reports above the reading surface without reserving a column. */
+.reading-issue-layer{
+  position:absolute;
+  inset:0;
+  z-index:20;
+  pointer-events:none;
 }
-.shell.reading-issue-open .reference-shelf{grid-column:3}
-.reading-issue-backdrop{
-  position:fixed;
-  inset:58px 0 0;
-  z-index:50;
-  display:grid;
-  grid-template-columns:minmax(0,1fr) minmax(280px,320px) minmax(290px,350px);
-  align-items:stretch;
-  justify-items:stretch;
-  padding:0;
-  background:transparent;
-}
-.reading-issue-backdrop .reading-issue-report-modal{
-  grid-column:2;
-  align-self:start;
-  justify-self:stretch;
-  width:auto;
-  max-height:calc(100vh - 94px);
-  margin:18px 12px;
+.reading-issue-layer .reading-issue-report-modal{
+  position:absolute;
+  top:calc(58px + 18px);
+  right:calc(var(--reader-shelf-width) + 18px);
+  width:min(340px,calc(100% - var(--reader-shelf-width) - 42px));
+  max-height:calc(100% - 94px);
+  margin:0;
   overflow:auto;
-  border-radius:12px;
-  padding:16px;
+  pointer-events:auto;
 }
 @media(max-width:1100px){
-  .shell.reading-issue-open .provision-reader-layout{grid-template-columns:minmax(0,1fr) minmax(290px,350px)}
-  .shell.reading-issue-open .reference-shelf{grid-column:2}
-  .reading-issue-backdrop{
-    inset:58px 0 0;
-    grid-template-columns:1fr;
-    align-items:center;
-    justify-items:center;
+  .reading-issue-layer{
+    inset:54px 0 0;
+    display:grid;
+    place-items:center;
     padding:18px;
     background:rgba(18,53,36,.22);
+    pointer-events:auto;
+    overflow:auto;
   }
-  .reading-issue-backdrop .reading-issue-report-modal{
-    grid-column:1;
+  .reading-issue-layer .reading-issue-report-modal{
+    position:relative;
+    top:auto;
+    right:auto;
     width:min(620px,100%);
-    max-height:calc(100vh - 94px);
-    margin:0;
+    max-height:calc(100% - 36px);
   }
 }
 @media(max-width:860px){
-  .shell.reading-issue-open .provision-reader-layout{display:block}
-  .shell.reading-issue-open .reference-shelf{grid-column:auto}
-  .reading-issue-backdrop{
-    inset:54px 0 0;
-    grid-template-columns:1fr;
-    padding:12px;
-  }
-.reading-issue-backdrop .reading-issue-report-modal{max-height:calc(100vh - 78px)}
+  .reading-issue-layer{inset:54px 0 0;padding:12px}
+  .reading-issue-layer .reading-issue-report-modal{max-height:calc(100% - 24px)}
 }
 
 /* Issues log: compact maintenance table, reached from the rail settings menu. */

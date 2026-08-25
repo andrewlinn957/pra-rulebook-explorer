@@ -636,6 +636,18 @@ test('reading issue reports preserve draft text while minimising the description
     /id=\{readingIssue\?'reading-issue-description':undefined\} className=\{`issue-report-body[^]*issue-context-note[^]*<\/p>\n    <\/div>\n    <div className="modal-actions">/,
   );
 
+  assert.match(interfaceStyles, /\.provision-reader\{[^}]*--reader-shelf-width/);
+  assert.match(interfaceStyles, /\.provision-reader-layout\{[^}]*var\(--reader-shelf-width\)/);
+  assert.match(interfaceStyles, /\.reading-issue-layer\{[^}]*position:absolute/);
+  assert.match(interfaceStyles, /\.reading-issue-layer\{[^}]*pointer-events:none/);
+  assert.match(interfaceStyles, /\.reading-issue-layer \.reading-issue-report-modal\{[^}]*pointer-events:auto/);
+  assert.match(interfaceStyles, /right:calc\(var\(--reader-shelf-width\) \+ 18px\)/);
+  assert.match(interfaceStyles, /\.issue-report-body\.is-minimised[^\{]*\{[^}]*display:none/);
+  assert.match(interfaceStyles, /\.issue-report-description textarea[^}]*resize:vertical/);
+  assert.doesNotMatch(interfaceStyles, /\.shell\.reading-issue-open \.provision-reader-layout\{[^}]*minmax\(280px,320px\)/);
+  assert.doesNotMatch(interfaceStyles, /\.shell\.reading-issue-open \.reference-shelf\{[^}]*grid-column:3/);
+  assert.match(interfaceStyles, /@media\(max-width:1100px\)[\s\S]*\.reading-issue-layer/);
+
   const readerLayer = interfaceSource.match(
     /reading-issue-layer[\s\S]*?(?=modal-backdrop|function ProvisionReader)/,
   )?.[0] || '';
