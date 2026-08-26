@@ -690,6 +690,14 @@ test('graph inspector exposes reading mode with inline and pinned reference acti
   assert.doesNotMatch(interfaceSource, /Loading one-level references/);
 });
 
+test('expanded reader references retain access to the legal text parser', () => {
+  const readerImport = interfaceSource.match(
+    /import \{([\s\S]*?)\} from '\.\/readingMode\.js';/,
+  )?.[1] || '';
+  assert.match(readerImport, /legalTextBlocks/);
+  assert.match(interfaceSource, /const blocks=useMemo\(\(\)=>legalTextBlocks\(selectedNode\?\.text\|\|''\)/);
+});
+
 test('nested reader references expand and pin without collapsing their ancestors', () => {
   const pinHandler = interfaceSource.match(
     /function pinReference\(reference\)\{([\s\S]*?)\n  \}/,

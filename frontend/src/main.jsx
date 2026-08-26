@@ -34,6 +34,7 @@ import {
 } from './reportingCells.js';
 import {
   assignReferencesToParagraphs,
+  legalTextBlocks,
   mergeOverlappingReferences,
   paragraphCitationSegments,
   readerReferences,
