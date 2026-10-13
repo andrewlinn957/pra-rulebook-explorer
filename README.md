@@ -19,10 +19,10 @@ The code can:
   SQLite-backed model;
 - build graph relationships from page structure, hyperlinks and extracted
   references;
-- add derived relationships for definitions, legal references, topics,
-  obligation patterns and reporting structure;
-- use optional embeddings and language-model review workflows to identify
-  additional relationships for human review;
+- add direct definition and legal-reference relationships, plus roll-ups that
+  help readers explore container provisions;
+- use language-model review workflows to identify additional relationships
+  for human review;
 - expose a FastAPI service for health checks, statistics, search, node and edge
   queries, neighbourhoods, paths, graph analysis, validation and feedback;
 - provide a React interface for searching and reading provisions, following
@@ -38,6 +38,11 @@ The code can:
 The [data lifecycle](docs/data-lifecycle.md) and [reporting estate ontology](docs/reporting-estate-ontology.md)
 describe the main data and projection models.
 
+Install development dependencies with `pip install -r requirements-dev.txt`.
+`scripts/test.sh` runs the fixture-safe Python suite, frontend tests and
+production build. `scripts/test-corpus.sh` runs the two additional checks that
+need the local reporting database and workbook files.
+
 ## What the code does not do
 
 The project does not:
@@ -47,14 +52,18 @@ The project does not:
 - provide legal, regulatory or compliance advice;
 - guarantee that scraped material is complete, current, correctly parsed or
   effective on a particular date;
-- treat inferred, embedding-based or language-model-derived relationships as
-  authoritative source evidence;
+- treat inferred or language-model-derived relationships as authoritative
+  source evidence;
 - decide whether a firm complies with a requirement or make a supervisory
   decision;
 - automatically confirm a reporting change, identify a final set of affected
   cells or amend a reporting template;
 - submit regulatory returns, change regulatory systems or connect firms to the
   PRA or the Bank of England;
+- generate embedding-based similarity scores or semantic-map views;
+- expose pairwise shared-term or regex-extracted obligation patterns as graph
+  relationships; those retired analysis rows remain in old local databases
+  for provenance but are hidden from the serving graph;
 - provide a managed public service, user accounts, access control or a
   production availability guarantee;
 - include a guaranteed current copy of the scraped corpus in the GitHub
@@ -63,6 +72,28 @@ The project does not:
 
 Users should check the original source and obtain appropriate expert review
 before relying on any result.
+
+## OpenClaw system integration contract
+
+This project is the `pra-rulebook-explorer` workstream. The workspace-wide
+agent loop and authority/evidence distinction are defined in
+`../../OPENCLAW_SYSTEM.md`; the project-specific documents remain authoritative
+for its data model, provenance rules and limitations.
+
+- Canonical project intent: this README and the relevant design documents under
+  `docs/`.
+- Canonical execution reference: `reference_plan.md` and the current project
+  plan for the change being made.
+- Evidence: tests, source URLs, ingestion reports, database validation output
+  and generated artefacts. Record a meaningful cross-project change in
+  `state/openclaw/receipts/`.
+- Risk class: research and local-data mutation; inferred or model-derived
+  relationships never become authoritative merely because they are indexed.
+- Next verification: run the smallest relevant test or validation command and
+  inspect the source/provenance path before relying on a result.
+
+Do not treat the workstream or capability indexes as a substitute for the
+project's source and provenance checks.
 
 ## Source material and provenance
 

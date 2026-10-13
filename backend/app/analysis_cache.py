@@ -20,6 +20,7 @@ from .graph import betweenness as _betweenness
 from .graph import centrality as _centrality
 from .graph import communities as _communities
 from .graph import components as _components
+from .taxonomy import RETIRED_EDGE_TYPES
 
 CACHE_KEYS = ("centrality", "betweenness", "components", "communities")
 
@@ -28,12 +29,14 @@ _lock = threading.Lock()
 
 def graph_fingerprint(conn: sqlite3.Connection) -> str:
     """Cheap fingerprint of the analysis-relevant edge set."""
+    excluded_types = sorted(set(RETIRED_EDGE_TYPES) | {"has_version", "sourced_from"})
     row = conn.execute(
-        """
+        f"""
         SELECT COUNT(*), COALESCE(SUM(length(id)),0)
         FROM edge
-        WHERE edge_type NOT IN ('shares_defined_term','has_obligation_pattern','has_version','sourced_from')
-        """
+        WHERE edge_type NOT IN ({','.join('?' for _ in excluded_types)})
+        """,
+        excluded_types,
     ).fetchone()
     raw = f"{row[0]}:{row[1]}"
     return hashlib.sha256(raw.encode()).hexdigest()[:16]

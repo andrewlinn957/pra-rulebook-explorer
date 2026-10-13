@@ -22,11 +22,14 @@ function compactWhitespace(value = '') {
 
 function sentenceChunks(value, targetLength = 720) {
   if (value.length <= 1100) return [value];
-  const sentences = value.match(/[^.!?;]+(?:[.!?;]+(?=\s|$)|$)/g) || [value];
   const chunks = [];
   let current = '';
-  for (const sentence of sentences) {
-    const next = compactWhitespace(sentence);
+  let cursor = 0;
+  const boundaries = [...value.matchAll(/[.!?;]+(?=\s|$)/g)].map(match => match.index + match[0].length);
+  boundaries.push(value.length);
+  for (const end of boundaries) {
+    const next = compactWhitespace(value.slice(cursor, end));
+    cursor = end;
     if (!next) continue;
     if (current && current.length + next.length + 1 > targetLength) {
       chunks.push(current);
@@ -36,6 +39,9 @@ function sentenceChunks(value, targetLength = 720) {
     }
   }
   if (current) chunks.push(current);
+  const expectedContent = compactWhitespace(value).replace(/\s/g, '');
+  const chunkContent = chunks.join(' ').replace(/\s/g, '');
+  if (chunkContent !== expectedContent) return [compactWhitespace(value)];
   return chunks;
 }
 
@@ -205,6 +211,7 @@ function citationNeedles(reference) {
   const occurrenceValues = (reference.members || []).flatMap(member => [
     member.occurrence?.group_text,
     member.occurrence?.citation_text,
+    member.occurrence?.span_text,
   ]);
   const fallbackValues = [
     metadata.reference,
@@ -235,6 +242,20 @@ function citationNeedles(reference) {
     }
   }
   return [...new Set(needles)];
+}
+
+function readerOccurrenceSpanText(occurrence, sourceNode) {
+  if (occurrence?.span_text) return occurrence.span_text;
+  if (occurrence?.source_node_id && occurrence.source_node_id !== sourceNode?.id) return '';
+  const sourceText = occurrence?.metadata?.span_basis === 'title'
+    ? sourceNode?.title || ''
+    : sourceNode?.text || '';
+  const start = occurrence?.span_start;
+  const end = occurrence?.span_end;
+  return Number.isInteger(start) && Number.isInteger(end)
+    && start >= 0 && start < end && end <= sourceText.length
+    ? sourceText.slice(start, end)
+    : '';
 }
 
 function boundaryMatch(text, needle, start) {
@@ -295,18 +316,9 @@ export function readerReferences(rootNode, graph = {}) {
   const byId = new Map((graph.nodes || []).map(node => [node.id, node]));
   const references = [];
   const occurrenceGroups = new Map();
+  const occurrencePhysicalGroups = new Map();
   const fallbackGroups = new Map();
   const seenOccurrences = new Set();
-  const occurrenceCoveredTargets = new Set(
-    (graph.edges || []).flatMap(edge => (
-      edge.metadata?.reference_occurrences || []
-    ))
-      .filter(occurrence => (
-        occurrence.status === 'materialized'
-        && occurrence.source_node_id === rootNode?.id
-      ))
-      .map(occurrence => `${occurrence.target_node_id}|REF`),
-  );
   const explicitOccurrenceCoveredTargets = new Set(
     (graph.edges || []).flatMap(edge => (
       ['html_link', 'html_anchor_resolved'].includes(edge.source_method)
@@ -319,6 +331,27 @@ export function readerReferences(rootNode, graph = {}) {
       ))
       .map(occurrence => `${occurrence.target_node_id}|REF`),
   );
+  const explicitOccurrenceCitations = new Set((graph.edges || []).flatMap(edge => (
+    ['html_link', 'html_anchor_resolved'].includes(edge.source_method)
+      ? edge.metadata?.reference_occurrences || []
+      : []
+  ))
+    .filter(occurrence => occurrence.status === 'materialized'
+      && occurrence.source_node_id === rootNode?.id)
+    .flatMap(occurrence => [occurrence.group_text, occurrence.citation_text])
+    .map(compactWhitespace)
+    .filter(Boolean)
+    .map(value => value.toLocaleLowerCase()));
+  const occurrenceBackedTargets = new Set((graph.edges || []).flatMap(edge => {
+    const relationship = READING_EDGE_TYPES.has(edge.edge_type)
+      ? readingRelationship(edge.edge_type).code
+      : '';
+    if (!relationship) return [];
+    return (edge.metadata?.reference_occurrences || [])
+      .filter(occurrence => occurrence.status === 'materialized'
+        && occurrence.source_node_id === rootNode?.id)
+      .map(occurrence => `${occurrence.target_node_id}|${relationship}`);
+  }));
   for (const edge of graph.edges || []) {
     if (!READING_EDGE_TYPES.has(edge.edge_type)) continue;
     const edgeTarget = byId.get(edge.to_node_id);
@@ -337,13 +370,21 @@ export function readerReferences(rootNode, graph = {}) {
     const explicitTargetCovered = explicitOccurrenceCoveredTargets.has(
       `${edge.to_node_id}|${relationship.code}`,
     );
+    if (edge.source_method === 'resolution_policy_v1') {
+      const policyOccurrences = (edge.metadata?.reference_occurrences || [])
+        .filter(occurrence => occurrence.status === 'materialized'
+          && occurrence.source_node_id === rootNode?.id);
+      if (policyOccurrences.some(occurrence => [occurrence.group_text, occurrence.citation_text]
+        .map(compactWhitespace)
+        .some(value => value && explicitOccurrenceCitations.has(value.toLocaleLowerCase())))) continue;
+    }
     if (
       edge.source_method === 'resolution_policy_v1'
       && explicitTargetCovered
     ) continue;
     const metadata = edge.metadata || {};
     const occurrences = (metadata.reference_occurrences || [])
-      .filter(occurrence => occurrence.status === 'materialized')
+      .filter(occurrence => ['materialized', 'unresolved', 'ambiguous'].includes(occurrence.status))
       .filter(occurrence => (
         occurrence.source_node_id === rootNode?.id
         || edge.from_node_id === rootNode?.id
@@ -363,40 +404,67 @@ export function readerReferences(rootNode, graph = {}) {
           || byId.get(edge.to_node_id);
         if (!target || target.id === rootNode?.id) continue;
         const groupKey = `${occurrence.group_id || occurrence.occurrence_id}|${relationship.code}`;
-        const group = occurrenceGroups.get(groupKey) || {
-          id: `occurrence-group:${rootNode.id}:${groupKey}`,
-          occurrenceGroupId: occurrence.group_id || occurrence.occurrence_id,
-          node: target,
-          edge,
-          relationship,
-          citation: compactWhitespace(
-            occurrence.group_text
-            || occurrence.citation_text
-            || target.title
-          ),
-          sourceHeading: compactWhitespace(
-            target.metadata?.instrument_title
-            || target.metadata?.part_title
-            || target.metadata?.official_document_title
-            || target.metadata?.document_title
-            || target.metadata?.source_title
-            || 'PRA Rulebook'
-          ),
-          sourceSpan: occurrence.metadata?.group_span || occurrence.source_span || {
-            start: occurrence.span_start,
-            end: occurrence.span_end,
-          },
-          members: [],
+        const sourceSpan = occurrence.metadata?.group_span || occurrence.source_span || {
+          start: occurrence.span_start,
+          end: occurrence.span_end,
         };
-        group.members.push({
+        const duplicateKey = `${target.id}|${relationship.code}|${compactWhitespace(
+          occurrence.citation_text || occurrence.group_text || '',
+        ).toLocaleLowerCase()}`;
+        const duplicateGroups = occurrencePhysicalGroups.get(duplicateKey) || [];
+        const duplicate = Number.isInteger(sourceSpan.start) && Number.isInteger(sourceSpan.end)
+          ? duplicateGroups.find(item => (
+            sourceSpan.start < item.end && item.start < sourceSpan.end
+          ))
+          : null;
+        let group = occurrenceGroups.get(groupKey);
+        if (!group && duplicate) {
+          group = duplicate.group;
+          group.sourceSpan = {
+            start: Math.min(group.sourceSpan?.start ?? sourceSpan.start, sourceSpan.start),
+            end: Math.max(group.sourceSpan?.end ?? sourceSpan.end, sourceSpan.end),
+          };
+        }
+        if (!group) {
+          group = {
+            id: `occurrence-group:${rootNode.id}:${groupKey}`,
+            occurrenceGroupId: occurrence.group_id || occurrence.occurrence_id,
+            node: target,
+            edge,
+            relationship,
+            citation: compactWhitespace(
+              occurrence.group_text
+              || occurrence.citation_text
+              || target.title
+            ),
+            sourceHeading: compactWhitespace(
+              target.metadata?.instrument_title
+              || target.metadata?.part_title
+              || target.metadata?.official_document_title
+              || target.metadata?.document_title
+              || target.metadata?.source_title
+              || 'PRA Rulebook'
+            ),
+            sourceSpan,
+            members: [],
+          };
+          occurrenceGroups.set(groupKey, group);
+          if (Number.isInteger(sourceSpan.start) && Number.isInteger(sourceSpan.end)) {
+            duplicateGroups.push({ start: sourceSpan.start, end: sourceSpan.end, group });
+            occurrencePhysicalGroups.set(duplicateKey, duplicateGroups);
+          }
+        }
+        if (!group.members.some(member => member.id === occurrence.occurrence_id)) group.members.push({
           id: occurrence.occurrence_id,
-          occurrence,
+          occurrence: {
+            ...occurrence,
+            span_text: readerOccurrenceSpanText(occurrence, rootNode),
+          },
           node: target,
           edge,
           relationship,
           citation: compactWhitespace(occurrence.citation_text || target.title),
         });
-        occurrenceGroups.set(groupKey, group);
       }
       continue;
     }
@@ -404,7 +472,7 @@ export function readerReferences(rootNode, graph = {}) {
     const target = byId.get(edge.to_node_id);
     if (!target || target.id === rootNode?.id) continue;
     const targetKey = `${target.id}|${relationship.code}`;
-    if (occurrenceCoveredTargets.has(targetKey)) continue;
+    if (occurrenceBackedTargets.has(targetKey)) continue;
     const citation = compactWhitespace(
       metadata.reference
       || metadata.term_title
@@ -460,7 +528,24 @@ export function readerReferences(rootNode, graph = {}) {
 
 export function assignReferencesToParagraphs(paragraphs, references) {
   const nextMatchByCitation = new Map();
-  return references.map(reference => {
+  return references.flatMap(reference => {
+    const hasOccurrence = (reference.members || []).some(member => member.occurrence);
+    if (!hasOccurrence) {
+      const matches = [];
+      paragraphs.forEach((value, paragraphIndex) => {
+        const paragraph = typeof value === 'string' ? value : value?.text || '';
+        let offset = 0;
+        let match;
+        while ((match = citationMatch(paragraph, reference, offset))) {
+          matches.push({ ...reference,
+            id: matches.length ? `${reference.id}|repeat:${matches.length}` : reference.id,
+            paragraphIndex, match,
+          });
+          offset = match.end;
+        }
+      });
+      if (matches.length) return matches;
+    }
     const citationKey = compactWhitespace(reference.citation).toLocaleLowerCase();
     const previous = nextMatchByCitation.get(citationKey) || {
       paragraphIndex: 0,
@@ -483,10 +568,10 @@ export function assignReferencesToParagraphs(paragraphs, references) {
           paragraphIndex,
           offset: match.end,
         });
-        return { ...reference, paragraphIndex, match };
+        return [{ ...reference, paragraphIndex, match }];
       }
     }
-    return { ...reference, paragraphIndex: -1, match: null };
+    return [{ ...reference, paragraphIndex: -1, match: null }];
   });
 }
 
@@ -532,14 +617,25 @@ export function mergeOverlappingReferences(references) {
         cluster.references.map(reference => reference.relationship.code),
       );
       const members = [];
-      const memberIds = new Set();
+      const memberIndexes = new Map();
       for (const reference of cluster.references) {
         for (const member of reference.members || []) {
-          if (memberIds.has(member.id)) continue;
-          memberIds.add(member.id);
+          const relationship = member.relationship || reference.relationship;
+          const memberKey = `${member.node?.id || member.id}|${relationship?.code || ''}`;
+          const existingIndex = memberIndexes.get(memberKey);
+          if (existingIndex !== undefined) {
+            if (!members[existingIndex].occurrence && member.occurrence) {
+              members[existingIndex] = {
+                ...member,
+                relationship,
+              };
+            }
+            continue;
+          }
+          memberIndexes.set(memberKey, members.length);
           members.push({
             ...member,
-            relationship: member.relationship || reference.relationship,
+            relationship,
           });
         }
       }

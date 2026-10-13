@@ -107,7 +107,6 @@ def main() -> None:
             updated_edges += cur.rowcount
             cur = conn.execute("UPDATE edge SET to_node_id=? WHERE to_node_id=?", (canonical["id"], dup["id"]))
             updated_edges += cur.rowcount
-            conn.execute("DELETE FROM embedding WHERE node_id=?", (dup["id"],))
             conn.execute("DELETE FROM node_fts WHERE id=?", (dup["id"],))
             conn.execute("DELETE FROM canonical_node WHERE id=?", (dup["id"],))
             conn.execute("DELETE FROM canonical_guidance_paragraph WHERE id=?", (dup["id"],))

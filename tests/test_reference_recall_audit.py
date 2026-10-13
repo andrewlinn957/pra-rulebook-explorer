@@ -162,7 +162,7 @@ def test_connect_source_uses_the_shared_readonly_contract(tmp_path):
     conn.close()
 
 
-def test_scan_node_marks_existing_occurrence_as_covered(tmp_path):
+def test_scan_node_only_counts_live_occurrence_associations_as_recorded(tmp_path):
     text = "The committee must comply with Article 26(6) of the Statutory Audit Regulation."
     source_path = tmp_path / "source.sqlite3"
     make_source_db(source_path, text=text)
@@ -193,6 +193,14 @@ def test_scan_node_marks_existing_occurrence_as_covered(tmp_path):
             0.99,
         ),
     )
+    conn.execute("INSERT INTO node VALUES (?,?,?,?,?,?,?)", (
+        "target", "provision", "target", "Article 26", "Target text", "", "{}"
+    ))
+    conn.execute(
+        "INSERT INTO edge VALUES (?,?,?,?,?,?,?,?,?)",
+        ("edge-1", "source", "target", "references", "legal_reference_occurrence_v1", 0.99,
+         "Article 26(6)", "", "{}"),
+    )
     conn.commit()
     conn.close()
 
@@ -203,7 +211,7 @@ def test_scan_node_marks_existing_occurrence_as_covered(tmp_path):
     )
     assert not chunks
     article = next(candidate for candidate in candidates if "Article 26" in candidate["text"])
-    assert article["status"] == "covered_occurrence"
+    assert article["status"] == "recorded_occurrence"
     assert article["evidence"]["occurrences"][0]["id"] == "occ-1"
     assert node["uncovered_candidate_count"] == 0
     source_conn.close()

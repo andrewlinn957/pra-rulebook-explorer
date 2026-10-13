@@ -469,6 +469,43 @@ test('occurrence citation text anchors mixed citations sharing one target edge',
   );
 });
 
+test('occurrence source spans anchor grouped citations when per-target wording differs', () => {
+  const root = { id: 'range-rule', text: 'Use Sections 3 to 6 of this Chapter.' };
+  const target = { id: 'section-4', title: 'Section 4', text: 'Source text.' };
+  const references = readerReferences(root, {
+    nodes: [root, target],
+    edges: [{
+      id: 'range-edge',
+      from_node_id: root.id,
+      to_node_id: target.id,
+      edge_type: 'references',
+      metadata: {
+        reference_occurrences: [{
+          occurrence_id: 'range-member',
+          group_id: 'range-group',
+          source_node_id: root.id,
+          target_node_id: target.id,
+          status: 'materialized',
+          citation_text: 'Sections 4',
+          group_text: 'Sections 3 to 6 of this Chapter, regardless of method',
+          span_start: 13,
+          span_end: 19,
+          source_span: { start: 13, end: 19 },
+        }],
+      },
+    }],
+  });
+
+  const [placed] = assignReferencesToParagraphs([root.text], references);
+
+  assert.equal(placed.paragraphIndex, 0);
+  assert.equal(placed.match.start, 13);
+  assert.equal(
+    paragraphCitationSegments(root.text, [placed]).find(segment => segment.type === 'citation').text,
+    '3 to 6',
+  );
+});
+
 test('citation matching does not treat a shorter article qualifier as a prefix', () => {
   const root = {
     id: 'covered-bond-rule',
@@ -606,6 +643,52 @@ test('occurrence-backed references suppress duplicate legacy edges', () => {
   });
   assert.equal(references.length, 1);
   assert.equal(references[0].members[0].id, 'occurrence');
+});
+
+test('explicit citation links supersede resolution-policy targets with the same wording', () => {
+  const root = { id: 'root', text: 'See Chapter 3.' };
+  const directTarget = { id: 'chapter', title: 'Chapter 3', text: 'Chapter text.' };
+  const policyTarget = { id: 'source-page', title: 'Chapter 3 source', text: '' };
+  const occurrence = {
+    occurrence_id: 'html-occurrence',
+    group_id: 'html-group',
+    source_node_id: root.id,
+    target_node_id: directTarget.id,
+    status: 'materialized',
+    citation_text: 'Chapter 3',
+    group_text: 'Chapter 3',
+  };
+  const policyOccurrence = {
+    ...occurrence,
+    occurrence_id: 'policy-occurrence',
+    group_id: 'policy-group',
+    target_node_id: policyTarget.id,
+    source_method: 'resolution_policy_v1',
+  };
+  const references = readerReferences(root, {
+    nodes: [root, directTarget, policyTarget],
+    edges: [
+      {
+        id: 'direct',
+        from_node_id: root.id,
+        to_node_id: directTarget.id,
+        edge_type: 'references',
+        source_method: 'html_anchor_resolved',
+        metadata: { reference_occurrences: [occurrence] },
+      },
+      {
+        id: 'policy',
+        from_node_id: root.id,
+        to_node_id: policyTarget.id,
+        edge_type: 'references',
+        source_method: 'resolution_policy_v1',
+        metadata: { reference_occurrences: [policyOccurrence] },
+      },
+    ],
+  });
+
+  assert.equal(references.length, 1);
+  assert.equal(references[0].node.id, directTarget.id);
 });
 
 test('legacy edges with the same citation become one reference with all targets retained', () => {

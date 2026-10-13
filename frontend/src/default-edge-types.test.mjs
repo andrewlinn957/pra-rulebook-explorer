@@ -32,8 +32,8 @@ test('topic matching is not exposed in the graph UI', () => {
   assert.doesNotMatch(source, /keyword_topic/);
 });
 
-test('definitions representation still lets users opt into shared defined term edges', () => {
-  assert.ok(representationTypes('definitions').includes('shares_defined_term'));
+test('definitions representation uses direct definitions without pairwise overlap edges', () => {
+  assert.deepEqual(representationTypes('definitions'), ['uses_defined_term', 'defines']);
 });
 
 test('reporting drilldown defaults to direct return artefact edges, not all cross-references', () => {

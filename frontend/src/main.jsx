@@ -4,7 +4,7 @@ import ForceGraph2D from 'react-force-graph-2d';
 import { forceCollide, forceX, forceY } from 'd3-force';
 import { filterGraph, isInsuranceNode } from './graphFilters.js';
 import { displayNodeTitle, documentBadge, relativeNodeRole, edgeDirectionGlyph, edgeDirectionLabel } from './graphPresentation.js';
-import { CHART_SEQUENCE, COLOURS, EDGE_COLOURS, MATERIAL_COLOURS } from './colourTokens.js';
+import { COLOURS, EDGE_COLOURS, MATERIAL_COLOURS } from './colourTokens.js';
 import {
   REPORTING_EDGE_GROUPS,
   REPORTING_OVERVIEW_EDGE_GROUP_KEYS,
@@ -47,20 +47,19 @@ import { filterIssues, issueCounts, issueDateLabel, issueStatusLabel, ISSUE_STAT
 import './styles.css';
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/pra-rulebook-api';
-const TYPES = ['contains','references','uses_defined_term','defines','shares_defined_term','has_obligation_pattern','has_structured_obligation','shares_obligation_pattern','amends','has_permission','has_version','sourced_from'];
+const TYPES = ['contains','references','uses_defined_term','defines','amends','has_permission','has_version','sourced_from'];
 const PROVISION_TYPES = ['rule','provision','chapter','guidance_section','guidance_paragraph'];
-const NODE_TYPES = [...PROVISION_TYPES,'part','rulebook','defined_term','glossary','crr_terms_list','guidance_document','obligation_pattern','obligation_statement','legal_instrument','permission','external_reference','rule_reference'];
+const NODE_TYPES = [...PROVISION_TYPES,'part','rulebook','defined_term','glossary','crr_terms_list','guidance_document','legal_instrument','permission','external_reference','rule_reference'];
 const DEFAULT_TYPES = new Set(['contains','references']);
 const REPRESENTATIONS = {
-  combined: { label:'Combined', hint:'Legal structure plus rolled-up references, terms, obligations and permissions.', types:[...DEFAULT_TYPES], depth:1, explicitOnly:false },
+  combined: { label:'Combined', hint:'Legal structure plus cross-references and permissions.', types:[...DEFAULT_TYPES], depth:1, explicitOnly:false },
   hierarchy: { label:'Legal hierarchy', hint:'Parts, articles, chapters, rules and paragraphs only.', types:['contains'], depth:2, explicitOnly:false },
   references: { label:'Cross-references', hint:'Explicit and detected cross-reference/amendment links, with child context so Article-level headings expose paragraph-level references.', types:['contains','references','amends'], depth:2, explicitOnly:false },
-  definitions: { label:'Definitions', hint:'Definitions, glossary/CRR term usage, and provisions sharing defined terms.', types:['uses_defined_term','defines','shares_defined_term'], depth:2, explicitOnly:false },
-  obligations: { label:'Obligations', hint:'Detected obligation statements, obligation patterns, and provisions with similar obligation patterns.', types:['has_obligation_pattern','has_structured_obligation','shares_obligation_pattern'], depth:1, explicitOnly:false },
+  definitions: { label:'Definitions', hint:'Defined terms and the provisions that use or define them.', types:['uses_defined_term','defines'], depth:2, explicitOnly:false },
 };
 const EXPLICIT = new Set(['site_structure','html_link','html_anchor_resolved','html_glossary_link','glossary_source','crr_terms_source','legal_instrument_listing','legal_reference_occurrence_v1','regex_reference','regex_named_reference','llm_extracted_reference','resolved_part_reference','fca_waivers_list']);
-const RELATION_LABELS = { contains:'contains / child', references:'Cross-references', uses_defined_term:'Definitions used', defines:'Definitions provided', shares_defined_term:'Shared defined terms', has_obligation_pattern:'Obligation themes', shares_obligation_pattern:'Similar obligations', has_structured_obligation:'Extracted obligations', amends:'Amendments', has_permission:'Firms with permissions', has_version:'Provision versions', sourced_from:'Source page', HAS_REGIME:'Has regime', HAS_COLLECTION:'Has collection', BELONGS_TO_REGIME:'Belongs to regime', BELONGS_TO_COLLECTION:'Belongs to collection', HAS_EDITION:'Has edition', SUPERSEDES:'Supersedes', HAS_TEMPLATE_RESOURCE:'Has template resource', HAS_INSTRUCTION_RESOURCE:'Has instruction resource', HAS_RESOURCE:'Has resource', CONTAINS_SHEET:'Contains worksheet', IMPLEMENTS_TEMPLATE:'Implements template', SUPPORTED_BY_TAXONOMY:'Supported by taxonomy', HAS_TAXONOMY_RESOURCE:'Has taxonomy resource', USES_TEMPLATE:'Uses template', USES_INSTRUCTIONS:'Uses instructions', EVIDENCED_BY:'Evidenced by', LEGAL_BASIS:'Legal basis', APPLIES_TO:'Applies to', HAS_SCOPE_RULE:'Scope rule', MAY_BE_AFFECTED_BY_PERMISSION:'Affected by permission', REFERENCES_RULE:'References rule', REFERENCES_SOURCE:'References source', REFERENCES_EXTERNAL:'References external', REFERENCES_RETURN:'References return', REFERENCES_TEMPLATE:'References template', SUMMARISES_DATAPOINTS:'Summarises datapoints', HAS_DATAPOINT:'Has datapoint', REPORTS_CONCEPT:'Reports concept' };
-const EVIDENCE_LABELS = { references:'Cross-references', uses_defined_term:'Definitions used by this provision', defines:'Definitions provided here', shares_defined_term:'Provisions sharing defined terms', has_obligation_pattern:'Obligation themes found here', shares_obligation_pattern:'Provisions with similar obligations', has_structured_obligation:'Extracted obligation statements', amends:'Legal instruments amending this material', has_permission:'Firms with active permissions' };
+const RELATION_LABELS = { contains:'contains / child', references:'Cross-references', uses_defined_term:'Definitions used', defines:'Definitions provided', amends:'Amendments', has_permission:'Firms with permissions', has_version:'Provision versions', sourced_from:'Source page', HAS_REGIME:'Has regime', HAS_COLLECTION:'Has collection', BELONGS_TO_REGIME:'Belongs to regime', BELONGS_TO_COLLECTION:'Belongs to collection', HAS_EDITION:'Has edition', SUPERSEDES:'Supersedes', HAS_TEMPLATE_RESOURCE:'Has template resource', HAS_INSTRUCTION_RESOURCE:'Has instruction resource', HAS_RESOURCE:'Has resource', CONTAINS_SHEET:'Contains worksheet', IMPLEMENTS_TEMPLATE:'Implements template', SUPPORTED_BY_TAXONOMY:'Supported by taxonomy', HAS_TAXONOMY_RESOURCE:'Has taxonomy resource', USES_TEMPLATE:'Uses template', USES_INSTRUCTIONS:'Uses instructions', EVIDENCED_BY:'Evidenced by', LEGAL_BASIS:'Legal basis', APPLIES_TO:'Applies to', HAS_SCOPE_RULE:'Scope rule', MAY_BE_AFFECTED_BY_PERMISSION:'Affected by permission', REFERENCES_RULE:'References rule', REFERENCES_SOURCE:'References source', REFERENCES_EXTERNAL:'References external', REFERENCES_RETURN:'References return', REFERENCES_TEMPLATE:'References template', SUMMARISES_DATAPOINTS:'Summarises datapoints', HAS_DATAPOINT:'Has datapoint', REPORTS_CONCEPT:'Reports concept' };
+const EVIDENCE_LABELS = { references:'Cross-references', uses_defined_term:'Definitions used by this provision', defines:'Definitions provided here', amends:'Legal instruments amending this material', has_permission:'Firms with active permissions' };
 const ORIGIN_FILTERS = { all:'All links', explicit:'Direct links', inferred:'Inferred / derived links' };
 const MATERIAL_FILTERS = ['rule','supervisory_statement','statement_of_policy','definition','permission','legal_instrument','external_reference'];
 const RELATIONSHIP_ORDER = TYPES;
@@ -73,6 +72,7 @@ const PART_AUDIENCE_FILTERS=[
   {key:'sii',label:'SII firms',category:'SII Firms'},
   {key:'non-sii',label:'Non-SII firms',category:'Non-SII Firms'},
 ];
+const READER_CONTAINER_TYPES=new Set(['rulebook','part','chapter','guidance_document','guidance_section']);
 
 async function fetchJson(url,options){
   const res=await fetch(url,options);
@@ -238,7 +238,6 @@ function App(){
       definition:['defined_term','glossary','crr_terms_list'],
       supervisory_statement:['guidance_document','guidance_section','guidance_paragraph'],
       statement_of_policy:['guidance_document','guidance_section','guidance_paragraph'],
-      analysis:['obligation_pattern','obligation_statement'],
       permission:['permission','Permission'],
       legal_instrument:['legal_instrument','LegalInstrument'],
       external_reference:['external_reference','rule_reference','ExternalReference'],
@@ -538,13 +537,30 @@ function ProvisionReader({rootNode,api,onClose,onReportIssue}){
   },[referenceGraph]);
   const sections=useMemo(()=>readingSpine(contents).map(entry=>{
     const blocks=readerTextBlocks(entry.bodyText||'',entry.sourceBlocks);
-    const references=blocks.length?mergeOverlappingReferences(assignReferencesToParagraphs(
+    const sourceReferences=readerReferences(entry.node,{
+      nodes:referenceGraph.nodes||[],
+      edges:referenceEdgesBySource.get(entry.node.id)||[],
+    });
+    const bodyReferences=blocks.length?mergeOverlappingReferences(assignReferencesToParagraphs(
       blocks,
-      readerReferences(entry.node,{
-        nodes:referenceGraph.nodes||[],
-        edges:referenceEdgesBySource.get(entry.node.id)||[],
-      }),
-    )).map(reference=>({
+      sourceReferences,
+    )):sourceReferences.map(reference=>({...reference,paragraphIndex:-1,match:null}));
+    const title=entry.node.title||displayNodeTitle(entry.node);
+    const titleCandidates=bodyReferences.filter(reference=>reference.paragraphIndex<0&&(
+      reference.members||[]
+    ).some(member=>member.occurrence?.metadata?.span_basis==='title'));
+    const titleReferences=mergeOverlappingReferences(titleCandidates.map(reference=>{
+      const occurrence=reference.members?.find(member=>member.occurrence?.metadata?.span_basis==='title')?.occurrence;
+      const span=occurrence?.metadata?.group_span||occurrence?.source_span;
+      const valid=Number.isInteger(span?.start)&&Number.isInteger(span?.end)
+        &&span.start>=0&&span.end<=title.length&&span.start<span.end;
+      return {...reference,paragraphIndex:-2,match:valid?{start:span.start,end:span.end}:null};
+    }).filter(reference=>reference.match));
+    const titleIds=new Set(titleReferences.flatMap(reference=>[
+      reference.id,...(reference.members||[]).map(member=>member.id),
+    ]));
+    const references=[
+      ...bodyReferences.filter(reference=>reference.paragraphIndex>=0).map(reference=>({
       ...reference,
       readingSourceId:entry.node.id,
       readingSourceTitle:entry.node.title||displayNodeTitle(entry.node),
@@ -553,7 +569,25 @@ function ProvisionReader({rootNode,api,onClose,onReportIssue}){
         :`${entry.node.id}:references`,
       rootReferenceId:reference.id,
       inlinePath:[reference.id],
-    })):[];
+      })),
+      ...titleReferences.map(reference=>({
+        ...reference,
+        headingReference:true,
+        readingSourceId:entry.node.id,
+        readingSourceTitle:title,
+        readingBlockId:`${entry.node.id}:title`,
+        rootReferenceId:reference.id,
+        inlinePath:[reference.id],
+      })),
+      ...bodyReferences.filter(reference=>reference.paragraphIndex<0&&!titleIds.has(reference.id)).map(reference=>({
+        ...reference,
+        readingSourceId:entry.node.id,
+        readingSourceTitle:title,
+        readingBlockId:`${entry.node.id}:references`,
+        rootReferenceId:reference.id,
+        inlinePath:[reference.id],
+      })),
+    ];
     return {...entry,blocks,references};
   }),[contents,referenceGraph.nodes,referenceEdgesBySource]);
   const references=useMemo(
@@ -567,7 +601,7 @@ function ProvisionReader({rootNode,api,onClose,onReportIssue}){
   const placedByBlock=useMemo(()=>{
     const placed=new Map();
     for(const reference of references){
-      if(reference.paragraphIndex<0) continue;
+      if(reference.paragraphIndex<0&&!reference.headingReference) continue;
       placed.set(
         reference.readingBlockId,
         [...(placed.get(reference.readingBlockId)||[]),reference],
@@ -647,6 +681,7 @@ function ProvisionReader({rootNode,api,onClose,onReportIssue}){
     ||root?.metadata?.document_title
     ||root?.metadata?.source_title
     ||label(root?.node_type);
+  const rootHeadingTitle=sections.find(section=>section.isRoot)?.node.title||displayNodeTitle(root);
   const provisionCount=sections.filter(section=>section.blocks.length).length;
   const showProvisionReportFlags=provisionCount>1;
   const hasBody=sections.some(section=>section.blocks.length);
@@ -666,7 +701,9 @@ function ProvisionReader({rootNode,api,onClose,onReportIssue}){
         <article className="provision-reading-spine">
           <header className="provision-title-block">
             <span className="provision-kicker">Reading spine · {sourceHeading}</span>
-            <h1>{displayNodeTitle(root)}</h1>
+            <h1 data-reading-block-id={`${root?.id}:title`} data-reference-ids={(placedByBlock.get(`${root?.id}:title`)||[]).map(reference=>reference.id).join(',')}>{paragraphCitationSegments(rootHeadingTitle,placedByBlock.get(`${root?.id}:title`)||[]).map((segment,index)=>segment.type==='citation'
+              ?<button type="button" key={`${segment.reference.id}-${index}`} className="legal-citation" onClick={()=>activateReference(segment.reference)} aria-expanded={expandedId===segment.reference.id}>{segment.text}<sup>{segment.reference.relationship.code}</sup></button>
+              :<React.Fragment key={index}>{segment.text}</React.Fragment>)}</h1>
             <div className="provision-byline">
               <span>{loading
                 ?'Loading contained provisions and citations…'
@@ -684,6 +721,17 @@ function ProvisionReader({rootNode,api,onClose,onReportIssue}){
               >{depth}</button>)}
               <small>{referenceDepth===1?'Direct references only':`Show references up to ${referenceDepth} levels deep`}</small>
             </div>
+            {placedByBlock.get(`${root?.id}:title`)?.find(reference=>reference.id===expandedId)&&<InlineLegalReference
+              reference={placedByBlock.get(`${root?.id}:title`).find(reference=>reference.id===expandedId)}
+              onCollapse={()=>setExpandedId('')}
+              onPin={pinReference}
+              referenceGraph={referenceGraph}
+              referenceEdgesBySource={referenceEdgesBySource}
+              maxDepth={referenceDepth}
+              requestedPath={returnInlinePath}
+              pinnedIds={pinnedIds}
+              onPinnedActivate={activateReference}
+            />}
           </header>
           {loadError&&<p className="reader-load-error">Reader content could not be loaded: {loadError}</p>}
           {!hasBody&&!loading&&<p className="reader-empty">This node and its contained provisions have no body text. The original source remains available above.</p>}
@@ -697,12 +745,25 @@ function ProvisionReader({rootNode,api,onClose,onReportIssue}){
               >
                 {!section.isRoot&&<header className="reading-provision-heading">
                   <span>{label(section.node.node_type)}</span>
-                  <h2>{section.node.title||displayNodeTitle(section.node)}</h2>
+                  <h2 data-reading-block-id={`${section.node.id}:title`} data-reference-ids={(placedByBlock.get(`${section.node.id}:title`)||[]).map(reference=>reference.id).join(',')}>{paragraphCitationSegments(section.node.title||displayNodeTitle(section.node),placedByBlock.get(`${section.node.id}:title`)||[]).map((segment,segmentIndex)=>segment.type==='citation'
+                    ?<button type="button" key={`${segment.reference.id}-${segmentIndex}`} className="legal-citation" onClick={()=>activateReference(segment.reference)} aria-expanded={expandedId===segment.reference.id}>{segment.text}<sup>{segment.reference.relationship.code}</sup></button>
+                    :<React.Fragment key={segmentIndex}>{segment.text}</React.Fragment>)}</h2>
                   <div className="reading-provision-heading-actions">
                     {section.node.url&&<a href={section.node.url} target="_blank" rel="noopener noreferrer">Source ↗</a>}
                     {showProvisionReportFlags&&<button type="button" className="report-issue-flag" title={`Report an issue with ${displayNodeTitle(section.node)}`} aria-label={`Report an issue with ${displayNodeTitle(section.node)}`} onClick={()=>onReportIssue?.(section.node)}>⚑</button>}
                   </div>
                 </header>}
+                {placedByBlock.get(`${section.node.id}:title`)?.find(reference=>reference.id===expandedId)&&<InlineLegalReference
+                  reference={placedByBlock.get(`${section.node.id}:title`).find(reference=>reference.id===expandedId)}
+                  onCollapse={()=>setExpandedId('')}
+                  onPin={pinReference}
+                  referenceGraph={referenceGraph}
+                  referenceEdgesBySource={referenceEdgesBySource}
+                  maxDepth={referenceDepth}
+                  requestedPath={returnInlinePath}
+                  pinnedIds={pinnedIds}
+                  onPinnedActivate={activateReference}
+                />}
                 {section.blocks.map((block,index)=>{
                   const blockId=`${section.node.id}:${index}`;
                   const blockReferences=placedByBlock.get(blockId)||[];
@@ -799,33 +860,91 @@ function InlineLegalReference({
     :[{id:reference.id,node:reference.node,edge:reference.edge,citation:reference.citation}];
   const [selectedMemberId,setSelectedMemberId]=useState(members[0]?.id||'');
   const [expandedNestedId,setExpandedNestedId]=useState('');
+  const [targetBundle,setTargetBundle]=useState(null);
+  const [targetLoading,setTargetLoading]=useState(false);
+  const [targetLoadError,setTargetLoadError]=useState('');
   useEffect(()=>setSelectedMemberId(members[0]?.id||''),[reference.id]);
   const selectedMember=members.find(member=>member.id===selectedMemberId)||members[0];
   const selectedNode=selectedMember?.node||reference.node;
   const selectedEdge=selectedMember?.edge||reference.edge;
+  const resolutionStatus=selectedMember?.occurrence?.status||selectedNode?.metadata?.resolution_status||'';
   const blocks=useMemo(()=>legalTextBlocks(selectedNode?.text||''),[selectedNode?.id,selectedNode?.text]);
-  const nestedReferences=useMemo(()=>level<maxDepth?mergeOverlappingReferences(assignReferencesToParagraphs(
-    blocks,
-    readerReferences(selectedNode,{
-      nodes:referenceGraph?.nodes||[],
-      edges:referenceEdgesBySource?.get(selectedNode?.id)||[],
-    }),
-  )).map(nestedReference=>({
+  useEffect(()=>{
+    let cancelled=false;
+    setTargetBundle(null);
+    setTargetLoadError('');
+    if(blocks.length||!selectedNode?.id||!READER_CONTAINER_TYPES.has(selectedNode.node_type)){
+      setTargetLoading(false);
+      return ()=>{cancelled=true;};
+    }
+    setTargetLoading(true);
+    fetchJson(`${API_BASE}/node/${encodeURIComponent(selectedNode.id)}/reader?reference_depth=${Math.max(1,Math.min(maxDepth,3))}`).then(bundle=>{
+      if(!cancelled) setTargetBundle(bundle);
+    }).catch(error=>{
+      if(!cancelled) setTargetLoadError(error.message||String(error));
+    }).finally(()=>{
+      if(!cancelled) setTargetLoading(false);
+    });
+    return ()=>{cancelled=true;};
+  },[selectedNode?.id,selectedNode?.node_type,blocks.length,maxDepth]);
+  const embeddedGraph=targetBundle?.graph||referenceGraph;
+  const embeddedEdgesBySource=useMemo(()=>{
+    if(!targetBundle?.graph) return referenceEdgesBySource;
+    const bySource=new Map();
+    for(const edge of targetBundle.graph.edges||[]){
+      const sourceIds=new Set([
+        edge.from_node_id,
+        ...(edge.metadata?.rolled_up_from_from_node_ids||[]),
+        ...(edge.metadata?.reference_occurrences||[]).map(item=>item.source_node_id),
+      ].filter(Boolean));
+      for(const sourceId of sourceIds) bySource.set(sourceId,[...(bySource.get(sourceId)||[]),edge]);
+    }
+    return bySource;
+  },[targetBundle,referenceEdgesBySource]);
+  const displaySections=useMemo(()=>{
+    if(blocks.length){
+      const references=level<maxDepth?mergeOverlappingReferences(assignReferencesToParagraphs(
+        blocks,
+        readerReferences(selectedNode,{
+          nodes:embeddedGraph?.nodes||[],
+          edges:embeddedEdgesBySource?.get(selectedNode?.id)||[],
+        }),
+      )):[];
+      return [{node:selectedNode,blocks,references,offset:0}];
+    }
+    if(!targetBundle?.contents) return [];
+    let offset=0;
+    return readingSpine(targetBundle.contents).map(entry=>{
+      const sectionBlocks=readerTextBlocks(entry.bodyText||'',entry.sourceBlocks);
+      const sourceReferences=readerReferences(entry.node,{
+        nodes:embeddedGraph?.nodes||[],
+        edges:embeddedEdgesBySource?.get(entry.node.id)||[],
+      });
+      const references=level<maxDepth&&sectionBlocks.length
+        ?mergeOverlappingReferences(assignReferencesToParagraphs(sectionBlocks,sourceReferences))
+        :sourceReferences.map(item=>({...item,paragraphIndex:-1,match:null}));
+      const section={node:entry.node,blocks:sectionBlocks,references,offset};
+      offset+=sectionBlocks.length;
+      return section;
+    });
+  },[blocks,selectedNode,targetBundle,embeddedGraph,embeddedEdgesBySource,level,maxDepth]);
+  const displayBlocks=useMemo(()=>displaySections.flatMap(section=>section.blocks.map((block,index)=>({
+    ...block,
+    embeddedHeading:index===0&&section.node?.id!==selectedNode?.id
+      ?displayNodeTitle(section.node):'',
+  }))),[displaySections,selectedNode?.id]);
+  const nestedReferences=useMemo(()=>displaySections.flatMap(section=>section.references.map(nestedReference=>({
     ...nestedReference,
+    paragraphIndex:nestedReference.paragraphIndex>=0?section.offset+nestedReference.paragraphIndex:-1,
     readingBlockId:reference.readingBlockId,
     rootReferenceId:reference.rootReferenceId||reference.id,
     inlinePath:[...(reference.inlinePath||[reference.id]),nestedReference.id],
-  })):[],[
-    blocks,
-    level,
-    maxDepth,
+  }))),[
+    displaySections,
     reference.id,
     reference.readingBlockId,
     reference.rootReferenceId,
     reference.inlinePath,
-    referenceGraph?.nodes,
-    referenceEdgesBySource,
-    selectedNode?.id,
   ]);
   const nestedByBlock=useMemo(()=>{
     const placed=new Map();
@@ -860,6 +979,13 @@ function InlineLegalReference({
       <div><span>{reference.relationship.code} · {reference.relationship.label}</span><small>{reference.sourceHeading}</small></div>
       <button type="button" onClick={onCollapse} aria-label="Collapse reference">Collapse ↑</button>
     </header>
+    {['unresolved','ambiguous','target_unavailable'].includes(resolutionStatus)&&<p className="reader-load-error">
+      {resolutionStatus==='ambiguous'
+        ?'This citation has multiple possible targets and needs review.'
+        :resolutionStatus==='target_unavailable'
+          ?'This citation was identified, but its target is not available in the graph.'
+          :'This citation was identified but its target has not been resolved.'}
+    </p>}
     <h2>{referenceDisplayTitle(reference)}</h2>
     {members.length>1&&<div className="inline-reference-members" aria-label="Provisions in this citation">
       {members.map((member,index)=><button
@@ -870,13 +996,14 @@ function InlineLegalReference({
       ><span>{String(index+1).padStart(2,'0')}</span>{member.relationship&&<b>{member.relationship.code}</b>}{member.citation||displayNodeTitle(member.node)}</button>)}
     </div>}
     {members.length>1&&<h3 className="inline-reference-selected-title">{displayNodeTitle(selectedNode)}</h3>}
-    <div className="inline-reference-text">{blocks.length?blocks.map((block,index)=>{
+    <div className="inline-reference-text">{displayBlocks.length?displayBlocks.map((block,index)=>{
       const blockReferences=nestedByBlock.get(index)||[];
       const segments=paragraphCitationSegments(block,blockReferences);
       const expandedNested=blockReferences.find(item=>item.id===expandedNestedId);
-      return <div
+      return <React.Fragment key={`${index}-${block.marker}-${block.text.slice(0,24)}`}>
+      {block.embeddedHeading&&<h3 className="inline-reference-selected-title">{block.embeddedHeading}</h3>}
+      <div
         className={`legal-text-block legal-text-block-${block.kind} legal-depth-${Math.min(block.depth||0,3)}`}
-        key={`${index}-${block.marker}-${block.text.slice(0,24)}`}
       >
         <span aria-hidden={!block.marker}>{block.marker||''}</span>
         <p>{segments.map((segment,segmentIndex)=>segment.type==='citation'
@@ -892,16 +1019,20 @@ function InlineLegalReference({
           reference={expandedNested}
           onCollapse={()=>setExpandedNestedId('')}
           onPin={onPin}
-          referenceGraph={referenceGraph}
-          referenceEdgesBySource={referenceEdgesBySource}
+          referenceGraph={embeddedGraph}
+          referenceEdgesBySource={embeddedEdgesBySource}
           maxDepth={maxDepth}
           level={level+1}
           requestedPath={requestedPath}
           pinnedIds={pinnedIds}
           onPinnedActivate={onPinnedActivate}
         />}
-      </div>;
-    }):<p>No body text is available for this reference.</p>}
+      </div></React.Fragment>;
+    }):targetLoading?<p>Loading contained provisions for this citation…</p>:targetLoadError?<p className="reader-load-error">Contained provisions could not be loaded: {targetLoadError}</p>:<p>{resolutionStatus
+      ?'No inline text is available for this citation.'
+      :selectedNode?.url
+        ?'The target is identified, but its text is not included in this corpus. Use the source link below to read it.'
+        :'The target is identified, but readable text is not available in this corpus.'}</p>}
       {unmatchedNested.length>0&&<div className="inline-reference-other-links">
         <strong>Other links</strong>
         {unmatchedNested.map(item=><button
@@ -914,8 +1045,8 @@ function InlineLegalReference({
           reference={unmatchedNested.find(item=>item.id===expandedNestedId)}
           onCollapse={()=>setExpandedNestedId('')}
           onPin={onPin}
-          referenceGraph={referenceGraph}
-          referenceEdgesBySource={referenceEdgesBySource}
+          referenceGraph={embeddedGraph}
+          referenceEdgesBySource={embeddedEdgesBySource}
           maxDepth={maxDepth}
           level={level+1}
           requestedPath={requestedPath}
@@ -1805,12 +1936,8 @@ function forceNodeLayoutLane(node,selectedId,edges){
   for(const edge of incident){
     if(edge.edge_type==='references' && edge.to_node_id===selectedId) return 'west';
     if(edge.edge_type==='references' && edge.from_node_id===selectedId) return 'east';
-    if(edge.from_node_id===selectedId && isPurpleAnalysisNode(node)) return 'east';
   }
   return 'related';
-}
-function isPurpleAnalysisNode(node){
-  return ['obligation_pattern','obligation_statement'].includes(node.node_type);
 }
 function forceNodeTargetX(node){
   if(node.layoutLane==='west') return -280;
@@ -1996,10 +2123,18 @@ function parallelEdgeKey(edge){
 
 function Explore({node,edges,graph,onChoose,onRead,onReportIssue}){
   const [inspectorTab,setInspectorTab]=useState('selected-node');
+  const tabRefs=useRef([]);
+  function moveTab(event,index){
+    if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
+    event.preventDefault();
+    const wrapped=event.key==='Home'?0:event.key==='End'?1:(index+(event.key==='ArrowRight'?1:-1)+2)%2;
+    setInspectorTab(wrapped===0?'connections':'selected-node');
+    tabRefs.current[wrapped]?.focus();
+  }
   return <div className="pane explore-pane">
     <div className="inspector-tabs" role="tablist" aria-label="Inspector views">
-      <button type="button" id="inspector-connections-tab" role="tab" aria-selected={inspectorTab==='connections'} aria-controls="inspector-connections-panel" tabIndex={inspectorTab==='connections'?0:-1} className={inspectorTab==='connections'?'active':''} onClick={()=>setInspectorTab('connections')}>Connections</button>
-      <button type="button" id="inspector-selected-node-tab" role="tab" aria-selected={inspectorTab==='selected-node'} aria-controls="inspector-selected-node-panel" tabIndex={inspectorTab==='selected-node'?0:-1} className={inspectorTab==='selected-node'?'active':''} onClick={()=>setInspectorTab('selected-node')}>Selected node</button>
+      <button ref={element=>{tabRefs.current[0]=element;}} onKeyDown={event=>moveTab(event,0)} type="button" id="inspector-connections-tab" role="tab" aria-selected={inspectorTab==='connections'} aria-controls="inspector-connections-panel" tabIndex={inspectorTab==='connections'?0:-1} className={inspectorTab==='connections'?'active':''} onClick={()=>setInspectorTab('connections')}>Connections</button>
+      <button ref={element=>{tabRefs.current[1]=element;}} onKeyDown={event=>moveTab(event,1)} type="button" id="inspector-selected-node-tab" role="tab" aria-selected={inspectorTab==='selected-node'} aria-controls="inspector-selected-node-panel" tabIndex={inspectorTab==='selected-node'?0:-1} className={inspectorTab==='selected-node'?'active':''} onClick={()=>setInspectorTab('selected-node')}>Selected node</button>
     </div>
     {inspectorTab==='connections'
       ? <div id="inspector-connections-panel" role="tabpanel" aria-labelledby="inspector-connections-tab"><ConnectionsOverview node={node} edges={edges} graph={graph} onChoose={onChoose}/></div>
@@ -2032,7 +2167,7 @@ function ConnectionsOverview({node,edges,graph,onChoose}){
           <div className="edge-list">{items.slice(0,40).map(e=>{const other=byId.get(e.from_node_id===node.id?e.to_node_id:e.from_node_id);return <button key={e.id} className={`edge-direction-${edgeDirectionLabel(e,node.id)}`} onClick={()=>other&&onChoose(other)}><span><b className="edge-arrow">{edgeDirectionGlyph(e,node.id)}</b>{edgeSummary(e,node.id)}</span><strong><NodeTitle node={other}/></strong>{edgeContext(e,other)&&<small>{edgeContext(e,other)}</small>}{e.evidence_text&&<small>{truncate(e.evidence_text,160)}</small>}</button>})}</div>
           {items.length>40&&<p className="muted">Showing first 40 of {items.length} visible links. Increase the graph cap to load more.</p>}
         </Collapsible>)
-      : <Collapsible title="Visible connections" count="0 links" open><p className="muted">No reference, definition or obligation links are visible for this node under the current settings.</p></Collapsible>}
+      : <Collapsible title="Visible connections" count="0 links" open><p className="muted">No reference, definition, permission or amendment links are visible for this node under the current settings.</p></Collapsible>}
   </section>;
 }
 
@@ -2057,7 +2192,7 @@ function Collapsible({title,count,open=false,children}){
   return <details className="collapse-card" open={open}><summary><span>{title}</span>{count&&<em>{count}</em>}</summary><div className="collapse-body">{children}</div></details>;
 }
 function groupEdges(edges){
-  const priority=['has_permission','references','uses_defined_term','defines','shares_defined_term','has_obligation_pattern','shares_obligation_pattern','has_structured_obligation','amends'];
+  const priority=['has_permission','references','uses_defined_term','defines','amends'];
   const buckets=new Map();
   for(const e of edges) buckets.set(e.edge_type,[...(buckets.get(e.edge_type)||[]),e]);
   return [...buckets.entries()].sort((a,b)=>{
@@ -2121,7 +2256,6 @@ function labelChars(n,view,graph,selected){
 }
 function nodeFill(n,graph){
   if(n.visual?.colour) return n.visual.colour;
-  if(graph?.level==='part' || graph?.level==='article') return CHART_SEQUENCE[(n.metadata?.semantic_cluster??0)%CHART_SEQUENCE.length];
   return MATERIAL_COLOURS[materialType(n)]||COLOURS.brandMid;
 }
 function emptyNodeMessage(node,edges=[]){
@@ -2145,7 +2279,7 @@ function relationLabel(v){
   return reportingGroup?.label||RELATION_LABELS[v]||String(v||'').replaceAll('_',' ');
 }
 function evidenceLabel(v){return EVIDENCE_LABELS[v]||relationLabel(v)}
-function isInferred(e){return !EXPLICIT.has(e.source_method) && !String(e.source_method||'').startsWith('reporting') && !['manifest','pdf_text_extraction'].includes(e.source_method)}
+function isInferred(e){const method=String(e.source_method||e.extraction_method||'').toLowerCase();const inferred=['semantic_keyword','reporting_llm_reference'].includes(method)||method.startsWith('semantic_')||method.startsWith('llm:')||method==='lexical_similarity';return inferred||(!EXPLICIT.has(method)&&!method.startsWith('reporting')&&!['manifest','pdf_text_extraction'].includes(method))}
 function originMatches(e,originFilter){
   if(originFilter==='explicit') return !isInferred(e);
   if(originFilter==='inferred') return isInferred(e);
@@ -2155,10 +2289,6 @@ function provenanceLabel(method){
   return ({
     rollup_child_edge:'contained in sub-provision',
     rollup_resolved_part_reference:'contained in sub-provision',
-    derived_term_overlap:'shared defined term',
-    derived_obligation_overlap:'similar obligation wording',
-    regex_obligation:'obligation wording',
-    structured_obligation_parser:'extracted obligation',
     regex_reference:'detected reference',
     regex_named_reference:'named reference',
     regex_article_reference:'article reference',
@@ -2254,7 +2384,6 @@ function materialType(n){
   if(type==='legal_instrument') return 'legal_instrument';
   if(type==='permission') return 'permission';
   if(type==='external_reference' || type==='rule_reference') return 'external_reference';
-  if(['obligation_pattern','obligation_statement'].includes(type)) return type;
   if(['guidance_document','guidance_section','guidance_paragraph'].includes(type)){
     if(doc.includes('statement_of_policy') || url.includes('/statements-of-policy/')) return 'statement_of_policy';
     return 'supervisory_statement';
@@ -2266,7 +2395,7 @@ function isXbrlSourceDocument(n){
   const hay=[n?.title,n?.text,n?.url,md.source_url,md.source_local_path,md.source_title,md.file_type,md.source_file_type,md.source_table,md.source_pk].filter(Boolean).join(' ').toLowerCase();
   return /\b(xbrl|taxonomy|dpm|annotated templates|template package|reporting package)\b/.test(hay) || /\.(zip|xbrl|xml|xsd)(#|$)/.test(hay);
 }
-function materialLabel(v){return ({rule:'Rulebook part / rule',supervisory_statement:'Supervisory statement',statement_of_policy:'Statement of policy',definition:'Definition',permission:'Firm permission',external_reference:'External reference',legal_instrument:'Legal instrument',obligation_pattern:'Obligation pattern',obligation_statement:'Structured obligation',analysis:'Obligation marker',reporting_estate:'Reporting estate',reporting_regime:'Reporting regime',reporting_collection:'Reporting collection',reporting_requirement:'Reporting requirement',reporting_edition:'Requirement edition',reporting_resource:'Reporting resource',reporting_return:'Reporting requirement',reporting_template:'Reporting template',reporting_instruction:'Reporting instructions',reporting_source:'Source document',reporting_xbrl_source:'XBRL taxonomy',reporting_datapoint:'Datapoints',reporting_provision:'Referenced provision',reporting_concept:'Reporting concept',ReportingEstate:'Reporting estate',ReportingRegime:'Reporting regime',ReportingCollection:'Reporting collection',ReportingRequirement:'Reporting requirement',RequirementEdition:'Requirement edition',ReportingResource:'Reporting resource',Worksheet:'Worksheet',LogicalTemplate:'Logical template',TaxonomyRelease:'XBRL taxonomy release',DataItem:'Reporting return',Template:'Reporting template',TemplateSet:'XBRL source',InstructionSet:'Reporting instructions',SourceDocument:'Source document',DataPointGroup:'Datapoint summary',DataPoint:'Datapoint',Provision:'Referenced provision'}[v]||String(v||'').replaceAll('_',' '))}
+function materialLabel(v){return ({rule:'Rulebook part / rule',supervisory_statement:'Supervisory statement',statement_of_policy:'Statement of policy',definition:'Definition',permission:'Firm permission',external_reference:'External reference',legal_instrument:'Legal instrument',reporting_estate:'Reporting estate',reporting_regime:'Reporting regime',reporting_collection:'Reporting collection',reporting_requirement:'Reporting requirement',reporting_edition:'Requirement edition',reporting_resource:'Reporting resource',reporting_return:'Reporting requirement',reporting_template:'Reporting template',reporting_instruction:'Reporting instructions',reporting_source:'Source document',reporting_xbrl_source:'XBRL taxonomy',reporting_datapoint:'Datapoints',reporting_provision:'Referenced provision',reporting_concept:'Reporting concept',ReportingEstate:'Reporting estate',ReportingRegime:'Reporting regime',ReportingCollection:'Reporting collection',ReportingRequirement:'Reporting requirement',RequirementEdition:'Requirement edition',ReportingResource:'Reporting resource',Worksheet:'Worksheet',LogicalTemplate:'Logical template',TaxonomyRelease:'XBRL taxonomy release',DataItem:'Reporting return',Template:'Reporting template',TemplateSet:'XBRL source',InstructionSet:'Reporting instructions',SourceDocument:'Source document',DataPointGroup:'Datapoint summary',DataPoint:'Datapoint',Provision:'Referenced provision'}[v]||String(v||'').replaceAll('_',' '))}
 function displayColour(v){return MATERIAL_COLOURS[materialType(v)]||COLOURS.brandMid}
 function label(v){return materialLabel(materialType(v))}
 function truncate(s='',n=120){return s&&s.length>n?s.slice(0,n-1)+'…':s}

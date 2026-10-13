@@ -51,7 +51,6 @@ def migrate_legal_identity(conn: sqlite3.Connection) -> dict[str, int]:
         _rewrite_node_metadata(conn, id_map)
         edge_id_map = _rewrite_edges(conn, id_map, canonical_map)
         _rewrite_occurrences(conn, id_map, canonical_map, edge_id_map)
-        _rewrite_embeddings(conn, id_map)
         _rewrite_known_node_references(conn, id_map)
         _rewrite_aliases(conn, old_alias_rows, id_map)
         _insert_aliases(conn, plans)
@@ -368,21 +367,6 @@ def _rewrite_occurrences(conn: sqlite3.Connection, id_map: dict[str, str], canon
             "UPDATE reference_occurrence SET source_node_id=?,target_node_id=?,edge_id=?,metadata_json=?,updated_at=CURRENT_TIMESTAMP WHERE occurrence_id=?",
             (source_id, target_id, edge_value, json.dumps(metadata, ensure_ascii=False, sort_keys=True), row["occurrence_id"]),
         )
-
-
-def _rewrite_embeddings(conn: sqlite3.Connection, id_map: dict[str, str]) -> None:
-    if not _has_table(conn, "embedding"):
-        return
-    for old_id, new_id in id_map.items():
-        if old_id == new_id:
-            continue
-        row = conn.execute("SELECT * FROM embedding WHERE node_id=?", (old_id,)).fetchone()
-        if not row:
-            continue
-        if conn.execute("SELECT 1 FROM embedding WHERE node_id=?", (new_id,)).fetchone():
-            conn.execute("DELETE FROM embedding WHERE node_id=?", (old_id,))
-        else:
-            conn.execute("UPDATE embedding SET node_id=? WHERE node_id=?", (new_id, old_id))
 
 
 def _rewrite_known_node_references(conn: sqlite3.Connection, id_map: dict[str, str]) -> None:

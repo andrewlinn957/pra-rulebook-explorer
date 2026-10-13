@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { CHART_SEQUENCE, COLOURS, EDGE_COLOURS, MATERIAL_COLOURS } from './colourTokens.js';
+import { COLOURS, EDGE_COLOURS, MATERIAL_COLOURS } from './colourTokens.js';
 
 test('colour system exposes the approved core palette', () => {
   assert.equal(COLOURS.brand, '#123524');
@@ -15,17 +15,11 @@ test('colour system exposes the approved core palette', () => {
   assert.equal(COLOURS.white, '#FFFFFF');
 });
 
-test('dark chart sequence avoids Phthalo Green as an unoutlined series', () => {
-  assert.deepEqual(CHART_SEQUENCE.slice(0, 10), [
-    '#43D9B1', '#F28C28', '#A889FF', '#D6B84C', '#4FA3D9',
-    '#F06DB2', '#8BC34A', '#F2CF3A', '#F39A78', '#E54865',
-  ]);
-});
-
 test('graph colour maps are populated from the new palette', async () => {
   assert.ok(Object.keys(EDGE_COLOURS).length > 20);
   assert.equal(MATERIAL_COLOURS.rule, COLOURS.brandRaised);
   const source = await readFile(new URL('./main.jsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(source, /semantic_cluster/u);
   assert.doesNotMatch(source, /const (EDGE_COLOURS|MATERIAL_COLOURS|CLUSTER_COLOURS)\s*=/);
   assert.doesNotMatch(source, /#2457d6|#2563eb|#0f766e/iu);
   assert.match(source, /function drawCanvasLabel[\s\S]*?ctx\.fillStyle='rgba\(255,255,255,\.95\)'/u);

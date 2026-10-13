@@ -12,14 +12,6 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DB = PROJECT_ROOT / "backend" / "data" / "rulebook.sqlite3"
 
 INDEX_SCHEMA = """
-CREATE TABLE IF NOT EXISTS embedding (
-  node_id TEXT PRIMARY KEY,
-  model_name TEXT NOT NULL,
-  text_hash TEXT NOT NULL,
-  vector_json TEXT NOT NULL,
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
 CREATE INDEX IF NOT EXISTS idx_node_type ON node(node_type);
 CREATE INDEX IF NOT EXISTS idx_edge_from ON edge(from_node_id);
 CREATE INDEX IF NOT EXISTS idx_edge_to ON edge(to_node_id);

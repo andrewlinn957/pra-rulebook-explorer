@@ -237,6 +237,7 @@ def reporting_catalog_cells(
             JOIN graph_edge evidence
               ON evidence.source_node_id=di.node_id
              AND evidence.edge_type='EVIDENCED_BY'
+             AND COALESCE(evidence.review_status,'') <> 'rejected_candidate'
             JOIN graph_node source_node
               ON source_node.node_id=evidence.target_node_id
              AND source_node.node_type='SourceDocument'
@@ -262,6 +263,7 @@ def reporting_catalog_cells(
                 JOIN source_document sd ON sd.source_id=t.source_id
                 WHERE uses.source_node_id=?
                   AND uses.edge_type='USES_TEMPLATE'
+                  AND COALESCE(uses.review_status,'') <> 'rejected_candidate'
                   AND sd.url IN ({','.join('?' for _ in artifact_urls)})
                 LIMIT 1
                 """,
@@ -337,6 +339,7 @@ def reporting_catalog_cells(
             "SELECT 1 FROM graph_edge uses "
             "WHERE uses.target_node_id=n.node_id "
             "AND uses.edge_type='USES_TEMPLATE' "
+            "AND COALESCE(uses.review_status,'') <> 'rejected_candidate' "
             "AND uses.source_node_id=?"
             ")"
         )
@@ -413,13 +416,16 @@ def reporting_catalog_cells(
                sd.url AS source_url,sd.title AS source_title,
                (SELECT COUNT(DISTINCT e.target_node_id) FROM graph_edge e
                 WHERE e.source_node_id=n.node_id
-                  AND e.edge_type='HAS_DATAPOINT') AS cell_count,
+                  AND e.edge_type='HAS_DATAPOINT'
+                  AND COALESCE(e.review_status,'') <> 'rejected_candidate') AS cell_count,
                (SELECT COUNT(*) FROM graph_edge e
                 WHERE e.source_node_id=n.node_id
-                  AND e.edge_type='HAS_ROW') AS row_count,
+                  AND e.edge_type='HAS_ROW'
+                  AND COALESCE(e.review_status,'') <> 'rejected_candidate') AS row_count,
                (SELECT COUNT(*) FROM graph_edge e
                 WHERE e.source_node_id=n.node_id
-                  AND e.edge_type='HAS_COLUMN') AS column_count
+                  AND e.edge_type='HAS_COLUMN'
+                  AND COALESCE(e.review_status,'') <> 'rejected_candidate') AS column_count
         FROM graph_node n
         LEFT JOIN source_document sd
           ON sd.source_id=json_extract(n.properties_json,'$.source_id')
@@ -595,6 +601,7 @@ def reporting_catalog_cells(
         graph_where = [
             f"h.source_node_id IN ({','.join('?' for _ in selected_graph_ids)})",
             "h.edge_type='HAS_DATAPOINT'",
+            "COALESCE(h.review_status,'') <> 'rejected_candidate'",
             "dp.node_type='DataPoint'",
         ]
         graph_params: list[Any] = list(selected_graph_ids)
@@ -947,6 +954,7 @@ def reporting_change_impact(
           ON sdn.node_id=ref.source_node_id AND sdn.node_type='SourceDocument'
         JOIN graph_edge ev
           ON ev.target_node_id=sdn.node_id AND ev.edge_type='EVIDENCED_BY'
+         AND COALESCE(ev.review_status,'') <> 'rejected_candidate'
         JOIN graph_node di
           ON di.node_id=ev.source_node_id AND di.node_type='DataItem'
         LEFT JOIN source_document sd
@@ -954,6 +962,8 @@ def reporting_change_impact(
         LEFT JOIN source_span sp ON sp.span_id=ref.evidence_span_id
         WHERE ref.target_node_id=?
           AND ref.edge_type IN ({','.join('?' for _ in REPORTING_REFERENCE_EDGE_TYPES)})
+          AND COALESCE(ref.review_status,'') <> 'rejected_candidate'
+          AND COALESCE(ev.review_status,'') <> 'rejected_candidate'
         ORDER BY di.label,sd.title,ref.confidence DESC,ref.edge_id
         """,
         [target_node_id, *sorted(REPORTING_REFERENCE_EDGE_TYPES)],
@@ -1069,6 +1079,7 @@ def reporting_change_impact(
         JOIN graph_edge uses
           ON uses.target_node_id=t.template_id
          AND uses.edge_type='USES_TEMPLATE'
+         AND COALESCE(uses.review_status,'') <> 'rejected_candidate'
         JOIN graph_node di
           ON di.node_id=uses.source_node_id AND di.node_type='DataItem'
         LEFT JOIN source_document tsd ON tsd.source_id=t.source_id
@@ -1088,6 +1099,7 @@ def reporting_change_impact(
         LEFT JOIN graph_edge instruction_evidence
           ON instruction_evidence.source_node_id=ip.node_id
          AND instruction_evidence.edge_type='EVIDENCED_BY'
+         AND COALESCE(instruction_evidence.review_status,'') <> 'rejected_candidate'
         LEFT JOIN graph_node sdn
           ON sdn.node_id=instruction_evidence.target_node_id
          AND sdn.node_type='SourceDocument'
@@ -1096,6 +1108,9 @@ def reporting_change_impact(
         WHERE legal.target_node_id=?
           AND legal.edge_type='REFERENCES_RULE'
           AND legal.extraction_method='instruction_legal_reference_projection'
+          AND COALESCE(legal.review_status,'') <> 'rejected_candidate'
+          AND COALESCE(coordinate.review_status,'') <> 'rejected_candidate'
+          AND COALESCE(uses.review_status,'') <> 'rejected_candidate'
         ORDER BY di.label,t.template_code,
                  json_extract(coordinate.properties_json,'$.row_code'),
                  json_extract(coordinate.properties_json,'$.column_code'),
@@ -1240,6 +1255,7 @@ def reporting_change_impact(
               ON t.template_id=n.source_pk OR t.template_id=n.node_id
             LEFT JOIN source_document sd ON sd.source_id=t.source_id
             WHERE uses.source_node_id=? AND uses.edge_type='USES_TEMPLATE'
+              AND COALESCE(uses.review_status,'') <> 'rejected_candidate'
             ORDER BY t.template_code,t.title,t.template_id
             """,
             (entry["data_item_id"],),
@@ -1513,6 +1529,7 @@ def _reporting_root_data_items(conn: sqlite3.Connection, *, q: str | None, limit
                COUNT(DISTINCT CASE WHEN e.edge_type='EVIDENCED_BY' THEN e.target_node_id END) AS source_document_count
         FROM graph_node n
         LEFT JOIN graph_edge e ON e.source_node_id=n.node_id
+          AND COALESCE(e.review_status,'') <> 'rejected_candidate'
         {where}
         GROUP BY n.node_id
         ORDER BY n.label
@@ -1532,6 +1549,7 @@ def _reporting_edges_for_sources(conn: sqlite3.Connection, source_ids: list[str]
         FROM graph_edge
         WHERE source_node_id IN ({','.join('?' for _ in source_ids)})
           AND edge_type IN ({','.join('?' for _ in edge_types)})
+          AND COALESCE(review_status,'') <> 'rejected_candidate'
         ORDER BY CASE edge_type
           WHEN 'USES_TEMPLATE' THEN 1 WHEN 'USES_INSTRUCTIONS' THEN 2 WHEN 'EVIDENCED_BY' THEN 3
           WHEN 'LEGAL_BASIS' THEN 4 WHEN 'REFERENCES_RULE' THEN 5 WHEN 'REFERENCES_RETURN' THEN 6 ELSE 20 END,
@@ -1552,6 +1570,7 @@ def _reporting_edges_for_targets(conn: sqlite3.Connection, target_ids: list[str]
         FROM graph_edge
         WHERE target_node_id IN ({','.join('?' for _ in target_ids)})
           AND edge_type IN ({','.join('?' for _ in edge_types)})
+          AND COALESCE(review_status,'') <> 'rejected_candidate'
         ORDER BY edge_type,source_node_id
         LIMIT ?
         """,
@@ -1748,6 +1767,7 @@ def _add_grouped_datapoints(conn: sqlite3.Connection, template_ids: list[str], n
         FROM graph_edge e
         WHERE e.source_node_id IN ({','.join('?' for _ in template_ids)})
           AND e.edge_type='HAS_DATAPOINT'
+          AND COALESCE(e.review_status,'') <> 'rejected_candidate'
         GROUP BY e.source_node_id
         """,
         template_ids,
@@ -1902,6 +1922,7 @@ def _sample_datapoint_labels(conn: sqlite3.Connection, template_id: str, *, limi
         FROM graph_edge e
         JOIN graph_node dp ON dp.node_id=e.target_node_id
         WHERE e.source_node_id=? AND e.edge_type='HAS_DATAPOINT'
+          AND COALESCE(e.review_status,'') <> 'rejected_candidate'
           AND COALESCE(dp.label,'') <> ''
         ORDER BY dp.label
         LIMIT ?
@@ -2059,6 +2080,7 @@ def _evidence_source_urls(conn: sqlite3.Connection, node_ids: list[str]) -> dict
             LEFT JOIN source_document sd ON sd.source_id=n.source_pk OR sd.source_id=n.node_id
             WHERE e.source_node_id IN ({','.join('?' for _ in node_ids)})
               AND e.edge_type='EVIDENCED_BY'
+              AND COALESCE(e.review_status,'') <> 'rejected_candidate'
               AND n.node_type='SourceDocument'
               AND COALESCE(sd.url,'') <> ''
             ORDER BY e.source_node_id,
@@ -2088,6 +2110,7 @@ def _template_source_urls(conn: sqlite3.Connection, node_ids: list[str]) -> dict
             JOIN source_document sd ON sd.source_id=t.source_id
             WHERE e.source_node_id IN ({','.join('?' for _ in node_ids)})
               AND e.edge_type='USES_TEMPLATE'
+              AND COALESCE(e.review_status,'') <> 'rejected_candidate'
               AND COALESCE(sd.url,'') <> ''
             ORDER BY e.source_node_id,sd.url
             """,
@@ -2148,6 +2171,7 @@ def list_returns(conn: sqlite3.Connection, *, q: str | None = None, limit: int =
                COUNT(DISTINCT CASE WHEN e.edge_type='EVIDENCED_BY' THEN e.target_node_id END) AS source_document_count
         FROM graph_node n
         LEFT JOIN graph_edge e ON e.source_node_id=n.node_id
+          AND COALESCE(e.review_status,'') <> 'rejected_candidate'
         {where}
         GROUP BY n.node_id
         ORDER BY n.label
@@ -2185,7 +2209,7 @@ def list_templates(conn: sqlite3.Connection, *, q: str | None = None, data_item:
         needle = f"%{q}%"
         params.extend([needle, needle, needle])
     if data_item:
-        where += " AND EXISTS (SELECT 1 FROM graph_edge e WHERE e.edge_type='USES_TEMPLATE' AND e.target_node_id=n.node_id AND e.source_node_id=?)"
+        where += " AND EXISTS (SELECT 1 FROM graph_edge e WHERE e.edge_type='USES_TEMPLATE' AND e.target_node_id=n.node_id AND e.source_node_id=? AND COALESCE(e.review_status,'') <> 'rejected_candidate')"
         params.append(_data_item_id(data_item))
     rows = conn.execute(
         f"""
@@ -2194,7 +2218,9 @@ def list_templates(conn: sqlite3.Connection, *, q: str | None = None, data_item:
                COUNT(DISTINCT r.source_node_id) AS data_item_count
         FROM graph_node n
         LEFT JOIN graph_edge dp ON dp.source_node_id=n.node_id AND dp.edge_type='HAS_DATAPOINT'
+          AND COALESCE(dp.review_status,'') <> 'rejected_candidate'
         LEFT JOIN graph_edge r ON r.target_node_id=n.node_id AND r.edge_type='USES_TEMPLATE'
+          AND COALESCE(r.review_status,'') <> 'rejected_candidate'
         {where}
         GROUP BY n.node_id
         ORDER BY n.label
@@ -2249,7 +2275,7 @@ def template_detail(conn: sqlite3.Connection, template_id_or_code: str) -> dict[
         "counts": {
             "rows": len(rows),
             "columns": len(columns),
-            "datapoints": conn.execute("SELECT COUNT(*) FROM graph_edge WHERE source_node_id=? AND edge_type='HAS_DATAPOINT'", (node["node_id"],)).fetchone()[0],
+            "datapoints": conn.execute("SELECT COUNT(*) FROM graph_edge WHERE source_node_id=? AND edge_type='HAS_DATAPOINT' AND COALESCE(review_status,'') <> 'rejected_candidate'", (node["node_id"],)).fetchone()[0],
         },
     }
 
@@ -2267,7 +2293,7 @@ def search_datapoints(conn: sqlite3.Connection, *, q: str, template: str | None 
         template_node = get_graph_node(conn, template_node_id)
         params.append((template_node or {}).get("source_pk") or template_node_id)
     if data_item:
-        where += " AND EXISTS (SELECT 1 FROM graph_edge e WHERE e.edge_type='USES_TEMPLATE' AND e.source_node_id=? AND e.target_node_id=d.template_id)"
+        where += " AND EXISTS (SELECT 1 FROM graph_edge e WHERE e.edge_type='USES_TEMPLATE' AND e.source_node_id=? AND e.target_node_id=d.template_id AND COALESCE(e.review_status,'') <> 'rejected_candidate')"
         params.append(_data_item_id(data_item))
     rows = conn.execute(
         f"""
@@ -2318,7 +2344,7 @@ def return_references(conn: sqlite3.Connection, code: str, *, edge_types: list[s
     data_item_id = _data_item_id(code)
     if not get_graph_node(conn, data_item_id):
         return None
-    source_ids = [r[0] for r in conn.execute("SELECT target_node_id FROM graph_edge WHERE source_node_id=? AND edge_type='EVIDENCED_BY'", (data_item_id,)).fetchall()]
+    source_ids = [r[0] for r in conn.execute("SELECT target_node_id FROM graph_edge WHERE source_node_id=? AND edge_type='EVIDENCED_BY' AND COALESCE(review_status,'') <> 'rejected_candidate'", (data_item_id,)).fetchall()]
     if not source_ids:
         return {"data_item_id": data_item_id, "references": [], "summary": {}}
     allowed = edge_types or sorted(REPORTING_REFERENCE_EDGE_TYPES)
@@ -2334,6 +2360,7 @@ def return_references(conn: sqlite3.Connection, code: str, *, edge_types: list[s
         LEFT JOIN source_span sp ON sp.span_id=e.evidence_span_id
         WHERE e.source_node_id IN ({','.join('?' for _ in source_ids)})
           AND e.edge_type IN ({','.join('?' for _ in allowed)})
+          AND COALESCE(e.review_status,'') <> 'rejected_candidate'
         ORDER BY e.edge_type, t.label
         LIMIT ?
         """,
@@ -2353,8 +2380,11 @@ def returns_relying_on(conn: sqlite3.Connection, target_node_id: str, *, limit: 
         FROM graph_edge ref
         JOIN graph_node sd ON sd.node_id=ref.source_node_id AND sd.node_type='SourceDocument'
         JOIN graph_edge ev ON ev.target_node_id=sd.node_id AND ev.edge_type='EVIDENCED_BY'
+          AND COALESCE(ev.review_status,'') <> 'rejected_candidate'
         JOIN graph_node di ON di.node_id=ev.source_node_id AND di.node_type='DataItem'
         WHERE ref.target_node_id=?
+          AND COALESCE(ref.review_status,'') <> 'rejected_candidate'
+          AND COALESCE(ev.review_status,'') <> 'rejected_candidate'
         GROUP BY di.node_id
         ORDER BY relationship_count DESC, di.label
         LIMIT ?
@@ -2422,6 +2452,7 @@ def reporting_neighbourhood(conn: sqlite3.Connection, node_id_or_code: str, *, d
             SELECT edge_id,source_node_id,target_node_id,edge_type,properties_json,evidence_span_id,confidence,extraction_method,review_status
             FROM graph_edge
             WHERE (source_node_id=? OR target_node_id=?) {clause}
+              AND COALESCE(review_status,'') <> 'rejected_candidate'
             ORDER BY confidence DESC
             LIMIT ?
             """,
@@ -2572,7 +2603,9 @@ def _return_reference_summary(conn: sqlite3.Connection, data_item_id: str) -> di
         FROM graph_edge ev
         JOIN graph_edge ref ON ref.source_node_id=ev.target_node_id
         WHERE ev.source_node_id=? AND ev.edge_type='EVIDENCED_BY'
+          AND COALESCE(ev.review_status,'') <> 'rejected_candidate'
           AND ref.edge_type IN ('REFERENCES_RULE','REFERENCES_SOURCE','REFERENCES_EXTERNAL','REFERENCES_RETURN','REFERENCES_TEMPLATE')
+          AND COALESCE(ref.review_status,'') <> 'rejected_candidate'
         GROUP BY ref.edge_type ORDER BY ref.edge_type
         """,
         (data_item_id,),
@@ -2593,6 +2626,7 @@ def _adjacent_nodes(conn: sqlite3.Connection, node_id: str, *, edge_types: list[
                e.edge_id,e.edge_type,e.confidence
         FROM graph_edge e JOIN graph_node n ON {join}
         WHERE {where} AND e.edge_type IN ({','.join('?' for _ in edge_types)})
+          AND COALESCE(e.review_status,'') <> 'rejected_candidate'
         ORDER BY n.node_type,n.label
         LIMIT ?
         """,
@@ -2614,6 +2648,7 @@ def _template_datapoints(conn: sqlite3.Connection, template_node_id: str, *, lim
         LEFT JOIN template_column tc ON tc.column_id=d.column_id
         LEFT JOIN graph_node gn ON gn.node_id=d.datapoint_id
         WHERE e.source_node_id=? AND e.edge_type='HAS_DATAPOINT'
+          AND COALESCE(e.review_status,'') <> 'rejected_candidate'
         ORDER BY tr.row_order, tc.column_order, d.datapoint_id
         LIMIT ?
         """,

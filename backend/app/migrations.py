@@ -4,7 +4,7 @@ import sqlite3
 from datetime import datetime, timezone
 
 
-LATEST_SCHEMA_VERSION = 11
+LATEST_SCHEMA_VERSION = 12
 
 
 ENRICHMENT_SCHEMA = """
@@ -134,6 +134,10 @@ def apply_migrations(conn: sqlite3.Connection) -> list[int]:
     if current < 11:
         _migrate_v11(conn)
         applied.append(11)
+        current = 11
+    if current < 12:
+        _migrate_v12(conn)
+        applied.append(12)
     return applied
 
 
@@ -746,4 +750,40 @@ def _migrate_v11(conn: sqlite3.Connection) -> None:
         """
     )
     conn.execute("PRAGMA user_version=11")
+    conn.commit()
+
+
+def _migrate_v12(conn: sqlite3.Connection) -> None:
+    """Remove retired embedding-derived artifacts and their storage table."""
+    tables = {
+        row[0] for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        )
+    }
+    if 'node' in tables:
+        cluster_ids = "SELECT id FROM node WHERE node_type='topic_cluster'"
+    else:
+        cluster_ids = "SELECT '' WHERE 0"
+    if 'edge' in tables:
+        conn.execute(
+            f"DELETE FROM edge WHERE source_method LIKE '%embedding%' "
+            f"OR edge_type IN ('similar_to','has_topic_cluster') "
+            f"OR from_node_id IN ({cluster_ids}) OR to_node_id IN ({cluster_ids})"
+        )
+    if "node_fts" in tables and 'node' in tables:
+        conn.execute(f"DELETE FROM node_fts WHERE id IN ({cluster_ids})")
+    if "node_alias" in tables:
+        conn.execute(f"DELETE FROM node_alias WHERE node_id IN ({cluster_ids})")
+    if 'node' in tables:
+        conn.execute("DELETE FROM node WHERE node_type='topic_cluster'")
+    conn.execute("DROP TABLE IF EXISTS embedding")
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS schema_migration ("
+        "version INTEGER PRIMARY KEY,name TEXT NOT NULL,applied_at TEXT NOT NULL)"
+    )
+    conn.execute(
+        "INSERT OR REPLACE INTO schema_migration(version,name,applied_at) "
+        "VALUES (12,'retire_semantic_embeddings',CURRENT_TIMESTAMP)"
+    )
+    conn.execute("PRAGMA user_version=12")
     conn.commit()

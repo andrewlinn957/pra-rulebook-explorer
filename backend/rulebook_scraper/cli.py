@@ -9,8 +9,7 @@ from pathlib import Path
 from bs4 import BeautifulSoup
 
 from .fetch import fetch_url, normalise_url
-from .enrich import derive_phase4_edges_and_nodes, derive_richer_edges, derive_rollup_and_shared_analysis_edges, repair_internal_anchor_references, repair_structured_definition_text
-from .advanced_enrich import derive_advanced_topics_and_obligations
+from .enrich import derive_regex_reference_edges, derive_richer_edges, derive_rollup_reference_edges, repair_internal_anchor_references, repair_structured_definition_text
 from .parse import (
     extract_crr_terms,
     extract_glossary,
@@ -152,15 +151,14 @@ def command_stats(args: argparse.Namespace) -> None:
 def command_enrich(args: argparse.Namespace) -> None:
     conn = connect(args.db)
     repair_counts = repair_internal_anchor_references(conn)
-    counts = derive_phase4_edges_and_nodes(conn)
-    extra_counts = derive_rollup_and_shared_analysis_edges(conn)
-    advanced_counts = derive_advanced_topics_and_obligations(conn)
-    counts = {**{f"repair:{k}": v for k, v in repair_counts.items()}, **counts, **{f"analysis:{k}": v for k, v in extra_counts.items()}, **{f"advanced:{k}": v for k, v in advanced_counts.items()}}
+    counts = derive_regex_reference_edges(conn)
+    rollup_counts = derive_rollup_reference_edges(conn)
+    counts = {**{f"repair:{k}": v for k, v in repair_counts.items()}, **counts, **{f"rollup:{k}": v for k, v in rollup_counts.items()}}
     backfill_placeholder_targets(conn)
     conn.commit()
     if args.out:
         export_json(conn, args.out)
-    print(f"phase4 enrichment: {counts}")
+    print(f"reference enrichment: {counts}")
     print_stats(conn)
 
 
@@ -205,10 +203,10 @@ def _targets(args: argparse.Namespace) -> list[tuple[str, str]]:
     for url in args.part:
         targets.append((normalise_url(url), "part"))
     if args.include_glossary:
-        glossary_url = "/glossary?Date=01-06-2026&AZ=All&NoPage=1&p=1" if args.full_glossary else "/glossary"
+        glossary_url = f"/glossary?Date={args.glossary_export_date}&AZ=All&NoPage=1&p=1" if args.full_glossary else "/glossary"
         targets.append((glossary_url, "glossary"))
     if args.include_crr_terms:
-        crr_url = "/crr-terms-list?Date=01-01-2027&AZ=All&NoPage=1&p=1" if args.full_crr_terms else "/crr-terms-list"
+        crr_url = f"/crr-terms-list?Date={args.crr_terms_export_date}&AZ=All&NoPage=1&p=1" if args.full_crr_terms else "/crr-terms-list"
         targets.append((crr_url, "crr_terms"))
     if args.include_guidance or args.all_guidance:
         targets.append(("/guidance", "guidance_index"))
@@ -240,6 +238,13 @@ def _normalise_time(value: str) -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _parse_export_date(value: str) -> str:
+    try:
+        return datetime.strptime(value, "%m-%d-%Y").strftime("%m-%d-%Y")
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("date must use MM-DD-YYYY") from exc
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Scrape PRA Rulebook pages into nodes/edges.")
     parser.add_argument("--db", type=Path, default=DEFAULT_DB)
@@ -253,8 +258,10 @@ def build_parser() -> argparse.ArgumentParser:
     scrape.add_argument("--all-parts", action="store_true", help="Parse every Part linked from /pra-rules")
     scrape.add_argument("--include-glossary", action="store_true", help="Parse glossary")
     scrape.add_argument("--full-glossary", action="store_true", help="Use glossary export URL for all terms")
+    scrape.add_argument("--glossary-export-date", type=_parse_export_date, default="01-06-2026", help="Date parameter for full glossary export (MM-DD-YYYY)")
     scrape.add_argument("--include-crr-terms", action="store_true", help="Parse CRR Terms List")
-    scrape.add_argument("--full-crr-terms", action="store_true", help="Use CRR Terms export URL; currently effective from 01-01-2027")
+    scrape.add_argument("--full-crr-terms", action="store_true", help="Use CRR Terms export URL for all terms")
+    scrape.add_argument("--crr-terms-export-date", type=_parse_export_date, default="01-01-2027", help="Date parameter for full CRR Terms export (MM-DD-YYYY)")
     scrape.add_argument("--include-guidance", action="store_true", help="Parse guidance listing")
     scrape.add_argument("--all-guidance", action="store_true", help="Parse every guidance document linked from /guidance")
     scrape.add_argument("--guidance", action="append", default=[], help="Guidance document URL/path to scrape; can be repeated")
@@ -271,7 +278,7 @@ def build_parser() -> argparse.ArgumentParser:
     stats = sub.add_parser("stats", help="Print database counts")
     stats.set_defaults(func=command_stats)
 
-    enrich = sub.add_parser("enrich", help="Add regex references, topic nodes and obligation-pattern nodes/edges")
+    enrich = sub.add_parser("enrich", help="Repair source anchors and derive cross-references")
     enrich.add_argument("--out", type=Path, default=DEFAULT_OUT)
     enrich.set_defaults(func=command_enrich)
 

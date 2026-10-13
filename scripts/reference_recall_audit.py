@@ -37,7 +37,7 @@ except ImportError:
 DEFAULT_DB = ROOT / "backend" / "data" / "rulebook.sqlite3"
 DEFAULT_LEDGER = ROOT / "outputs" / "reference-recall-ledger.sqlite3"
 DEFAULT_PILOT = ROOT / "outputs" / "reference-recall-pilot.jsonl"
-SCANNER_VERSION = "reference-recall-audit-v2"
+SCANNER_VERSION = "reference-recall-audit-v3"
 DEFAULT_MAX_CHARS = 6000
 DEFAULT_CHUNK_OVERLAP = 800
 SOURCE_NODE_TYPES = (
@@ -159,6 +159,7 @@ CREATE TABLE IF NOT EXISTS ledger_node (
   title TEXT NOT NULL DEFAULT '',
   url TEXT NOT NULL DEFAULT '',
   source_text_hash TEXT NOT NULL,
+  source_evidence_hash TEXT NOT NULL DEFAULT '',
   text_length INTEGER NOT NULL,
   context_json TEXT NOT NULL DEFAULT '{}',
   html_edge_count INTEGER NOT NULL DEFAULT 0,
@@ -268,6 +269,9 @@ def connect_ledger(path: Path | str) -> sqlite3.Connection:
     conn = connect(path, timeout=60)
     conn.execute("PRAGMA busy_timeout=30000")
     conn.executescript(LEDGER_SCHEMA)
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(ledger_node)")}
+    if "source_evidence_hash" not in columns:
+        conn.execute("ALTER TABLE ledger_node ADD COLUMN source_evidence_hash TEXT NOT NULL DEFAULT ''")
     return conn
 
 
@@ -562,14 +566,35 @@ def existing_occurrences(conn: sqlite3.Connection, source_id: str) -> list[dict[
         dict(row)
         for row in conn.execute(
             """
-            SELECT occurrence_id,target_node_id,edge_id,relationship_type,citation_kind,
-                   citation_text,group_text,span_start,span_end,status,source_method,
-                   confidence,context_text,metadata_json
-            FROM reference_occurrence WHERE source_node_id=? ORDER BY span_start,span_end,occurrence_id
+            SELECT o.occurrence_id,o.source_node_id,o.target_node_id,o.edge_id,
+                   o.relationship_type,o.citation_kind,
+                   o.citation_text,o.group_text,o.span_start,o.span_end,o.status,o.source_method,
+                   o.confidence,o.context_text,o.metadata_json,
+                   target.id AS live_target_id,e.id AS live_edge_id,
+                   e.from_node_id AS edge_source_id,e.to_node_id AS edge_target_id,
+                   e.edge_type AS live_edge_type
+            FROM reference_occurrence o
+            LEFT JOIN node target ON target.id=o.target_node_id
+            LEFT JOIN edge e ON e.id=o.edge_id
+            WHERE o.source_node_id=? ORDER BY o.span_start,o.span_end,o.occurrence_id
             """,
             (source_id,),
         )
     ]
+
+
+def source_evidence(conn: sqlite3.Connection, source_id: str) -> dict[str, list[dict[str, Any]]]:
+    """Load source relationships used by detection and invalidate stale resumes."""
+    return {
+        "occurrences": existing_occurrences(conn, source_id),
+        "edges": all_edges(conn, source_id),
+        "html_edges": html_edges(conn, source_id),
+        "llm": existing_llm_findings(conn, source_id),
+    }
+
+
+def evidence_digest(evidence: dict[str, list[dict[str, Any]]]) -> str:
+    return digest(json.dumps(evidence, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
 
 
 def existing_llm_findings(conn: sqlite3.Connection, source_id: str) -> list[dict[str, Any]]:
@@ -642,6 +667,22 @@ def evidence_for_candidate(
                     "target_node_id": occurrence.get("target_node_id") or "",
                     "span": [occurrence.get("span_start"), occurrence.get("span_end")],
                     "source_method": occurrence.get("source_method", ""),
+                    "span_valid": bool(
+                        occurrence.get("span_start") is not None
+                        and occurrence.get("span_end") is not None
+                        and 0 <= occurrence["span_start"] < occurrence["span_end"] <= len(value)
+                    ),
+                    "association_valid": bool(
+                        occurrence.get("status") == "materialized"
+                        and occurrence.get("live_target_id") == occurrence.get("target_node_id")
+                        and occurrence.get("live_edge_id") == occurrence.get("edge_id")
+                        and occurrence.get("edge_source_id") == occurrence.get("source_node_id")
+                        and occurrence.get("edge_target_id") == occurrence.get("target_node_id")
+                        and occurrence.get("live_edge_type") == {
+                            "REF": "references", "DEF": "uses_defined_term",
+                            "AMEND": "amends", "AMENDS": "amends",
+                        }.get(str(occurrence.get("relationship_type") or "").upper())
+                    ),
                 }
             )
     edge_hits: list[dict[str, Any]] = []
@@ -743,19 +784,28 @@ def classify_candidate(candidate: dict[str, Any], value: str, evidence: dict[str
     elif reasons and all(reason in {"boilerplate_or_navigation_context", "relative_or_self_reference_language", "candidate_matches_source_title", "generic_or_table_instrument_label"} for reason in reasons):
         status = "excluded_context"
         priority = 5
-    elif evidence["occurrences"]:
-        status = "covered_occurrence"
+    elif any(
+        item.get("status") == "materialized"
+        and item.get("span_valid")
+        and item.get("association_valid")
+        for item in evidence["occurrences"]
+    ):
+        status = "recorded_occurrence"
         priority = 20
-        reasons.append("existing_reference_occurrence")
+        reasons.append("valid_occurrence_record; reader placement is audited separately")
+    elif evidence["occurrences"]:
+        status = "occurrence_needs_repair"
+        priority = 65
+        reasons.append("existing_occurrence_has_unresolved_status_or_invalid_span_or_association")
     elif evidence["edges"]:
-        status = "covered_edge"
+        status = "recorded_edge"
         priority = 25
-        reasons.append("existing_graph_edge")
+        reasons.append("existing_graph_edge; occurrence placement is audited separately")
     elif evidence["llm"]:
         resolved = [item for item in evidence["llm"] if item.get("target_node_id") or item.get("added_edge_id") or item.get("already_had_edge")]
-        status = "covered_llm" if resolved else "llm_unresolved"
+        status = "recorded_llm" if resolved else "llm_unresolved"
         priority = 45 if resolved else 70
-        reasons.append("previous_llm_finding")
+        reasons.append("previous_llm_finding; reader placement is audited separately")
     elif start is not None and start >= max_chars:
         status = "tail_unreviewed"
         priority = 100
@@ -860,12 +910,18 @@ def source_rows(conn: sqlite3.Connection, node_types: Iterable[str], limit: int 
     return conn.execute(sql, node_types).fetchall()
 
 
-def existing_node_hash(ledger: sqlite3.Connection, source_id: str, text_hash: str) -> bool:
+def existing_node_hash(
+    ledger: sqlite3.Connection, source_id: str, text_hash: str, evidence_hash: str
+) -> bool:
     row = ledger.execute(
-        "SELECT source_text_hash,scanner_version FROM ledger_node WHERE source_node_id=?",
+        "SELECT source_text_hash,source_evidence_hash,scanner_version FROM ledger_node WHERE source_node_id=?",
         (source_id,),
     ).fetchone()
-    return bool(row and row["source_text_hash"] == text_hash and row["scanner_version"] == SCANNER_VERSION)
+    return bool(
+        row and row["source_text_hash"] == text_hash
+        and row["source_evidence_hash"] == evidence_hash
+        and row["scanner_version"] == SCANNER_VERSION
+    )
 
 
 def delete_node_ledger(ledger: sqlite3.Connection, source_id: str) -> None:
@@ -874,13 +930,22 @@ def delete_node_ledger(ledger: sqlite3.Connection, source_id: str) -> None:
     ledger.execute("DELETE FROM ledger_node WHERE source_node_id=?", (source_id,))
 
 
-def scan_node(source: sqlite3.Row, source_conn: sqlite3.Connection, run_id: str, max_chars: int, chunk_overlap: int) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+def scan_node(
+    source: sqlite3.Row,
+    source_conn: sqlite3.Connection,
+    run_id: str,
+    max_chars: int,
+    chunk_overlap: int,
+    evidence: dict[str, list[dict[str, Any]]] | None = None,
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
     value = source_text(source)
     text_hash = digest(value)
-    occurrences = existing_occurrences(source_conn, source["id"])
-    edges = all_edges(source_conn, source["id"])
-    html = html_edges(source_conn, source["id"])
-    llm = existing_llm_findings(source_conn, source["id"])
+    evidence = evidence or source_evidence(source_conn, source["id"])
+    occurrences = evidence["occurrences"]
+    edges = evidence["edges"]
+    html = evidence["html_edges"]
+    llm = evidence["llm"]
+    source_evidence_hash = evidence_digest(evidence)
     candidates = build_deterministic_candidates(value)
     merge_html_candidates(candidates, value, html)
 
@@ -914,9 +979,10 @@ def scan_node(source: sqlite3.Row, source_conn: sqlite3.Connection, run_id: str,
             "needs_review": 10,
             "tail_unreviewed": 20,
             "llm_unresolved": 30,
-            "covered_edge": 40,
-            "covered_occurrence": 50,
-            "covered_llm": 60,
+            "occurrence_needs_repair": 35,
+            "recorded_edge": 40,
+            "recorded_occurrence": 50,
+            "recorded_llm": 60,
             "classified_not_reference": 70,
             "excluded_context": 80,
         }
@@ -931,7 +997,9 @@ def scan_node(source: sqlite3.Row, source_conn: sqlite3.Connection, run_id: str,
                     seen.add(encoded)
     rows = list(by_id.values())
 
-    uncovered = sum(1 for row in rows if row["status"] in {"needs_review", "tail_unreviewed", "llm_unresolved"})
+    uncovered = sum(1 for row in rows if row["status"] in {
+        "needs_review", "tail_unreviewed", "llm_unresolved", "occurrence_needs_repair",
+    })
     node_record = {
         "source_node_id": source["id"],
         "run_id": run_id,
@@ -940,6 +1008,7 @@ def scan_node(source: sqlite3.Row, source_conn: sqlite3.Connection, run_id: str,
         "title": source["title"] or "",
         "url": source["url"] or "",
         "source_text_hash": text_hash,
+        "source_evidence_hash": source_evidence_hash,
         "text_length": len(value),
         "context": source_context(source),
         "html_edge_count": len(html),
@@ -960,9 +1029,10 @@ def write_node(ledger: sqlite3.Connection, node_record: dict[str, Any], candidat
         """
         INSERT INTO ledger_node(
           source_node_id,run_id,scanner_version,node_type,title,url,source_text_hash,
+          source_evidence_hash,
           text_length,context_json,html_edge_count,occurrence_count,llm_finding_count,
           candidate_count,uncovered_candidate_count,status,updated_at
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """,
         (
             source_id,
@@ -972,6 +1042,7 @@ def write_node(ledger: sqlite3.Connection, node_record: dict[str, Any], candidat
             node_record["title"],
             node_record["url"],
             node_record["source_text_hash"],
+            node_record["source_evidence_hash"],
             node_record["text_length"],
             json.dumps(node_record["context"], ensure_ascii=False, sort_keys=True),
             node_record["html_edge_count"],
@@ -1054,7 +1125,7 @@ def write_pilot(
                source_text_hash,span_start,span_end,candidate_text,candidate_kind,
                detector_json,reason_json,context_text,status,priority,evidence_json
         FROM reference_gap
-        WHERE status IN ('needs_review','tail_unreviewed','llm_unresolved')
+        WHERE status IN ('needs_review','tail_unreviewed','llm_unresolved','occurrence_needs_repair')
         ORDER BY CASE source_node_type
           WHEN 'rule' THEN 1
           WHEN 'guidance_paragraph' THEN 2
@@ -1180,11 +1251,14 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     for index, source in enumerate(rows, 1):
         value = source_text(source)
         text_hash = digest(value)
-        if args.resume and existing_node_hash(ledger, source["id"], text_hash):
+        evidence = source_evidence(source_conn, source["id"]) if args.resume else None
+        if evidence is not None and existing_node_hash(
+            ledger, source["id"], text_hash, evidence_digest(evidence)
+        ):
             counts["skipped_unchanged"] += 1
             continue
         node_record, candidates, chunks = scan_node(
-            source, source_conn, run_id, args.max_chars, args.chunk_overlap
+            source, source_conn, run_id, args.max_chars, args.chunk_overlap, evidence
         )
         write_node(ledger, node_record, chunks=chunks, candidates=candidates, created_at=started)
         counts["scanned"] += 1

@@ -35,7 +35,6 @@ def validation_dashboard(conn: sqlite3.Connection) -> dict[str, Any]:
         "unresolved_reference_patterns": _unresolved_reference_patterns(conn),
         "suspect_403_reference_samples": _suspect_403_reference_samples(),
         "near_self_loop_samples": _near_self_loop_samples(conn),
-        "obligations_by_normative_force": _obligations_by_normative_force(conn),
     }
 
 
@@ -695,20 +694,5 @@ def _reporting_templates_without_datapoints(conn: sqlite3.Connection) -> list[di
         WHERE t.node_type='Template' AND et.source_node_id IS NULL AND dt.template_id IS NULL
         ORDER BY t.label
         LIMIT 80
-        """,
-    )
-
-
-def _obligations_by_normative_force(conn: sqlite3.Connection) -> list[dict[str, Any]]:
-    return _fetch_dicts(
-        conn,
-        """
-        SELECT lower(coalesce(json_extract(metadata_json,'$.modal'),'unspecified')) AS normative_force,
-               COUNT(*) AS obligations,
-               ROUND(100.0 * COUNT(*) / SUM(COUNT(*)) OVER (), 1) AS pct
-        FROM node
-        WHERE node_type='obligation_statement'
-        GROUP BY normative_force
-        ORDER BY obligations DESC, normative_force
         """,
     )

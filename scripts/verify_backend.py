@@ -25,18 +25,8 @@ def main() -> None:
     assert stats["nodes"] > 17000, stats
     assert stats["edges"] > 100000, stats
     assert stats["missing_edge_targets"] == 0, stats
-    # `similar_to`/embedding-derived edges are optional: semantic similarity passes
-    # are periodically reset before being rebuilt with a cleaner strategy.
-    assert stats["edges_by_type"].get("similar_to", 0) >= 0, stats
-    assert stats["nodes_by_type"].get("topic", 0) == 0, stats
-    assert stats["nodes_by_type"].get("topic_cluster", 0) == 0, stats
-    assert stats["edges_by_type"].get("has_topic", 0) == 0, stats
-    assert stats["edges_by_type"].get("has_topic_cluster", 0) == 0, stats
-    assert stats["nodes_by_type"].get("obligation_pattern", 0) > 1000, stats
-    assert stats["edges_by_type"].get("has_obligation_pattern", 0) > 1000, stats
     assert stats["edge_methods"].get("regex_named_reference", 0) > 100, stats
     assert stats["edge_methods"].get("rollup_child_edge", 0) > 10000, stats
-    assert stats["edges_by_type"].get("shares_obligation_pattern", 0) > 100, stats
 
     search = get("/search", {"q": "operational resilience", "limit": 5})
     assert search["results"], search
@@ -47,9 +37,12 @@ def main() -> None:
 
     hood = get(f"/node/{node_id}/neighbourhood", {"depth": 1, "limit": 50})
     assert hood["nodes"] and hood["edges"], hood
-
-    interesting = get("/interesting", {"limit": 10})
-    assert interesting["results"], interesting
+    retired_types = {
+        "has_obligation_pattern", "has_structured_obligation",
+        "shares_defined_term", "shares_defined_term_with_guidance",
+        "shares_obligation_pattern",
+    }
+    assert not any(edge["edge_type"] in retired_types for edge in hood["edges"]), hood
 
     centrality = get("/centrality", {"limit": 10})
     assert centrality["degree"], centrality
@@ -59,8 +52,6 @@ def main() -> None:
     # values through to query helpers.
     negative_limit = get("/nodes", {"limit": -1})
     assert 1 <= len(negative_limit["results"]) <= 1000, len(negative_limit["results"])
-    sem = get("/analysis/semantic-map", {"level": "part", "clusters": 6, "edge_limit": 50})
-    assert sem["level"] == "part" and sem["nodes"], sem
 
     bet = get("/analysis/betweenness", {"limit": 5, "k": 40, "max_nodes": 600})
     assert bet["results"], bet
@@ -87,12 +78,9 @@ def main() -> None:
         "ok": True,
         "nodes": stats["nodes"],
         "edges": stats["edges"],
-        "similar_to": stats["edges_by_type"].get("similar_to", 0),
-        "topics_retired": stats["nodes_by_type"].get("topic", 0) == 0 and stats["nodes_by_type"].get("topic_cluster", 0) == 0,
-        "obligation_patterns": stats["nodes_by_type"].get("obligation_pattern", 0),
         "regex_named_references": stats["edge_methods"].get("regex_named_reference", 0),
         "rolled_up_edges": stats["edge_methods"].get("rollup_child_edge", 0),
-        "shares_obligation_pattern": stats["edges_by_type"].get("shares_obligation_pattern", 0),
+        "retired_analysis_edges_stored": sum(stats["edges_by_type"].get(edge_type, 0) for edge_type in retired_types),
         "search_top": search["results"][0]["title"],
         "neighbourhood_nodes": len(hood["nodes"]),
         "neighbourhood_edges": len(hood["edges"]),

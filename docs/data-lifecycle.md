@@ -11,7 +11,7 @@ search, enrichment, and reporting rows to drift apart.
 - `source_document`, `source_span`, and the reporting relational tables are the
   parsed reporting facts where that structure exists.
 - `graph_node` and `graph_edge` are the reporting serving graph. They also hold
-  reviewed semantic nodes that have no relational-table equivalent, so changes
+  reviewed reporting assertions that have no relational-table equivalent, so changes
   to them must go through deterministic loaders or recorded review scripts.
 - `reporting_template_enrichment` is attached to a `Template` in `graph_node`.
   It is not owned by the smaller relational `template` table.
@@ -21,7 +21,7 @@ search, enrichment, and reporting rows to drift apart.
 - `canonical_guidance_*` and `canonical_node` select the preferred rulebook
   representation.
 - `node_fts` is the rulebook full-text search index.
-- `embedding` and similarity edges are optional semantic-search products.
+- Embedding vectors and similarity edges have been retired; schema migration 12 removes any remaining derived artifacts.
 - `provision` nodes are date-free canonical legal identities. Text-bearing
   `rule` nodes are dated provision versions and retain the source `part` page
   through `has_version` and `sourced_from` edges. `document_snapshot` is the
@@ -29,6 +29,11 @@ search, enrichment, and reporting rows to drift apart.
   remains the current logical-page cache.
 - `node_alias` preserves pre-versioning Rule IDs and stable keys so old links
   can be resolved after migration.
+- The serving rulebook ontology contains structure, direct references,
+  definitions, versions, source pages, permissions and amendments. Pairwise
+  shared-term and regex/structured obligation analysis is retired: existing
+  rows remain inspectable in SQLite, while search, graph and analysis routes
+  exclude them and the scraper no longer regenerates them.
 - `ingestion_run`, `ingestion_run_scope`, and `ingestion_output` record the
   latest successful output of each scraper scope. A successful refresh
   reconciles that output and removes stale page/version nodes and
@@ -80,9 +85,36 @@ Use `--all-parts` when the successful Rulebook index should be authoritative
 for the complete Part catalogue. The immutable snapshot history is retained
 even when the live graph removes a stale version.
 
-The integrity gate covers foreign keys, graph endpoints, enrichment ownership,
-canonical-node coverage, and FTS coverage. Audit/LLM workflow tables remain
-script-owned, but their scripts must not bypass the gate above.
+### Cross-reference coverage and repair
+
+Run the occurrence audit after a corpus refresh. It reports detected
+occurrences, edge associations and reader samples; it does not certify recall
+for references that no detector found. The edge repair defaults to a read-only
+preview. With `--apply`, it writes a SQLite-consistent backup, reuses only an
+exact source/target/relationship/wording match, and otherwise creates a
+separate edge for that occurrence so parallel evidence is not conflated.
+Repair also checks the edge type. Recall-ledger `--resume` includes each
+source's current relationship, occurrence, HTML-link and LLM evidence
+fingerprint, so a graph or resolution change triggers a new scan for affected
+sources.
+
+```bash
+.venv/bin/python scripts/audit_cross_reference_integrity.py \
+  --db backend/data/rulebook.sqlite3 \
+  --output-dir outputs/reference-audit
+.venv/bin/python scripts/repair_reference_occurrence_edges.py \
+  --db backend/data/rulebook.sqlite3
+```
+
+For full glossary exports, `--glossary-export-date` and
+`--crr-terms-export-date` control their own source edition dates. Keep both
+explicit when refreshing so one source's date is not assumed to describe the
+other source's edition.
+
+The integrity gate covers foreign keys, graph endpoints, materialized citation
+endpoints and edge associations, enrichment ownership, canonical-node coverage,
+and FTS coverage. Audit/LLM workflow tables remain script-owned, but their
+scripts must not bypass the gate above.
 
 ## Numbered Article references
 

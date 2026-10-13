@@ -8,6 +8,7 @@ from typing import Any
 
 from .db import identity_projection
 from .graph import _fts_safe_query
+from .taxonomy import RETIRED_EDGE_TYPES, RETIRED_NODE_TYPES
 
 BLOCKED_BLOB_TABLES = frozenset({"document_snapshot", "source_snapshot_version", "node_fts"})
 
@@ -115,7 +116,11 @@ def unified_node(conn: sqlite3.Connection, node_id: str, *, source: str | None =
         if row:
             return _reporting_node(row)
     if "rulebook" in wanted:
-        row = conn.execute("SELECT id,node_type,stable_key,title,text,url,metadata_json FROM node WHERE id=?", (node_id,)).fetchone()
+        row = conn.execute(
+            "SELECT id,node_type,stable_key,title,text,url,metadata_json FROM node "
+            "WHERE id=? AND node_type NOT IN (%s)" % ",".join("?" for _ in RETIRED_NODE_TYPES),
+            (node_id, *sorted(RETIRED_NODE_TYPES)),
+        ).fetchone()
         if row:
             return _rulebook_node(row)
     return None
@@ -147,7 +152,7 @@ def unified_edge(conn: sqlite3.Connection, edge_id: str, *, source: str | None =
     wanted = _sources([source] if source else None)
     if "reporting" in wanted:
         row = conn.execute(
-            "SELECT edge_id,source_node_id,target_node_id,edge_type,properties_json,evidence_span_id,confidence,extraction_method,review_status,effective_from,effective_to FROM graph_edge WHERE edge_id=?",
+            "SELECT edge_id,source_node_id,target_node_id,edge_type,properties_json,evidence_span_id,confidence,extraction_method,review_status,effective_from,effective_to FROM graph_edge WHERE edge_id=? AND COALESCE(review_status,'') <> 'rejected_candidate'",
             (edge_id,),
         ).fetchone()
         if row:
@@ -181,6 +186,8 @@ def unified_neighbourhood(
 
 def _search_rulebook(conn: sqlite3.Connection, q: str, *, node_types: list[str] | None, limit: int) -> list[dict[str, Any]]:
     params: list[Any] = []
+    retired_node_clause = " AND n.node_type NOT IN (%s)" % ",".join("?" for _ in RETIRED_NODE_TYPES)
+    retired_node_params = sorted(RETIRED_NODE_TYPES)
     type_clause = ""
     if node_types:
         type_clause = f" AND n.node_type IN ({','.join('?' for _ in node_types)})"
@@ -192,10 +199,10 @@ def _search_rulebook(conn: sqlite3.Connection, q: str, *, node_types: list[str] 
                    CASE WHEN n.title LIKE ? THEN -1000000.0 ELSE bm25(node_fts) END AS score
             FROM node_fts f JOIN node n ON n.id=f.id
             JOIN canonical_node cn ON cn.id=n.id AND cn.is_canonical=1
-            WHERE node_fts MATCH ? {type_clause}
+            WHERE node_fts MATCH ? {retired_node_clause} {type_clause}
             ORDER BY score LIMIT ?
             """,
-            [f"%{q}%", _fts_safe_query(q), *params, limit],
+            [f"%{q}%", _fts_safe_query(q), *retired_node_params, *params, limit],
         ).fetchall()
     except sqlite3.OperationalError:
         rows = conn.execute(
@@ -204,10 +211,10 @@ def _search_rulebook(conn: sqlite3.Connection, q: str, *, node_types: list[str] 
                    CASE WHEN n.title LIKE ? THEN -1000000.0 ELSE 0 END AS score
             FROM node n
             JOIN canonical_node cn ON cn.id=n.id AND cn.is_canonical=1
-            WHERE (n.title LIKE ? OR n.text LIKE ? OR n.stable_key LIKE ?) {type_clause}
+            WHERE (n.title LIKE ? OR n.text LIKE ? OR n.stable_key LIKE ?) {retired_node_clause} {type_clause}
             ORDER BY score, n.title LIMIT ?
             """,
-            [f"%{q}%", f"%{q}%", f"%{q}%", f"%{q}%", *params, limit],
+            [f"%{q}%", f"%{q}%", f"%{q}%", f"%{q}%", *retired_node_params, *params, limit],
         ).fetchall()
     return [_rulebook_node(row) | {"score": row["score"]} for row in rows]
 
@@ -232,8 +239,8 @@ def _search_reporting(conn: sqlite3.Connection, q: str, *, node_types: list[str]
 
 
 def _list_rulebook_nodes(conn: sqlite3.Connection, *, node_types: list[str] | None, q: str | None, limit: int, offset: int) -> list[dict[str, Any]]:
-    where = "WHERE cn.is_canonical=1"
-    params: list[Any] = []
+    where = "WHERE cn.is_canonical=1 AND n.node_type NOT IN (%s)" % ",".join("?" for _ in RETIRED_NODE_TYPES)
+    params: list[Any] = sorted(RETIRED_NODE_TYPES)
     if node_types:
         where += f" AND n.node_type IN ({','.join('?' for _ in node_types)})"
         params.extend(node_types)
@@ -266,8 +273,11 @@ def _list_reporting_nodes(conn: sqlite3.Connection, *, node_types: list[str] | N
 
 
 def _list_rulebook_edges(conn: sqlite3.Connection, *, node_id: str | None, edge_types: list[str] | None, direction: str, limit: int, offset: int) -> list[dict[str, Any]]:
-    where = "WHERE 1=1"
-    params: list[Any] = []
+    where = "WHERE edge_type NOT IN (%s)" % ",".join("?" for _ in RETIRED_EDGE_TYPES)
+    params: list[Any] = sorted(RETIRED_EDGE_TYPES)
+    where += " AND NOT EXISTS(SELECT 1 FROM node n WHERE n.id=edge.from_node_id AND n.node_type IN (%s))" % ",".join("?" for _ in RETIRED_NODE_TYPES)
+    where += " AND NOT EXISTS(SELECT 1 FROM node n WHERE n.id=edge.to_node_id AND n.node_type IN (%s))" % ",".join("?" for _ in RETIRED_NODE_TYPES)
+    params.extend([*sorted(RETIRED_NODE_TYPES), *sorted(RETIRED_NODE_TYPES)])
     if node_id:
         if direction == "out":
             where += " AND from_node_id=?"
@@ -289,7 +299,7 @@ def _list_rulebook_edges(conn: sqlite3.Connection, *, node_id: str | None, edge_
 
 
 def _list_reporting_edges(conn: sqlite3.Connection, *, node_id: str | None, edge_types: list[str] | None, direction: str, limit: int, offset: int) -> list[dict[str, Any]]:
-    where = "WHERE 1=1"
+    where = "WHERE COALESCE(review_status,'') <> 'rejected_candidate'"
     params: list[Any] = []
     if node_id:
         if direction == "out":
@@ -352,7 +362,10 @@ def _reporting_neighbourhood(conn: sqlite3.Connection, node_id: str, *, depth: i
 def _detect_node_source(conn: sqlite3.Connection, node_id: str) -> str | None:
     if conn.execute("SELECT 1 FROM graph_node WHERE node_id=?", (node_id,)).fetchone():
         return "reporting"
-    if conn.execute("SELECT 1 FROM node WHERE id=?", (node_id,)).fetchone():
+    if conn.execute(
+        "SELECT 1 FROM node WHERE id=? AND node_type NOT IN (%s)" % ",".join("?" for _ in RETIRED_NODE_TYPES),
+        (node_id, *sorted(RETIRED_NODE_TYPES)),
+    ).fetchone():
         return "rulebook"
     if not node_id.startswith("data_item:") and conn.execute("SELECT 1 FROM graph_node WHERE node_id=?", (f"data_item:{node_id.upper()}",)).fetchone():
         return "reporting"

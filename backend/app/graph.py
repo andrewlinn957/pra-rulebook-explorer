@@ -7,16 +7,11 @@ from collections import Counter, defaultdict, deque
 from typing import Any
 
 import networkx as nx
-import numpy as np
-from sklearn.cluster import KMeans
 
 from .db import get_node, row_to_edge, row_to_node
+from .taxonomy import RETIRED_EDGE_TYPES, RETIRED_NODE_TYPES
 
 EXPLICIT_METHODS = {"site_structure", "html_link", "html_anchor_resolved", "html_glossary_link", "glossary_source", "crr_terms_source", "legal_instrument_listing", "legal_reference_occurrence_v1", "reference_recall_stage_v1", "regex_reference", "regex_named_reference", "llm_extracted_reference", "resolved_part_reference", "fca_waivers_list"}
-EDGE_LABELS = {"contains":"contains / child", "references":"cross-reference", "uses_defined_term":"uses defined term", "defines":"defines", "has_topic":"topic assignment", "has_topic_cluster":"topic cluster", "has_obligation_pattern":"obligation pattern", "shares_obligation_pattern":"shared obligation pattern", "has_structured_obligation":"structured obligation", "amends":"amends", "has_permission":"firm permission", "has_version":"provision version", "sourced_from":"source page"}
-EDGE_COLOURS = {"contains":"#94a3b8", "references":"#60a5fa", "uses_defined_term":"#f59e0b", "defines":"#fbbf24", "has_topic":"#c084fc", "has_topic_cluster":"#22d3ee", "has_obligation_pattern":"#fb7185", "shares_obligation_pattern":"#f97316", "has_structured_obligation":"#e11d48", "amends":"#ef4444", "has_permission":"#a78bfa", "has_version":"#7c3aed", "sourced_from":"#0f766e"}
-MATERIAL_COLOURS = {"rule":"#4f7cff", "provision":"#2563eb", "supervisory_statement":"#22c55e", "statement_of_policy":"#14b8a6", "definition":"#d28b24", "permission":"#a78bfa", "external_reference":"#7b8190", "legal_instrument":"#cc5c5c", "topic":"#c084fc", "topic_cluster":"#22d3ee", "obligation_pattern":"#fb7185", "obligation_statement":"#e11d48", "analysis":"#d35cff", "rulebook":"#9b6bff"}
-CLUSTER_COLOURS = ["#4f7cff", "#d28b24", "#58a978", "#d35cff", "#cc5c5c", "#35b6b4", "#d7ff64", "#a78bfa", "#fb7185", "#60a5fa", "#f59e0b", "#34d399"]
 
 
 def stats(conn: sqlite3.Connection) -> dict[str, Any]:
@@ -43,6 +38,8 @@ def _fts_safe_query(q: str) -> str:
 
 def search(conn: sqlite3.Connection, q: str, *, node_types: list[str] | None = None, limit: int = 25) -> list[dict[str, Any]]:
     params: list[Any] = []
+    retired_node_clause = " AND n.node_type NOT IN (%s)" % ",".join("?" for _ in RETIRED_NODE_TYPES)
+    retired_node_params = sorted(RETIRED_NODE_TYPES)
     type_clause = ""
     if node_types:
         type_clause = " AND n.node_type IN (%s)" % ",".join("?" for _ in node_types)
@@ -54,10 +51,10 @@ def search(conn: sqlite3.Connection, q: str, *, node_types: list[str] | None = N
                    CASE WHEN n.title LIKE ? THEN -1000000.0 ELSE bm25(node_fts) END AS score
             FROM node_fts f JOIN node n ON n.id=f.id
             JOIN canonical_node cn ON cn.id=n.id AND cn.is_canonical=1
-            WHERE node_fts MATCH ? {type_clause}
+            WHERE node_fts MATCH ? {retired_node_clause} {type_clause}
             ORDER BY score LIMIT ?
             """,
-            [f"%{q}%", _fts_safe_query(q), *params, limit],
+            [f"%{q}%", _fts_safe_query(q), *retired_node_params, *params, limit],
         ).fetchall()
     except sqlite3.OperationalError:
         rows = conn.execute(
@@ -66,11 +63,11 @@ def search(conn: sqlite3.Connection, q: str, *, node_types: list[str] | None = N
                    CASE WHEN n.title LIKE ? THEN -1000000.0 ELSE 0 END AS score
             FROM node n
             JOIN canonical_node cn ON cn.id=n.id AND cn.is_canonical=1
-            WHERE (n.title LIKE ? OR n.text LIKE ?) {type_clause}
+            WHERE (n.title LIKE ? OR n.text LIKE ?) {retired_node_clause} {type_clause}
             ORDER BY score, n.title
             LIMIT ?
             """,
-            [f"%{q}%", f"%{q}%", f"%{q}%", *params, limit],
+            [f"%{q}%", f"%{q}%", f"%{q}%", *retired_node_params, *params, limit],
         ).fetchall()
     out = []
     for row in rows:
@@ -84,6 +81,13 @@ def search(conn: sqlite3.Connection, q: str, *, node_types: list[str] | None = N
 def neighbourhood(conn: sqlite3.Connection, node_id: str, *, depth: int = 1, limit: int = 250, edge_types: list[str] | None = None, explicit_only: bool = False) -> dict[str, Any]:
     method_clause = " AND source_method IN (%s)" % ",".join("?" for _ in EXPLICIT_METHODS) if explicit_only else ""
     method_params = list(EXPLICIT_METHODS) if explicit_only else []
+    retired_clause = " AND edge_type NOT IN (%s)" % ",".join("?" for _ in RETIRED_EDGE_TYPES)
+    retired_params = sorted(RETIRED_EDGE_TYPES)
+    retired_node_clause = (
+        " AND NOT EXISTS(SELECT 1 FROM node n WHERE n.id=edge.from_node_id AND n.node_type IN (%s))"
+        " AND NOT EXISTS(SELECT 1 FROM node n WHERE n.id=edge.to_node_id AND n.node_type IN (%s))"
+    ) % (",".join("?" for _ in RETIRED_NODE_TYPES), ",".join("?" for _ in RETIRED_NODE_TYPES))
+    retired_node_params = sorted(RETIRED_NODE_TYPES)
     edge_type_clause = ""
     params_extra: list[Any] = []
     if edge_types:
@@ -93,10 +97,11 @@ def neighbourhood(conn: sqlite3.Connection, node_id: str, *, depth: int = 1, lim
     available = dict(conn.execute(
         f"""
         SELECT edge_type, COUNT(*) FROM edge
-        WHERE (from_node_id=? OR to_node_id=?) {method_clause}
+        WHERE (from_node_id=? OR to_node_id=?) {retired_clause} {method_clause} {retired_node_clause}
         GROUP BY edge_type ORDER BY edge_type
         """,
-        [node_id, node_id, *method_params],
+        [node_id, node_id, *retired_params, *method_params,
+         *retired_node_params, *retired_node_params],
     ).fetchall())
 
     seen_nodes = {node_id}
@@ -110,11 +115,12 @@ def neighbourhood(conn: sqlite3.Connection, node_id: str, *, depth: int = 1, lim
             f"""
             SELECT id,from_node_id,to_node_id,edge_type,source_method,confidence,evidence_text,source_url,metadata_json
             FROM edge
-            WHERE (from_node_id=? OR to_node_id=?) {edge_type_clause} {method_clause}
+            WHERE (from_node_id=? OR to_node_id=?) {edge_type_clause} {retired_clause} {method_clause} {retired_node_clause}
             ORDER BY confidence DESC
             LIMIT ?
             """,
-            [current, current, *params_extra, *method_params, limit],
+            [current, current, *params_extra, *retired_params, *method_params,
+             *retired_node_params, *retired_node_params, limit],
         ).fetchall()
         for row in rows:
             edge = row_to_edge(row)
@@ -153,18 +159,35 @@ def _attach_reference_occurrences(
     occurrences_by_edge: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in conn.execute(
         f"""
-        SELECT occurrence_id,group_id,source_node_id,target_node_id,edge_id,
-               relationship_type,citation_kind,citation_text,group_text,
-               instrument_id,provision_path,qualifier,span_start,span_end,
-               status,source_method,confidence,context_text,metadata_json
-        FROM reference_occurrence
-        WHERE edge_id IN ({placeholders}) AND status='materialized'
-        ORDER BY source_node_id,span_start,span_end,occurrence_id
+        SELECT o.occurrence_id,o.group_id,o.source_node_id,o.target_node_id,o.edge_id,
+               o.relationship_type,o.citation_kind,o.citation_text,o.group_text,
+               o.instrument_id,o.provision_path,o.qualifier,o.span_start,o.span_end,
+               o.status,o.source_method,o.confidence,o.context_text,o.metadata_json,
+               n.text AS source_text,n.title AS source_title
+        FROM reference_occurrence o JOIN edge e ON e.id=o.edge_id
+        LEFT JOIN node n ON n.id=o.source_node_id
+        WHERE o.edge_id IN ({placeholders}) AND o.status='materialized'
+          AND e.from_node_id=o.source_node_id AND e.to_node_id=o.target_node_id
+          AND e.edge_type=CASE UPPER(o.relationship_type)
+            WHEN 'REF' THEN 'references'
+            WHEN 'DEF' THEN 'uses_defined_term'
+            WHEN 'AMEND' THEN 'amends'
+            WHEN 'AMENDS' THEN 'amends'
+            ELSE '' END
+        ORDER BY o.source_node_id,o.span_start,o.span_end,o.occurrence_id
         """,
         edge_ids,
     ):
         occurrence = dict(row)
         occurrence["metadata"] = _json(occurrence.pop("metadata_json", "{}"))
+        source = occurrence.pop(
+            "source_title" if occurrence["metadata"].get("span_basis") == "title" else "source_text",
+        ) or ""
+        start, end = occurrence.get("span_start"), occurrence.get("span_end")
+        if isinstance(start, int) and isinstance(end, int) and 0 <= start < end <= len(source):
+            occurrence["span_text"] = source[start:end]
+        occurrence.pop("source_text", None)
+        occurrence.pop("source_title", None)
         occurrence["source_span"] = {
             "start": occurrence["span_start"],
             "end": occurrence["span_end"],
@@ -174,6 +197,157 @@ def _attach_reference_occurrences(
         occurrences = occurrences_by_edge.get(str(edge.get("id") or ""), [])
         if occurrences:
             edge.setdefault("metadata", {})["reference_occurrences"] = occurrences
+
+
+def _attach_unresolved_reader_occurrences(
+    conn: sqlite3.Connection,
+    source_ids: list[str],
+    nodes_by_id: dict[str, dict[str, Any]],
+    edges: list[dict[str, Any]],
+) -> None:
+    if not source_ids:
+        return
+    for start in range(0, len(source_ids), 750):
+        batch = source_ids[start:start + 750]
+        placeholders = ",".join("?" for _ in batch)
+        for row in conn.execute(
+            f"""
+            SELECT occurrence_id,group_id,source_node_id,target_node_id,edge_id,
+                   relationship_type,citation_kind,citation_text,group_text,
+                   instrument_id,provision_path,qualifier,span_start,span_end,
+                   status,source_method,confidence,context_text,metadata_json
+            FROM reference_occurrence
+            WHERE source_node_id IN ({placeholders})
+              AND status IN ('unresolved','ambiguous')
+            ORDER BY source_node_id,span_start,occurrence_id
+            """,
+            batch,
+        ):
+            occurrence = dict(row)
+            occurrence["metadata"] = _json(occurrence.pop("metadata_json", "{}"))
+            occurrence["source_span"] = {"start": occurrence["span_start"], "end": occurrence["span_end"]}
+            target_id = str(occurrence.get("target_node_id") or f"unresolved:{occurrence['occurrence_id']}")
+            occurrence["target_node_id"] = target_id
+            if target_id not in nodes_by_id and target_id != f"unresolved:{occurrence['occurrence_id']}":
+                target_row = conn.execute(
+                    "SELECT id,node_type,stable_key,title,text,url,metadata_json FROM node WHERE id=?",
+                    (target_id,),
+                ).fetchone()
+                if target_row:
+                    nodes_by_id[target_id] = row_to_node(target_row)
+            nodes_by_id.setdefault(target_id, {
+                "id": target_id,
+                "node_type": "external_reference" if row["status"] == "unresolved" else "rule_reference",
+                "title": occurrence.get("citation_text") or "Unresolved citation",
+                "text": "",
+                "url": "",
+                "metadata": {"resolution_status": row["status"], "citation_kind": row["citation_kind"]},
+            })
+            edges.append({
+                "id": f"reader-occurrence:{occurrence['occurrence_id']}",
+                "from_node_id": occurrence["source_node_id"],
+                "to_node_id": target_id,
+                "edge_type": {
+                    "REF": "references", "DEF": "uses_defined_term",
+                    "AMEND": "amends", "AMENDS": "amends",
+                }.get(str(occurrence.get("relationship_type") or "").upper(), "references"),
+                "source_method": occurrence["source_method"],
+                "confidence": occurrence["confidence"],
+                "evidence_text": occurrence["citation_text"],
+                "source_url": "",
+                "metadata": {"reference_occurrences": [occurrence], "resolution_status": row["status"]},
+            })
+
+
+def _attach_detached_materialized_reader_occurrences(
+    conn: sqlite3.Connection,
+    source_ids: list[str],
+    nodes_by_id: dict[str, dict[str, Any]],
+    edges: list[dict[str, Any]],
+) -> None:
+    """Keep citations readable when their stored edge association has drifted.
+
+    Occurrence-specific edges exist only in this reader response. They preserve
+    the recorded source, target and wording without guessing which of several
+    graph assertions should own the occurrence.
+    """
+    if not source_ids or not conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='reference_occurrence'"
+    ).fetchone():
+        return
+    attached = {
+        occurrence.get("occurrence_id")
+        for edge in edges
+        for occurrence in (edge.get("metadata") or {}).get("reference_occurrences", [])
+    }
+    for start in range(0, len(source_ids), 750):
+        batch = source_ids[start:start + 750]
+        placeholders = ",".join("?" for _ in batch)
+        rows = conn.execute(
+            f"""
+            SELECT o.occurrence_id,o.group_id,o.source_node_id,o.target_node_id,o.edge_id,
+                   o.relationship_type,o.citation_kind,o.citation_text,o.group_text,
+                   o.instrument_id,o.provision_path,o.qualifier,o.span_start,o.span_end,
+                   o.status,o.source_method,o.confidence,o.context_text,o.metadata_json
+            FROM reference_occurrence o
+            LEFT JOIN edge e ON e.id=o.edge_id
+            WHERE o.source_node_id IN ({placeholders})
+              AND o.status='materialized'
+              AND (e.id IS NULL OR e.from_node_id<>o.source_node_id
+                   OR e.to_node_id<>o.target_node_id
+                   OR e.edge_type<>CASE UPPER(o.relationship_type)
+                     WHEN 'REF' THEN 'references'
+                     WHEN 'DEF' THEN 'uses_defined_term'
+                     WHEN 'AMEND' THEN 'amends'
+                     WHEN 'AMENDS' THEN 'amends'
+                     ELSE '' END)
+              AND o.relationship_type IN ('REF','DEF','AMEND','AMENDS')
+            ORDER BY o.source_node_id,o.span_start,o.occurrence_id
+            """,
+            batch,
+        )
+        for row in rows:
+            occurrence_id = str(row["occurrence_id"])
+            if occurrence_id in attached:
+                continue
+            occurrence = dict(row)
+            occurrence["metadata"] = _json(occurrence.pop("metadata_json", "{}"))
+            occurrence["source_span"] = {"start": occurrence["span_start"], "end": occurrence["span_end"]}
+            target_id = str(occurrence.get("target_node_id") or f"unresolved:{occurrence_id}")
+            occurrence["target_node_id"] = target_id
+            if target_id not in nodes_by_id:
+                target_row = conn.execute(
+                    "SELECT id,node_type,stable_key,title,text,url,metadata_json FROM node WHERE id=?",
+                    (target_id,),
+                ).fetchone()
+                if target_row:
+                    nodes_by_id[target_id] = row_to_node(target_row)
+            nodes_by_id.setdefault(target_id, {
+                "id": target_id,
+                "node_type": "external_reference",
+                "title": occurrence.get("citation_text") or "Referenced material",
+                "text": "",
+                "url": "",
+                "metadata": {"resolution_status": "target_unavailable", "citation_kind": row["citation_kind"]},
+            })
+            edges.append({
+                "id": f"reader-occurrence:{occurrence_id}",
+                "from_node_id": occurrence["source_node_id"],
+                "to_node_id": target_id,
+                "edge_type": {
+                    "REF": "references", "DEF": "uses_defined_term",
+                    "AMEND": "amends", "AMENDS": "amends",
+                }.get(str(occurrence.get("relationship_type") or "").upper(), "references"),
+                "source_method": occurrence["source_method"],
+                "confidence": occurrence["confidence"],
+                "evidence_text": occurrence["citation_text"],
+                "source_url": "",
+                "metadata": {
+                    "reference_occurrences": [occurrence],
+                    "association_status": "detached_occurrence",
+                },
+            })
+            attached.add(occurrence_id)
 
 
 def _attach_html_link_occurrences(
@@ -470,13 +644,15 @@ def shortest_path(conn: sqlite3.Connection, source: str, target: str, *, max_edg
     """
     if source == target:
         node = get_node(conn, source)
-        if not node:
+        if not node or node.get("node_type") in RETIRED_NODE_TYPES:
             raise ValueError(f"node {source!r} not found")
         return {"node_ids": [source], "nodes": [node], "edges": [], "length": 0}
 
-    if not conn.execute("SELECT 1 FROM node WHERE id=?", (source,)).fetchone():
+    source_row = conn.execute("SELECT node_type FROM node WHERE id=?", (source,)).fetchone()
+    if not source_row or source_row["node_type"] in RETIRED_NODE_TYPES:
         raise ValueError(f"source node {source!r} not found")
-    if not conn.execute("SELECT 1 FROM node WHERE id=?", (target,)).fetchone():
+    target_row = conn.execute("SELECT node_type FROM node WHERE id=?", (target,)).fetchone()
+    if not target_row or target_row["node_type"] in RETIRED_NODE_TYPES:
         raise ValueError(f"target node {target!r} not found")
 
     visited_fwd: dict[str, int] = {source: 0}
@@ -494,8 +670,12 @@ def shortest_path(conn: sqlite3.Connection, source: str, target: str, *, max_edg
         nxt: list[str] = []
         for nid in current:
             rows = conn.execute(
-                "SELECT from_node_id, to_node_id FROM edge WHERE from_node_id=? OR to_node_id=? LIMIT 500",
-                (nid, nid),
+                "SELECT edge.from_node_id,edge.to_node_id FROM edge "
+                "WHERE (edge.from_node_id=? OR edge.to_node_id=?) "
+                "AND edge.edge_type NOT IN (%s) " % ",".join("?" for _ in RETIRED_EDGE_TYPES)
+                + "AND NOT EXISTS(SELECT 1 FROM node n WHERE n.id=edge.from_node_id AND n.node_type IN (%s)) " % ",".join("?" for _ in RETIRED_NODE_TYPES)
+                + "AND NOT EXISTS(SELECT 1 FROM node n WHERE n.id=edge.to_node_id AND n.node_type IN (%s)) LIMIT 500" % ",".join("?" for _ in RETIRED_NODE_TYPES),
+                (nid, nid, *sorted(RETIRED_EDGE_TYPES), *sorted(RETIRED_NODE_TYPES), *sorted(RETIRED_NODE_TYPES)),
             ).fetchall()
             edges_scanned += len(rows)
             if edges_scanned > max_edges:
@@ -542,8 +722,10 @@ def shortest_path(conn: sqlite3.Connection, source: str, target: str, *, max_edg
     edges = []
     for a, b in zip(node_ids, node_ids[1:]):
         row = conn.execute(
-            "SELECT id,edge_type,source_method,confidence FROM edge WHERE (from_node_id=? AND to_node_id=?) OR (from_node_id=? AND to_node_id=?) LIMIT 1",
-            (a, b, b, a),
+            "SELECT id,edge_type,source_method,confidence FROM edge "
+            "WHERE ((from_node_id=? AND to_node_id=?) OR (from_node_id=? AND to_node_id=?)) "
+            "AND edge_type NOT IN (%s)" % ",".join("?" for _ in RETIRED_EDGE_TYPES),
+            (a, b, b, a, *sorted(RETIRED_EDGE_TYPES)),
         ).fetchone()
         if row:
             edges.append({"id": row["id"], "edge_type": row["edge_type"], "source_method": row["source_method"], "confidence": row["confidence"]})
@@ -567,37 +749,6 @@ def centrality(conn: sqlite3.Connection, *, limit: int = 25) -> dict[str, Any]:
         )
     } if top else {}
     return {"degree": [{"node": nodes_by_id.get(nid), "degree": deg} for nid, deg in top]}
-
-
-def interesting(conn: sqlite3.Connection, *, limit: int = 50) -> list[dict[str, Any]]:
-    rows = conn.execute(
-        """
-        SELECT e.id,e.from_node_id,e.to_node_id,e.edge_type,e.source_method,e.confidence,e.evidence_text,e.source_url,e.metadata_json,
-               a.title AS from_title, a.node_type AS from_type, a.metadata_json AS from_meta,
-               b.title AS to_title, b.node_type AS to_type, b.metadata_json AS to_meta
-        FROM edge e
-        JOIN node a ON a.id=e.from_node_id
-        JOIN node b ON b.id=e.to_node_id
-        WHERE e.edge_type IN ('shares_defined_term','shares_defined_term_with_guidance')
-        ORDER BY
-          CASE e.edge_type WHEN 'shares_defined_term_with_guidance' THEN 1 ELSE 2 END,
-          e.confidence DESC
-        LIMIT ?
-        """,
-        (limit,),
-    ).fetchall()
-    out = []
-    for r in rows:
-        edge = row_to_edge(r)
-        from_meta = _json(r["from_meta"])
-        to_meta = _json(r["to_meta"])
-        edge["from_title"] = r["from_title"]
-        edge["to_title"] = r["to_title"]
-        edge["from_type"] = r["from_type"]
-        edge["to_type"] = r["to_type"]
-        edge["why"] = _why(edge, from_meta, to_meta)
-        out.append(edge)
-    return out
 
 
 def contents_tree(conn: sqlite3.Connection, node_id: str, *, max_depth: int = 4, max_children: int = 1000) -> dict[str, Any]:
@@ -691,8 +842,14 @@ def reader_bundle(
 
     # Expand only outgoing links at each requested level. This keeps reference
     # depth independent from the hierarchy depth of the fixed reading spine.
-    frontier = set(source_ids)
+    preferred_date = _reader_preferred_version_date(contents["root"], reading_source_nodes)
+    # Structural headings can carry references even when they have no body
+    # text. Include the whole spine in the query; paragraph placement remains
+    # limited to text-bearing provisions in the frontend.
+    frontier = set(seen_spine_ids)
     expanded_sources: set[str] = set()
+    reader_source_ids = set(seen_spine_ids)
+    version_nodes_by_id: dict[str, dict[str, Any]] = {}
     for _level in range(reference_depth):
         frontier -= expanded_sources
         if not frontier:
@@ -700,9 +857,21 @@ def reader_bundle(
         next_frontier: set[str] = set()
         ordered_frontier = sorted(frontier)
         # Stay below conservative SQLite variable limits for very large Parts.
-        for start in range(0, len(ordered_frontier), 750):
-            batch = ordered_frontier[start:start + 750]
-            placeholders = ",".join("?" for _ in batch)
+        version_aliases: dict[str, list[str]] = {}
+        version_rows: dict[str, dict[str, Any]] = {}
+        canonical_by_version_id: dict[str, str] = {}
+        for start in range(0, len(ordered_frontier), 400):
+            batch = ordered_frontier[start:start + 400]
+            aliases = _reader_version_aliases(conn, batch, preferred_date)
+            batch_version_ids = []
+            for canonical_id, version in aliases.items():
+                version_aliases.setdefault(canonical_id, []).append(version["id"])
+                canonical_by_version_id[version["id"]] = canonical_id
+                version_rows[version["id"]] = version
+                batch_version_ids.append(version["id"])
+            query_sources = [*batch, *batch_version_ids]
+            reader_source_ids.update(query_sources)
+            placeholders = ",".join("?" for _ in query_sources)
             rows = conn.execute(
                 f"""
                 SELECT id,from_node_id,to_node_id,edge_type,source_method,confidence,
@@ -712,21 +881,26 @@ def reader_bundle(
                   AND edge_type IN (?,?,?)
                 ORDER BY from_node_id,edge_type,confidence DESC,id
                 """,
-                [*batch, *edge_types],
+                [*query_sources, *edge_types],
             ).fetchall()
             for row in rows:
                 edge = row_to_edge(row)
+                canonical_source = canonical_by_version_id.get(edge["from_node_id"])
+                if canonical_source:
+                    edge.setdefault("metadata", {})["rolled_up_from_from_node_ids"] = [
+                        canonical_source, edge["from_node_id"]
+                    ]
                 if edge["id"] not in edges_by_id:
                     edges_by_id[edge["id"]] = edge
                     available[edge["edge_type"]] += 1
                 if edge.get("to_node_id"):
                     next_frontier.add(edge["to_node_id"])
+        version_nodes_by_id.update(version_rows)
         expanded_sources.update(frontier)
         frontier = next_frontier
 
     edges = list(edges_by_id.values())
     _attach_reference_occurrences(conn, edges)
-    _attach_html_link_occurrences(conn, edges, reading_source_nodes)
     endpoint_ids = set(source_ids)
     endpoint_ids.update(
         endpoint
@@ -735,6 +909,7 @@ def reader_bundle(
         if endpoint
     )
     nodes_by_id = {node["id"]: node for node in spine_nodes}
+    nodes_by_id.update(version_nodes_by_id)
     missing_ids = sorted(endpoint_ids - set(nodes_by_id))
     for start in range(0, len(missing_ids), 750):
         batch = missing_ids[start:start + 750]
@@ -749,11 +924,15 @@ def reader_bundle(
             node = row_to_node(row)
             nodes_by_id[node["id"]] = node
 
+    reader_source_nodes = [nodes_by_id[source_id] for source_id in sorted(reader_source_ids) if source_id in nodes_by_id]
+    _attach_html_link_occurrences(conn, edges, reader_source_nodes)
+    _attach_detached_materialized_reader_occurrences(conn, sorted(reader_source_ids), nodes_by_id, edges)
+    _attach_unresolved_reader_occurrences(conn, sorted(reader_source_ids), nodes_by_id, edges)
     _resolve_reader_provision_versions(
         conn,
         nodes_by_id,
         spine_node_ids=set(seen_spine_ids),
-        preferred_date=_reader_preferred_version_date(contents["root"], reading_source_nodes),
+        preferred_date=preferred_date,
     )
     nodes, edges = _roll_up_guidance_reference_nodes(
         conn,
@@ -807,23 +986,9 @@ def _resolve_reader_provision_versions(
             continue
         if str(node.get("text") or "").strip():
             continue
-        rows = conn.execute(
-            """
-            SELECT id,node_type,stable_key,title,text,url,metadata_json
-            FROM node
-            WHERE node_type='rule'
-              AND json_extract(metadata_json,'$.canonical_provision_id')=?
-            ORDER BY
-              CASE WHEN json_extract(metadata_json,'$.rulebook_date')=? THEN 0 ELSE 1 END,
-              json_extract(metadata_json,'$.rulebook_date') DESC,
-              id DESC
-            LIMIT 1
-            """,
-            (node["id"], preferred_date or ""),
-        ).fetchall()
-        if not rows:
+        version = _reader_version_aliases(conn, [node["id"]], preferred_date).get(node["id"])
+        if not version:
             continue
-        version = row_to_node(rows[0])
         version_meta = version.get("metadata") or {}
         node["text"] = version.get("text") or ""
         node["url"] = version.get("url") or node.get("url") or ""
@@ -840,6 +1005,44 @@ def _resolve_reader_provision_versions(
             "resolved_version_date": version_meta.get("rulebook_date"),
             "resolved_snapshot_id": version_meta.get("snapshot_id"),
         }
+
+
+def _reader_version_aliases(
+    conn: sqlite3.Connection,
+    provision_ids: list[str],
+    preferred_date: str | None,
+) -> dict[str, dict[str, Any]]:
+    """Choose exact or most recent non-future text for each canonical provision."""
+    result: dict[str, dict[str, Any]] = {}
+    if not provision_ids:
+        return result
+    for start in range(0, len(provision_ids), 750):
+        batch = provision_ids[start:start + 750]
+        placeholders = ",".join("?" for _ in batch)
+        rows = conn.execute(
+            f"""
+            SELECT id,node_type,stable_key,title,text,url,metadata_json,
+                   json_extract(metadata_json,'$.canonical_provision_id') AS canonical_id,
+                   json_extract(metadata_json,'$.rulebook_date') AS rulebook_date
+            FROM node
+            WHERE node_type='rule' AND json_extract(metadata_json,'$.canonical_provision_id') IN ({placeholders})
+            ORDER BY canonical_id,rulebook_date,id
+            """,
+            batch,
+        ).fetchall()
+        grouped: defaultdict[str, list[sqlite3.Row]] = defaultdict(list)
+        for row in rows:
+            grouped[str(row["canonical_id"])].append(row)
+        for canonical_id, versions in grouped.items():
+            if preferred_date:
+                eligible = [row for row in versions if str(row["rulebook_date"] or "") <= preferred_date]
+                exact = [row for row in eligible if str(row["rulebook_date"] or "") == preferred_date]
+                choices = exact or eligible
+            else:
+                choices = versions
+            if choices:
+                result[canonical_id] = row_to_node(choices[-1])
+    return result
 
 
 def _natural_sort_content(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -897,12 +1100,6 @@ def _json(value: str) -> dict[str, Any]:
         return {}
 
 
-def _why(edge: dict[str, Any], from_meta: dict[str, Any], to_meta: dict[str, Any]) -> str:
-    if edge["edge_type"].startswith("shares_defined_term"):
-        return f"Both nodes use defined term: {edge.get('evidence_text')}."
-    return edge.get("source_method", "")
-
-
 def components(conn: sqlite3.Connection, *, limit: int = 20, max_edges: int = 250000) -> dict[str, Any]:
     graph = _load_nx_graph(conn, max_edges=max_edges, analysis=True)
     comps = sorted(nx.connected_components(graph), key=len, reverse=True)
@@ -946,293 +1143,30 @@ def common_neighbours(conn: sqlite3.Connection, source: str, target: str, *, lim
     return {"source": source, "target": target, "count": len(common), "nodes": _nodes_for_ids(conn, common)}
 
 
-def semantic_map(conn: sqlite3.Connection, *, level: str = "part", clusters: int = 12, edge_limit: int = 700) -> dict[str, Any]:
-    """Whole-Rulebook semantic map.
-
-    Part level maps each Part using the average embedding of its rule
-    provisions. Article level maps Article/chapter containers using the average
-    embedding of their child provisions. Edges aggregate lower-level semantic,
-    reference, term and obligation links between the chosen containers.
-    """
-    if level == "article":
-        return _article_semantic_map(conn, clusters=clusters, edge_limit=edge_limit)
-    if level != "part":
-        raise ValueError("Supported levels: part, article")
-
-    part_rows = conn.execute(
-        "SELECT id,node_type,stable_key,title,text,url,metadata_json FROM node WHERE node_type='part' ORDER BY title"
-    ).fetchall()
-    parts_by_key: dict[str, dict[str, Any]] = {}
-    for row in part_rows:
-        part = row_to_node(row)
-        key = (part.get("metadata") or {}).get("canonical_part_key") or part["stable_key"]
-        previous = parts_by_key.get(key)
-        if previous is None or str(part.get("url") or "") > str(previous.get("url") or ""):
-            parts_by_key[key] = part
-    part_ids_by_key = {key: part["id"] for key, part in parts_by_key.items()}
-    node_to_part: dict[str, str] = {}
-    vectors_by_part: dict[str, list[np.ndarray]] = {p["id"]: [] for p in parts_by_key.values()}
-
-    for row in conn.execute(
-        """
-        SELECT n.id,n.stable_key,n.metadata_json,emb.vector_json
-        FROM node n JOIN embedding emb ON emb.node_id=n.id
-        WHERE n.node_type='rule'
-        """
-    ):
-        metadata = _json(row["metadata_json"])
-        part_key = metadata.get("canonical_part_key") or _part_key_from_stable(row["stable_key"])
-        part_id = part_ids_by_key.get(part_key or "")
-        if not part_id:
-            continue
-        node_to_part[row["id"]] = part_id
-        vectors_by_part[part_id].append(np.array(json.loads(row["vector_json"]), dtype="float32"))
-
-    for row in conn.execute("SELECT id,node_type,stable_key,metadata_json FROM node WHERE node_type IN ('rule','provision')"):
-        metadata = _json(row["metadata_json"])
-        part_key = metadata.get("canonical_part_key") or _part_key_from_stable(row["stable_key"])
-        part_id = part_ids_by_key.get(part_key or "")
-        if part_id:
-            node_to_part[row["id"]] = part_id
-
-    embedding_dim = next((len(vs[0]) for vs in vectors_by_part.values() if vs), 2)
-    nodes: list[dict[str, Any]] = []
-    part_vectors: list[np.ndarray] = []
-    for part in parts_by_key.values():
-        vectors = vectors_by_part.get(part["id"]) or []
-        vector = np.mean(np.vstack(vectors), axis=0) if vectors else np.zeros(embedding_dim, dtype="float32")
-        part_vectors.append(vector)
-        part["metadata"] = {**(part.get("metadata") or {}), "provision_count": len(vectors)}
-        nodes.append(part)
-
-    matrix = np.vstack(part_vectors) if part_vectors else np.zeros((0, 2), dtype="float32")
-    coords = _project_2d(matrix)
-    labels = _cluster_labels(matrix, min(clusters, max(2, len(nodes) // 4))) if len(nodes) >= 3 else [0] * len(nodes)
-
-    pair_weights: Counter[tuple[str, str]] = Counter()
-    pair_methods: dict[tuple[str, str], Counter[str]] = {}
-    for row in conn.execute(
-        """
-        SELECT from_node_id,to_node_id,edge_type,source_method,confidence
-        FROM edge
-        WHERE edge_type IN ('references','uses_defined_term','has_topic','has_topic_cluster','has_obligation_pattern','shares_obligation_pattern')
-          AND source_method <> 'site_structure'
-        """
-    ):
-        a = node_to_part.get(row["from_node_id"])
-        b = node_to_part.get(row["to_node_id"])
-        if not a or not b or a == b:
-            continue
-        key = tuple(sorted((a, b)))
-        kind_weight = {"references": 1.2, "uses_defined_term": 0.45, "has_topic": 0.25, "has_topic_cluster": 0.35, "has_obligation_pattern": 0.35, "shares_obligation_pattern": 0.8}.get(row["edge_type"], 0.4)
-        pair_weights[key] += float(row["confidence"] or 0.5) * kind_weight
-        pair_methods.setdefault(key, Counter())[row["edge_type"]] += 1
-
-    weighted_degree: Counter[str] = Counter()
-    edges: list[dict[str, Any]] = []
-    for i, ((a, b), weight) in enumerate(pair_weights.most_common(edge_limit)):
-        weighted_degree[a] += weight
-        weighted_degree[b] += weight
-        methods = pair_methods.get((a, b), Counter())
-        dominant = methods.most_common(1)[0][0] if methods else "references"
-        edges.append({
-            "id": f"semantic-map:{i}:{a}:{b}",
-            "from_node_id": a,
-            "to_node_id": b,
-            "edge_type": dominant,
-            "source_method": "part_level_aggregate",
-            "confidence": min(1.0, weight / 12),
-            "evidence_text": ", ".join(f"{k}: {v}" for k, v in methods.most_common(4)),
-            "source_url": "",
-            "metadata": {"weight": weight, "counts": dict(methods)},
-        })
-
-    for i, node in enumerate(nodes):
-        node["x"] = float(coords[i, 0])
-        node["y"] = float(coords[i, 1])
-        node["degree"] = float(weighted_degree[node["id"]])
-        node["metadata"] = {**(node.get("metadata") or {}), "semantic_cluster": int(labels[i]), "weighted_degree": float(weighted_degree[node["id"]])}
-    return _decorate_graph_view({"level": level, "nodes": nodes, "edges": edges, "clusters": len(set(labels)), "available_edge_types": dict(Counter(e["edge_type"] for e in edges))})
-
-
-def _article_semantic_map(conn: sqlite3.Connection, *, clusters: int = 18, edge_limit: int = 1800) -> dict[str, Any]:
-    containers: dict[str, dict[str, Any]] = {}
-    node_to_container: dict[str, str] = {}
-    vectors_by_container: dict[str, list[np.ndarray]] = defaultdict(list)
-
-    rows = conn.execute(
-        """
-        SELECT parent.id AS id,parent.node_type,parent.stable_key,parent.title,parent.text,parent.url,parent.metadata_json,
-               child.id AS child_id,emb.vector_json
-        FROM edge e
-        JOIN node parent ON parent.id=e.from_node_id
-        JOIN node child ON child.id=e.to_node_id
-        JOIN embedding emb ON emb.node_id=child.id
-        WHERE e.edge_type='contains'
-          AND parent.node_type IN ('chapter','guidance_section')
-          AND child.node_type IN ('rule','guidance_paragraph')
-        """
-    ).fetchall()
-    for row in rows:
-        if row["id"] not in containers:
-            node = row_to_node(row)
-            node.pop("child_id", None); node.pop("vector_json", None)
-            containers[row["id"]] = node
-        node_to_container[row["child_id"]] = row["id"]
-        vectors_by_container[row["id"]].append(np.array(json.loads(row["vector_json"]), dtype="float32"))
-
-    nodes: list[dict[str, Any]] = []
-    vectors: list[np.ndarray] = []
-    for node in containers.values():
-        child_vectors = vectors_by_container[node["id"]]
-        vector = np.mean(np.vstack(child_vectors), axis=0)
-        vectors.append(vector)
-        node["metadata"] = {**(node.get("metadata") or {}), "provision_count": len(child_vectors)}
-        nodes.append(node)
-
-    matrix = np.vstack(vectors) if vectors else np.zeros((0, 2), dtype="float32")
-    coords = _project_2d(matrix)
-    labels = _cluster_labels(matrix, min(clusters, max(2, len(nodes) // 12))) if len(nodes) >= 3 else [0] * len(nodes)
-    edges, weighted_degree = _aggregate_container_edges(conn, node_to_container, edge_limit=edge_limit)
-    for i, node in enumerate(nodes):
-        node["x"] = float(coords[i, 0])
-        node["y"] = float(coords[i, 1])
-        node["degree"] = float(weighted_degree[node["id"]])
-        node["metadata"] = {**(node.get("metadata") or {}), "semantic_cluster": int(labels[i]), "weighted_degree": float(weighted_degree[node["id"]])}
-    return _decorate_graph_view({"level": "article", "nodes": nodes, "edges": edges, "clusters": len(set(labels)), "available_edge_types": dict(Counter(e["edge_type"] for e in edges))})
-
-
-def _aggregate_container_edges(conn: sqlite3.Connection, node_to_container: dict[str, str], *, edge_limit: int) -> tuple[list[dict[str, Any]], Counter[str]]:
-    pair_weights: Counter[tuple[str, str]] = Counter()
-    pair_methods: dict[tuple[str, str], Counter[str]] = {}
-    for row in conn.execute(
-        """
-        SELECT from_node_id,to_node_id,edge_type,source_method,confidence
-        FROM edge
-        WHERE edge_type IN ('references','uses_defined_term','has_topic','has_topic_cluster','has_obligation_pattern','shares_obligation_pattern')
-          AND source_method <> 'site_structure'
-        """
-    ):
-        a = node_to_container.get(row["from_node_id"])
-        b = node_to_container.get(row["to_node_id"])
-        if not a or not b or a == b:
-            continue
-        key = tuple(sorted((a, b)))
-        kind_weight = {"references": 1.2, "uses_defined_term": 0.45, "has_topic": 0.25, "has_topic_cluster": 0.35, "has_obligation_pattern": 0.35, "shares_obligation_pattern": 0.8}.get(row["edge_type"], 0.4)
-        pair_weights[key] += float(row["confidence"] or 0.5) * kind_weight
-        pair_methods.setdefault(key, Counter())[row["edge_type"]] += 1
-    weighted_degree: Counter[str] = Counter()
-    edges: list[dict[str, Any]] = []
-    for i, ((a, b), weight) in enumerate(pair_weights.most_common(edge_limit)):
-        weighted_degree[a] += weight
-        weighted_degree[b] += weight
-        methods = pair_methods.get((a, b), Counter())
-        dominant = methods.most_common(1)[0][0] if methods else "references"
-        edges.append({
-            "id": f"semantic-map:{i}:{a}:{b}", "from_node_id": a, "to_node_id": b,
-            "edge_type": dominant, "source_method": "container_level_aggregate",
-            "confidence": min(1.0, weight / 12),
-            "evidence_text": ", ".join(f"{k}: {v}" for k, v in methods.most_common(4)),
-            "source_url": "", "metadata": {"weight": weight, "counts": dict(methods)},
-        })
-    return edges, weighted_degree
-
-
-def _decorate_graph_view(view: dict[str, Any]) -> dict[str, Any]:
-    level = view.get("level")
-    for node in view.get("nodes", []):
-        material = _material_type(node)
-        cluster = (node.get("metadata") or {}).get("semantic_cluster")
-        degree = float(node.get("degree") or (node.get("metadata") or {}).get("weighted_degree") or 0)
-        if level in {"part", "article"} and cluster is not None:
-            colour = CLUSTER_COLOURS[int(cluster) % len(CLUSTER_COLOURS)]
-        else:
-            colour = MATERIAL_COLOURS.get(material, "#64748b")
-        radius = min(36, (9 if level == "article" else 10) + (degree or 1) ** 0.5 * (0.85 if level == "article" else 1.15))
-        node["visual"] = {"material": material, "colour": colour, "radius": radius, "label_priority": degree, "cluster": cluster}
-    for edge in view.get("edges", []):
-        edge_type = edge.get("edge_type") or ""
-        inferred = edge.get("source_method") not in EXPLICIT_METHODS
-        edge["visual"] = {"relationship": EDGE_LABELS.get(edge_type, edge_type.replace("_", " ")), "colour": EDGE_COLOURS.get(edge_type, "#94a3b8"), "line_style": "dashed" if inferred else "solid", "width": max(1.2, float(edge.get("confidence") or 0.45) * 2.8)}
-    view["visual_schema"] = {"node_colour": "material type, or semantic cluster on map views", "node_size": "weighted connectedness", "edge_colour": "relationship type", "edge_line_style": "solid explicit, dashed inferred/analytic"}
-    return view
-
-
-def _material_type(node: dict[str, Any]) -> str:
-    node_type = node.get("node_type") or ""
-    meta = node.get("metadata") or {}
-    url = (node.get("url") or "").lower()
-    doc_type = (meta.get("document_type") or "").lower()
-    if node_type == "provision":
-        return "provision"
-    if node_type in {"rule", "chapter", "part", "rulebook"}:
-        return "rule"
-    if node_type in {"defined_term", "glossary", "crr_terms_list"}:
-        return "definition"
-    if node_type == "legal_instrument":
-        return "legal_instrument"
-    if node_type in {"external_reference", "rule_reference"}:
-        return "external_reference"
-    if node_type in {"topic", "topic_cluster", "obligation_pattern", "obligation_statement"}:
-        return "analysis"
-    if node_type in {"guidance_document", "guidance_section", "guidance_paragraph"}:
-        if "statement_of_policy" in doc_type or "/statements-of-policy/" in url:
-            return "statement_of_policy"
-        return "supervisory_statement"
-    return "external_reference"
-
-
-def _part_key_from_stable(stable_key: str) -> str | None:
-    if stable_key.startswith(("provision:", "provision_version:")):
-        path = stable_key.split(":", 1)[1].split(":", 1)[0]
-        path = re.sub(r"/\d{2}-\d{2}-\d{4}$", "", path)
-        return f"part:{path}"
-    parts = (stable_key or "").split(":")
-    if len(parts) >= 3 and parts[1] == "part":
-        return f"part:{parts[2]}"
-    return None
-
-
-def _project_2d(matrix: np.ndarray) -> np.ndarray:
-    if matrix.size == 0:
-        return np.zeros((0, 2), dtype="float32")
-    centred = matrix - matrix.mean(axis=0, keepdims=True)
-    try:
-        _, _, vt = np.linalg.svd(centred, full_matrices=False)
-        coords = centred @ vt[:2].T
-    except np.linalg.LinAlgError:
-        coords = centred[:, :2]
-    if coords.shape[1] < 2:
-        coords = np.pad(coords, ((0, 0), (0, 2 - coords.shape[1])))
-    mins = coords.min(axis=0); maxs = coords.max(axis=0); span = np.where(maxs - mins == 0, 1, maxs - mins)
-    norm = (coords - mins) / span
-    return np.column_stack((120 + norm[:, 0] * 960, 100 + norm[:, 1] * 620)).astype("float32")
-
-
-def _cluster_labels(matrix: np.ndarray, clusters: int) -> list[int]:
-    if matrix.size == 0 or len(matrix) < clusters:
-        return [0] * len(matrix)
-    try:
-        return [int(x) for x in KMeans(n_clusters=clusters, random_state=42, n_init="auto").fit_predict(matrix)]
-    except Exception:
-        return [0] * len(matrix)
-
 
 def _load_nx_graph(conn: sqlite3.Connection, *, max_edges: int = 250000, analysis: bool = False) -> nx.Graph:
     graph = nx.Graph()
     identity_map = _analysis_identity_map(conn) if analysis else {}
+    excluded_types_set = set(RETIRED_EDGE_TYPES)
     if analysis:
-        rows = conn.execute(
-            """
-            SELECT id,from_node_id,to_node_id,edge_type,source_method,confidence
-            FROM edge
-            WHERE edge_type NOT IN ('shares_defined_term','has_obligation_pattern','has_version','sourced_from')
-            LIMIT ?
-            """,
-            (max_edges,),
-        )
-    else:
-        rows = conn.execute("SELECT id,from_node_id,to_node_id,edge_type,source_method,confidence FROM edge LIMIT ?", (max_edges,))
+        excluded_types_set.update({"has_version", "sourced_from"})
+    excluded_types = sorted(excluded_types_set)
+    rows = conn.execute(
+        f"""
+        SELECT e.id,e.from_node_id,e.to_node_id,e.edge_type,e.source_method,e.confidence
+        FROM edge e WHERE e.edge_type NOT IN ({','.join('?' for _ in excluded_types)})
+          AND NOT EXISTS (
+            SELECT 1 FROM node n WHERE n.id=e.from_node_id
+              AND n.node_type IN ({','.join('?' for _ in RETIRED_NODE_TYPES)})
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM node n WHERE n.id=e.to_node_id
+              AND n.node_type IN ({','.join('?' for _ in RETIRED_NODE_TYPES)})
+          )
+        LIMIT ?
+        """,
+        [*excluded_types, *sorted(RETIRED_NODE_TYPES), *sorted(RETIRED_NODE_TYPES), max_edges],
+    )
     for row in rows:
         from_id = identity_map.get(row["from_node_id"], row["from_node_id"])
         to_id = identity_map.get(row["to_node_id"], row["to_node_id"])
@@ -1290,8 +1224,8 @@ def list_nodes(
     offset: int = 0,
     summary: bool = False,
 ) -> list[dict[str, Any]]:
-    type_clause = "WHERE cn.is_canonical=1"
-    params: list[Any] = []
+    type_clause = "WHERE cn.is_canonical=1 AND n.node_type NOT IN (%s)" % ",".join("?" for _ in RETIRED_NODE_TYPES)
+    params: list[Any] = sorted(RETIRED_NODE_TYPES)
     if node_types:
         type_clause += " AND node_type IN (%s)" % ",".join("?" for _ in node_types)
         params.extend(node_types)

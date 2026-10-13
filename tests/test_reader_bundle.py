@@ -141,6 +141,39 @@ def test_reader_bundle_loads_direct_references_from_every_contained_provision():
     }
 
 
+def test_reader_bundle_includes_occurrences_attached_to_empty_structural_headings():
+    conn = make_conn()
+    title = "Chapter 4 — Article 26 applies"
+    add_node(conn, "chapter", "chapter", title)
+    add_node(conn, "article-26", "external_reference", "Article 26", "Source text.")
+    add_edge(conn, "chapter-reference", "chapter", "article-26")
+    start = title.index("Article 26")
+    conn.execute(
+        "INSERT INTO reference_occurrence VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (
+            "chapter-occurrence", "chapter-group", "chapter", "article-26",
+            "chapter-reference", "REF", "article", "Article 26", "Article 26",
+            None, None, None, start, start + len("Article 26"), "materialized",
+            "legal_reference_occurrence_v1", 1.0, title,
+            '{"span_basis":"title","group_span":{"start":%d,"end":%d}}'
+            % (start, start + len("Article 26")),
+        ),
+    )
+    conn.commit()
+
+    bundle = reader_bundle(conn, "chapter")
+    occurrences = [
+        occurrence
+        for edge in bundle["graph"]["edges"]
+        for occurrence in edge.get("metadata", {}).get("reference_occurrences", [])
+    ]
+
+    assert bundle["source_provision_count"] == 0
+    assert len(occurrences) == 1
+    assert occurrences[0]["source_node_id"] == "chapter"
+    assert occurrences[0]["span_text"] == "Article 26"
+
+
 def test_content_order_uses_every_numeric_component_of_rule_titles():
     items = [
         {"id": "ten", "node_type": "rule", "title": "7.10", "metadata": {}},

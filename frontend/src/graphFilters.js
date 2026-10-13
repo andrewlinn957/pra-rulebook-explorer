@@ -29,6 +29,9 @@ function isRootNode(node,graph){
 
 function originMatches(edge,originFilter){
   if(originFilter==='all') return true;
-  const inferred=edge.source_method==='inferred' || edge.source_method==='lexical_similarity' || edge.source_method==='semantic_similarity' || edge.metadata?.inferred;
+  const method=String(edge.source_method||edge.extraction_method||'').toLowerCase();
+  const inferred=['inferred','lexical_similarity','semantic_similarity','semantic_keyword','reporting_llm_reference'].includes(method)
+    || method.startsWith('semantic_') || method.startsWith('llm:')
+    || edge.metadata?.inferred;
   return originFilter==='inferred' ? inferred : !inferred;
 }

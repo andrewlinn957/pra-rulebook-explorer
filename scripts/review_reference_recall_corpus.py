@@ -51,7 +51,7 @@ from scripts.reference_recall_stage import (  # noqa: E402
 DEFAULT_DB = ROOT / "backend" / "data" / "rulebook.sqlite3"
 DEFAULT_LEDGER = ROOT / "logs" / "reference-recall-ledger-final-20260731.sqlite3"
 DEFAULT_REVIEW = ROOT / "logs" / "reference-recall-corpus-review-20260731.sqlite3"
-REVIEW_VERSION = "reference-recall-corpus-review-v1"
+REVIEW_VERSION = "reference-recall-corpus-review-v2"
 STAGE_METHOD = "corpus_review_deterministic_v1"
 
 REVIEW_SCHEMA = """
@@ -145,8 +145,13 @@ def classify_candidate(
     status = row["status"] or ""
     candidate_text = row["candidate_text"] or ""
     source_id = source["id"]
-    if status in {"covered_edge", "covered_occurrence", "covered_llm"}:
-        return "ALREADY_COVERED", "covered", None, 1.0, ["ledger_already_has_reference_evidence"]
+    if status in {
+        "recorded_edge", "recorded_occurrence", "recorded_llm",
+        "covered_edge", "covered_occurrence", "covered_llm",
+    }:
+        return "ALREADY_RECORDED", "reader_placement_unverified", None, 1.0, [
+            "ledger_has_reference_evidence; inline_placement_is_audited_separately"
+        ]
     if status == "classified_not_reference":
         return "NOT_REFERENCE", "not_applicable", None, 1.0, ["ledger_classified_not_reference"]
     if status == "excluded_context":
@@ -158,12 +163,12 @@ def classify_candidate(
             if target["id"] == source_id:
                 return "NOT_REFERENCE", "self_reference", None, 0.99, ["candidate_resolves_to_source"]
             if (source_id, target["id"]) in existing_edges:
-                return "ALREADY_COVERED", "existing_relationship", target, 1.0, ["relationship_already_exists"]
-            if any(
+                return "ALREADY_RECORDED", "existing_relationship", target, 1.0, ["relationship_already_exists"]
+        if any(
                 overlap(row["span_start"], row["span_end"], old_start, old_end) > 0
                 for old_start, old_end in existing_spans.get(source_id, [])
             ):
-                return "ALREADY_COVERED", "existing_occurrence", target, 1.0, ["source_span_already_has_occurrence"]
+            return "ALREADY_RECORDED", "existing_occurrence", target, 1.0, ["source_span_already_has_valid_occurrence"]
             return "REFERENCE", "unique_local_target", target, target_confidence or 0.9, [f"unique_{target_method}"]
         return "AMBIGUOUS", "multiple_local_targets", None, 0.5, ["multiple_local_targets"]
 
@@ -213,11 +218,30 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     texts = {node_id: source_text(row) for node_id, row in nodes.items()}
     existing_edges = {
         (row["from_node_id"], row["to_node_id"])
-        for row in source_conn.execute("SELECT from_node_id,to_node_id FROM edge")
+        for row in source_conn.execute(
+            "SELECT from_node_id,to_node_id FROM edge "
+            "WHERE edge_type IN ('references','uses_defined_term','defines','amends')"
+        )
     }
     existing_spans: dict[str, list[tuple[int | None, int | None]]] = defaultdict(list)
-    for row in source_conn.execute("SELECT source_node_id,span_start,span_end FROM reference_occurrence"):
-        existing_spans[row["source_node_id"]].append((row["span_start"], row["span_end"]))
+    for row in source_conn.execute(
+        """
+        SELECT o.source_node_id,o.span_start,o.span_end,o.relationship_type,e.edge_type
+        FROM reference_occurrence o
+        JOIN edge e ON e.id=o.edge_id
+          AND e.from_node_id=o.source_node_id AND e.to_node_id=o.target_node_id
+        JOIN node t ON t.id=o.target_node_id
+        WHERE o.status='materialized'
+        """
+    ):
+        expected = {
+            "REF": "references", "DEF": "uses_defined_term",
+            "AMEND": "amends", "AMENDS": "amends",
+        }.get(str(row["relationship_type"] or "").upper())
+        start, end = row["span_start"], row["span_end"]
+        text = texts.get(row["source_node_id"], "")
+        if expected == row["edge_type"] and start is not None and end is not None and 0 <= start < end <= len(text):
+            existing_spans[row["source_node_id"]].append((start, end))
 
     counts: Counter[str] = Counter()
     target_counts: Counter[str] = Counter()

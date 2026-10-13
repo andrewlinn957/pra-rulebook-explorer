@@ -748,7 +748,6 @@ def _delete_node_and_dependants(conn: sqlite3.Connection, node_id_: str) -> None
             (node_id_, node_id_),
         )
     for table, column in (
-        ("embedding", "node_id"),
         ("node_fts", "id"),
         ("canonical_node", "id"),
         ("canonical_guidance_document", "id"),

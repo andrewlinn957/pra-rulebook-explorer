@@ -40,10 +40,6 @@ def make_db() -> sqlite3.Connection:
           confidence REAL NOT NULL, context_text TEXT DEFAULT '', metadata_json TEXT DEFAULT '{}',
           created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
-        CREATE TABLE embedding (
-          node_id TEXT PRIMARY KEY, model_name TEXT NOT NULL, text_hash TEXT NOT NULL,
-          vector_json TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-        );
         CREATE TABLE node_alias (
           alias_type TEXT NOT NULL, alias_value TEXT NOT NULL, node_id TEXT NOT NULL,
           PRIMARY KEY(alias_type, alias_value)
@@ -91,7 +87,6 @@ def seed_db(conn: sqlite3.Connection) -> tuple[str, str, str, str]:
           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         ("occ", "group", source_id, target_id, reference, "article", "Article 2.2", "Article 2.2", 0, 10, "materialized", "test", 1.0, json.dumps({"source": source_id, "target": target_id})),
     )
-    conn.execute("INSERT INTO embedding VALUES (?,?,?,?,?)", (source_id, "test", "hash", "[1,2]", "2026-06-01"))
     return part_id, chapter_id, source_id, target_id
 
 
@@ -127,8 +122,6 @@ def test_migration_creates_canonical_versions_and_remaps_dependants() -> None:
     assert occurrence["target_node_id"] in canonical_ids
     assert occurrence["edge_id"] == reference["id"]
     assert old_target_id not in occurrence["metadata_json"]
-    assert conn.execute("SELECT COUNT(*) FROM embedding WHERE node_id=?", (old_source_id,)).fetchone()[0] == 0
-    assert conn.execute("SELECT COUNT(*) FROM embedding").fetchone()[0] == 1
     aliases = conn.execute("SELECT alias_type,alias_value,node_id FROM node_alias").fetchall()
     assert {(row["alias_type"], row["alias_value"]) for row in aliases} >= {
         ("legacy_id", old_source_id),

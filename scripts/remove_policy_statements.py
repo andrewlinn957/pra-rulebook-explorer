@@ -119,7 +119,6 @@ def main() -> None:
         ("llm_reference_resolution", "DELETE FROM llm_reference_resolution WHERE source_node_id IN (SELECT id FROM temp_ps_nodes) OR target_node_id IN (SELECT id FROM temp_ps_nodes)"),
         ("llm_reference_extraction", "DELETE FROM llm_reference_extraction WHERE node_id IN (SELECT id FROM temp_ps_nodes)"),
         ("node_aliases", "DELETE FROM node_aliases WHERE node_id IN (SELECT id FROM temp_ps_nodes)"),
-        ("embedding", "DELETE FROM embedding WHERE node_id IN (SELECT id FROM temp_ps_nodes)"),
         ("canonical_node", "DELETE FROM canonical_node WHERE id IN (SELECT id FROM temp_ps_nodes)"),
         ("node_fts", "DELETE FROM node_fts WHERE id IN (SELECT id FROM temp_ps_nodes)"),
         ("node", "DELETE FROM node WHERE id IN (SELECT id FROM temp_ps_nodes)"),

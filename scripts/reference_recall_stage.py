@@ -552,12 +552,29 @@ def stage_deterministic(
     # candidates, so cache the immutable source relationships once per run.
     existing_spans: dict[str, list[tuple[int | None, int | None]]] = defaultdict(list)
     for row in source_conn.execute(
-        "SELECT source_node_id,span_start,span_end FROM reference_occurrence"
+        """
+        SELECT o.source_node_id,o.span_start,o.span_end,o.relationship_type,e.edge_type
+        FROM reference_occurrence o
+        JOIN edge e ON e.id=o.edge_id
+          AND e.from_node_id=o.source_node_id AND e.to_node_id=o.target_node_id
+        JOIN node t ON t.id=o.target_node_id
+        WHERE o.status='materialized'
+        """
     ):
-        existing_spans[row["source_node_id"]].append((row["span_start"], row["span_end"]))
+        expected = {
+            "REF": "references", "DEF": "uses_defined_term",
+            "AMEND": "amends", "AMENDS": "amends",
+        }.get(str(row["relationship_type"] or "").upper())
+        start, end = row["span_start"], row["span_end"]
+        text = source_texts.get(row["source_node_id"], "")
+        if expected == row["edge_type"] and start is not None and end is not None and 0 <= start < end <= len(text):
+            existing_spans[row["source_node_id"]].append((start, end))
     existing_edges = {
         (row["from_node_id"], row["to_node_id"])
-        for row in source_conn.execute("SELECT from_node_id,to_node_id FROM edge")
+        for row in source_conn.execute(
+            "SELECT from_node_id,to_node_id FROM edge "
+            "WHERE edge_type IN ('references','uses_defined_term','defines','amends')"
+        )
     }
     candidate_rows = ledger.execute(
         """
@@ -565,7 +582,7 @@ def stage_deterministic(
                source_text_hash,span_start,span_end,candidate_text,candidate_kind,
                detector_json,reason_json,context_text,status,priority,evidence_json
         FROM reference_gap
-        WHERE status IN ('needs_review','tail_unreviewed','llm_unresolved')
+        WHERE status IN ('needs_review','tail_unreviewed','llm_unresolved','occurrence_needs_repair')
           AND candidate_kind IN ('legal_citation','article_citation','structure_reference','named_document','named_instrument','relative_structure')
           AND source_node_type IN ('rule','chapter','part','guidance_document','guidance_section','guidance_paragraph','defined_term')
         ORDER BY priority DESC,candidate_id

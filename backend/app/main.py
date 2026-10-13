@@ -14,7 +14,7 @@ from .db import DEFAULT_DB, connect, ensure_indexes, get_node
 from .feedback import create_feedback, list_feedback
 from .reported_issues import delete_issue, create_issue, list_issues, update_issue, update_issue_status
 from .analysis_cache import get_or_compute
-from .graph import common_neighbours, contents_tree, interesting, list_nodes, neighbourhood, reader_bundle, search, semantic_map, shortest_path, stats
+from .graph import common_neighbours, contents_tree, list_nodes, neighbourhood, reader_bundle, search, shortest_path, stats
 from .reporting import (
     datapoint_detail,
     list_returns,
@@ -39,6 +39,7 @@ from .reporting import (
 from .unified import unified_edge, unified_edges, unified_neighbourhood, unified_node, unified_nodes, unified_schema, unified_search, unified_stats, unified_table_rows
 from .validation import validation_dashboard
 from .migrations import apply_migrations, schema_version
+from .taxonomy import RETIRED_NODE_TYPES
 
 DB_PATH = DEFAULT_DB
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -66,6 +67,11 @@ def _limit(value: int, cap: int, *, minimum: int = 1) -> int:
 
 def _offset(value: int) -> int:
     return max(value, 0)
+
+
+def _public_rulebook_node(conn, node_id: str):
+    node = get_node(conn, node_id)
+    return node if node and node.get("node_type") not in RETIRED_NODE_TYPES else None
 
 
 @app.on_event("startup")
@@ -564,7 +570,7 @@ def api_nodes(
 @app.get("/node/{node_id}")
 def api_node(node_id: str) -> dict:
     conn = connect(DB_PATH)
-    node = get_node(conn, node_id)
+    node = _public_rulebook_node(conn, node_id)
     if not node:
         raise HTTPException(status_code=404, detail="Node not found")
     return node
@@ -573,6 +579,8 @@ def api_node(node_id: str) -> dict:
 @app.get("/node/{node_id}/contents")
 def api_contents(node_id: str) -> dict:
     conn = connect(DB_PATH)
+    if not _public_rulebook_node(conn, node_id):
+        raise HTTPException(status_code=404, detail="Node not found")
     try:
         return contents_tree(conn, node_id)
     except ValueError:
@@ -582,6 +590,8 @@ def api_contents(node_id: str) -> dict:
 @app.get("/node/{node_id}/reader")
 def api_reader(node_id: str, reference_depth: int = 1) -> dict:
     conn = connect(DB_PATH)
+    if not _public_rulebook_node(conn, node_id):
+        raise HTTPException(status_code=404, detail="Node not found")
     try:
         return reader_bundle(
             conn,
@@ -601,7 +611,7 @@ def api_neighbourhood(
     explicit_only: bool = False,
 ) -> dict:
     conn = connect(DB_PATH)
-    if not get_node(conn, node_id):
+    if not _public_rulebook_node(conn, node_id):
         raise HTTPException(status_code=404, detail="Node not found")
     return neighbourhood(conn, node_id, depth=_limit(depth, 3), limit=_limit(limit, 1000), edge_types=edge_types, explicit_only=explicit_only)
 
@@ -619,26 +629,11 @@ def api_path(request: Request) -> dict:
         raise HTTPException(status_code=404, detail=f"Path not found: {exc}")
 
 
-@app.get("/interesting")
-def api_interesting(limit: int = 50) -> dict:
-    conn = connect(DB_PATH)
-    return {"results": interesting(conn, limit=_limit(limit, 200))}
-
-
 @app.get("/centrality")
 def api_centrality(limit: int = 25) -> dict:
     conn = connect(DB_PATH)
     payload = get_or_compute(conn, "centrality")
     return {"degree": payload["degree"][:_limit(limit, 100)]}
-
-
-@app.get("/analysis/semantic-map")
-def api_semantic_map(level: str = "part", clusters: int = 12, edge_limit: int = 700) -> dict:
-    conn = connect(DB_PATH)
-    try:
-        return semantic_map(conn, level=level, clusters=_limit(clusters, 50), edge_limit=_limit(edge_limit, 5000, minimum=0))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @app.get("/analysis/betweenness")

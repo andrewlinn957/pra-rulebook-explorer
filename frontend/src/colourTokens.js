@@ -36,30 +36,11 @@ export const COLOURS = Object.freeze({
   infoSoft: '#E8F3F9',
 });
 
-export const CHART_SEQUENCE = Object.freeze([
-  COLOURS.accent,
-  COLOURS.orange,
-  COLOURS.purple,
-  COLOURS.gold,
-  COLOURS.azure,
-  COLOURS.pink,
-  COLOURS.leaf,
-  COLOURS.yellow,
-  COLOURS.peach,
-  COLOURS.red,
-  COLOURS.white,
-  COLOURS.sageStone,
-]);
-
 export const EDGE_COLOURS = Object.freeze({
   contains: COLOURS.brandSoft,
   references: COLOURS.accent,
   uses_defined_term: COLOURS.orange,
   defines: COLOURS.gold,
-  shares_defined_term: COLOURS.azure,
-  has_obligation_pattern: COLOURS.pink,
-  shares_obligation_pattern: COLOURS.peach,
-  has_structured_obligation: COLOURS.red,
   amends: COLOURS.error,
   has_permission: COLOURS.purple,
   has_version: COLOURS.purple,
@@ -102,9 +83,6 @@ export const MATERIAL_COLOURS = Object.freeze({
   permission: COLOURS.purple,
   external_reference: COLOURS.brandMuted,
   legal_instrument: COLOURS.red,
-  obligation_pattern: COLOURS.pink,
-  obligation_statement: COLOURS.red,
-  analysis: COLOURS.purple,
   rulebook: COLOURS.gold,
   reporting_estate: COLOURS.sageStone,
   reporting_regime: COLOURS.azure,
@@ -120,5 +98,3 @@ export const MATERIAL_COLOURS = Object.freeze({
   reporting_provision: COLOURS.red,
   reporting_concept: COLOURS.azure,
 });
-
-export const CLUSTER_COLOURS = CHART_SEQUENCE.slice(0, 10);

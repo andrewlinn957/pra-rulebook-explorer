@@ -99,7 +99,7 @@ def main() -> None:
     updated_to = cur.rowcount
 
     deleted = {}
-    for table, col in [("embedding", "node_id"), ("node_fts", "id"), ("canonical_node", "id"), ("canonical_guidance_paragraph", "id"), ("node", "id")]:
+    for table, col in [("node_fts", "id"), ("canonical_node", "id"), ("canonical_guidance_paragraph", "id"), ("node", "id")]:
         cur = conn.execute(f"DELETE FROM {table} WHERE {col} IN (SELECT dup_id FROM dup_map)")
         deleted[table] = cur.rowcount
     cur = conn.execute("DELETE FROM edge WHERE from_node_id=to_node_id")

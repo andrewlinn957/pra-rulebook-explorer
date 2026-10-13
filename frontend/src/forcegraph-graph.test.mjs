@@ -69,8 +69,7 @@ test('selected-node graph layout biases relationship groups into compass lanes',
   assert.match(source, /if\(node\.layoutLane==='northEast'\) return -220/);
   assert.match(source, /if\(edge\.edge_type==='references' && edge\.to_node_id===selectedId\) return 'west'/);
   assert.match(source, /if\(edge\.edge_type==='references' && edge\.from_node_id===selectedId\) return 'east'/);
-  assert.match(source, /if\(edge\.from_node_id===selectedId && isPurpleAnalysisNode\(node\)\) return 'east'/);
-  assert.match(source, /function isPurpleAnalysisNode\(node\)/);
+  assert.doesNotMatch(source, /isPurpleAnalysisNode|obligation_pattern|obligation_statement/);
 });
 
 test('legend exposes clickable node and edge type filters', () => {
