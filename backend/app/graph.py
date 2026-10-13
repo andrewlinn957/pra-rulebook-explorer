@@ -802,6 +802,16 @@ def reader_bundle(
     outgoing reading relationships from those source provisions are included.
     """
 
+    root_type = conn.execute(
+        "SELECT node_type FROM node WHERE id=?",
+        (node_id,),
+    ).fetchone()
+    if root_type and root_type["node_type"] == "rulebook":
+        # A whole-rulebook reader would otherwise expand tens of thousands of
+        # provisions and their references in one response. Keep the top-level
+        # view to its parts; readers can open a part or chapter for its text.
+        max_depth = min(max_depth, 1)
+
     contents = contents_tree(
         conn,
         node_id,

@@ -141,6 +141,27 @@ def test_reader_bundle_loads_direct_references_from_every_contained_provision():
     }
 
 
+def test_reader_bundle_keeps_whole_rulebook_selection_at_the_parts_level():
+    conn = make_conn()
+    add_node(conn, "rulebook", "rulebook", "PRA Rules")
+    add_node(conn, "part", "part", "Part 1")
+    add_node(conn, "chapter", "chapter", "Chapter 1")
+    add_node(conn, "rule", "rule", "1.1", "See rule 2.1.")
+    add_node(conn, "target", "rule", "2.1", "Target.")
+    add_edge(conn, "rulebook-part", "rulebook", "part", "contains")
+    add_edge(conn, "part-chapter", "part", "chapter", "contains")
+    add_edge(conn, "chapter-rule", "chapter", "rule", "contains")
+    add_edge(conn, "rule-reference", "rule", "target")
+
+    bundle = reader_bundle(conn, "rulebook")
+
+    assert bundle["spine_node_count"] == 2
+    assert [child["id"] for child in bundle["contents"]["children"]] == ["part"]
+    assert bundle["contents"]["children"][0]["children"] == []
+    assert "rule" not in {node["id"] for node in bundle["graph"]["nodes"]}
+    assert all(edge["from_node_id"] != "rule" for edge in bundle["graph"]["edges"])
+
+
 def test_reader_bundle_includes_occurrences_attached_to_empty_structural_headings():
     conn = make_conn()
     title = "Chapter 4 — Article 26 applies"
