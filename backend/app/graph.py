@@ -755,6 +755,8 @@ def contents_tree(conn: sqlite3.Connection, node_id: str, *, max_depth: int = 4,
     root_row = conn.execute("SELECT id,node_type,stable_key,title,text,url,metadata_json FROM node WHERE id=?", (node_id,)).fetchone()
     if not root_row:
         raise ValueError("Node not found")
+    if root_row["node_type"] == "rulebook":
+        max_depth = min(max_depth, 1)
 
     def children(parent_id: str, depth: int) -> list[dict[str, Any]]:
         if depth >= max_depth:
@@ -807,10 +809,7 @@ def reader_bundle(
         (node_id,),
     ).fetchone()
     if root_type and root_type["node_type"] == "rulebook":
-        # A whole-rulebook reader would otherwise expand tens of thousands of
-        # provisions and their references in one response. Keep the top-level
-        # view to its parts; readers can open a part or chapter for its text.
-        max_depth = min(max_depth, 1)
+        raise ValueError("Open a Part or chapter to read provisions inline.")
 
     contents = contents_tree(
         conn,

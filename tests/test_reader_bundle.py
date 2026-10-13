@@ -1,6 +1,10 @@
 import sqlite3
 
-from backend.app.graph import _natural_sort_content, reader_bundle
+import pytest
+from fastapi import HTTPException
+
+import backend.app.main as app_main
+from backend.app.graph import _natural_sort_content, contents_tree, reader_bundle
 
 
 def make_conn():
@@ -141,7 +145,7 @@ def test_reader_bundle_loads_direct_references_from_every_contained_provision():
     }
 
 
-def test_reader_bundle_keeps_whole_rulebook_selection_at_the_parts_level():
+def test_rulebook_contents_stops_at_parts_and_requires_reading_a_part():
     conn = make_conn()
     add_node(conn, "rulebook", "rulebook", "PRA Rules")
     add_node(conn, "part", "part", "Part 1")
@@ -153,13 +157,27 @@ def test_reader_bundle_keeps_whole_rulebook_selection_at_the_parts_level():
     add_edge(conn, "chapter-rule", "chapter", "rule", "contains")
     add_edge(conn, "rule-reference", "rule", "target")
 
-    bundle = reader_bundle(conn, "rulebook")
+    contents = contents_tree(conn, "rulebook")
 
-    assert bundle["spine_node_count"] == 2
-    assert [child["id"] for child in bundle["contents"]["children"]] == ["part"]
-    assert bundle["contents"]["children"][0]["children"] == []
-    assert "rule" not in {node["id"] for node in bundle["graph"]["nodes"]}
-    assert all(edge["from_node_id"] != "rule" for edge in bundle["graph"]["edges"])
+    assert [child["id"] for child in contents["children"]] == ["part"]
+    assert contents["children"][0]["children"] == []
+    with pytest.raises(ValueError, match="Open a Part or chapter"):
+        reader_bundle(conn, "rulebook")
+
+
+def test_reader_api_rejects_whole_rulebook_with_drilldown_guidance(monkeypatch):
+    monkeypatch.setattr(app_main, "connect", lambda *_args: object())
+    monkeypatch.setattr(
+        app_main,
+        "_public_rulebook_node",
+        lambda _conn, _node_id: {"node_type": "rulebook"},
+    )
+
+    with pytest.raises(HTTPException) as error:
+        app_main.api_reader("rulebook")
+
+    assert error.value.status_code == 400
+    assert "Open a Part or chapter" in error.value.detail
 
 
 def test_reader_bundle_includes_occurrences_attached_to_empty_structural_headings():

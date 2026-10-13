@@ -2178,7 +2178,9 @@ function SelectedNodeDetails({node,edges,onRead,onReportIssue}){
     <Collapsible title="Selected material" count={label(node.node_type)} open>
       <span className="kind">{label(node.node_type)}</span><h2><NodeTitle node={node}/></h2>{node.url&&<a className="source" href={node.url} target="_blank" rel="noopener noreferrer">Open source ↗</a>}
       <p className="text">{node.text?truncate(node.text,1300):emptyNodeMessage(node,edges)}</p>
-      <button type="button" className="reading-mode-entry" onClick={()=>onRead(node)}><span>Reading mode</span><strong>Read this provision with its references →</strong></button>
+      {node.node_type==='rulebook'
+        ? <p className="muted">Open a Part or chapter to read its provisions and expand references inline.</p>
+        : <button type="button" className="reading-mode-entry" onClick={()=>onRead(node)}><span>Reading mode</span><strong>Read this provision with its references →</strong></button>}
       <button type="button" className="report-issue-btn" onClick={()=>onReportIssue?.(node)}>⚑ Report an issue with this node</button>
     </Collapsible>
   </section>;

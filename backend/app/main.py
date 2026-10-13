@@ -590,8 +590,14 @@ def api_contents(node_id: str) -> dict:
 @app.get("/node/{node_id}/reader")
 def api_reader(node_id: str, reference_depth: int = 1) -> dict:
     conn = connect(DB_PATH)
-    if not _public_rulebook_node(conn, node_id):
+    node = _public_rulebook_node(conn, node_id)
+    if not node:
         raise HTTPException(status_code=404, detail="Node not found")
+    if node.get("node_type") == "rulebook":
+        raise HTTPException(
+            status_code=400,
+            detail="Open a Part or chapter to read provisions inline.",
+        )
     try:
         return reader_bundle(
             conn,
